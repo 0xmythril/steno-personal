@@ -46,6 +46,17 @@ function toStatus(row: Row): ConnectionStatus {
   }
 }
 
+// Pure so the race path (two requests both pass the pre-check, then lose the
+// insert to the partial unique index) can be unit-tested without contriving
+// real concurrency. better-sqlite3 throws with code === 'SQLITE_CONSTRAINT_UNIQUE'
+// directly; drizzle may wrap that in a DrizzleQueryError whose .cause carries
+// the same code. Anything else is not this race and must propagate.
+export function mapInsertError(err: unknown): 'already_connected' | null {
+  const code = (err as { code?: unknown; cause?: { code?: unknown } })?.code
+  const causeCode = (err as { cause?: { code?: unknown } })?.cause?.code
+  return code === 'SQLITE_CONSTRAINT_UNIQUE' || causeCode === 'SQLITE_CONSTRAINT_UNIQUE' ? 'already_connected' : null
+}
+
 // A LIVE row is one with revoked_at IS NULL. The partial unique index allows
 // exactly one per channel, so a new attempt must first free the slot: an
 // ACTIVE row blocks it outright; a dead one (pending/error) is deleted when it
@@ -63,8 +74,16 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
     else await db.delete(connections).where(eq(connections.id, row.id))
   }
 
-  const [row] = await db.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id })
-  return { ok: true, id: row.id }
+  try {
+    const [row] = await db.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id })
+    return { ok: true, id: row.id }
+  } catch (err) {
+    // A concurrent request won the insert between our pre-check and here:
+    // the partial unique index caught what the pre-check could not.
+    const reason = mapInsertError(err)
+    if (reason) return { ok: false, reason }
+    throw err
+  }
 }
 
 export async function listConnections(): Promise<ConnectionStatus[]> {
@@ -79,11 +98,17 @@ export async function getConnection(id: string): Promise<ConnectionStatus | null
 }
 
 // Stores the owner's 2FA password encrypted at rest for the worker to consume
-// exactly once. Only a still-pending row accepts one.
+// exactly once. Only a still-pending row that has actually asked for a
+// password accepts one — otherwise nothing is listening for it on the other
+// side, and a stray submit would silently overwrite loginSecretAt for no
+// reason.
 export async function submitLoginPassword(id: string, password: string): Promise<boolean> {
   const res = await db.update(connections)
     .set({ loginSecretCiphertext: encryptSecret(password), loginSecretAt: new Date(), lastError: null })
-    .where(and(eq(connections.id, id), eq(connections.status, 'pending'), isNull(connections.revokedAt)))
+    .where(and(
+      eq(connections.id, id), eq(connections.status, 'pending'), isNull(connections.revokedAt),
+      eq(connections.loginNeedsPassword, true),
+    ))
     .returning({ id: connections.id })
   return res.length > 0
 }

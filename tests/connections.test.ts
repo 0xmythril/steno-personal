@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { connections, chats } from '@/lib/db/schema'
+import { connections, chats, messages } from '@/lib/db/schema'
 import { decryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
   createConnection, listConnections, getConnection, submitLoginPassword,
-  revokeConnection, deleteConnection, hasActiveConnection, PASSWORD_REJECTED,
+  revokeConnection, deleteConnection, hasActiveConnection, PASSWORD_REJECTED, mapInsertError,
 } from '@/lib/services/connections'
 
 const rowOf = async (id: string) => (await db.select().from(connections).where(eq(connections.id, id)))[0]
@@ -121,6 +121,23 @@ describe('connections service', () => {
     expect(await deleteConnection(conn.id)).toBe(true)
     expect(await db.select().from(connections)).toEqual([])
     expect(await db.select().from(chats)).toEqual([])
+    expect(await db.select().from(messages)).toEqual([])
     expect(await deleteConnection(conn.id)).toBe(false)
+  })
+
+  it('maps the partial-unique-index race to already_connected, top-level or under cause, and passes through anything else', () => {
+    expect(mapInsertError({ code: 'SQLITE_CONSTRAINT_UNIQUE' })).toBe('already_connected')
+    expect(mapInsertError({ message: 'wrapped', cause: { code: 'SQLITE_CONSTRAINT_UNIQUE' } })).toBe('already_connected')
+    expect(mapInsertError({ code: 'SQLITE_CONSTRAINT_FOREIGNKEY' })).toBeNull()
+    expect(mapInsertError(new Error('boom'))).toBeNull()
+    expect(mapInsertError(undefined)).toBeNull()
+  })
+
+  it('submitLoginPassword refuses a pending connection that never asked for a password', async () => {
+    const conn = await makeConnection({ channel: 'telegram', status: 'pending' })
+    expect(await submitLoginPassword(conn.id, 'hunter2')).toBe(false)
+    const row = await rowOf(conn.id)
+    expect(row.loginSecretCiphertext).toBeNull()
+    expect(row.loginSecretAt).toBeNull()
   })
 })
