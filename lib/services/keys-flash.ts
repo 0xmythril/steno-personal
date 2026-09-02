@@ -1,0 +1,6 @@
+// Short-lived httpOnly flash cookies that carry a raw key from an action to
+// exactly one render of /settings, so a secret never sits in a URL, a log,
+// or a Referer header. Not in actions.ts because a 'use server' module may
+// only export async functions.
+export const MINTED_KEY_COOKIE = 'sp_minted_key'
+export const REVEALED_KEY_COOKIE = 'sp_revealed_key'
