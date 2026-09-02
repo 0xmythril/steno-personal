@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { mintAccessKey, revokeAccessKey } from '@/lib/services/access-keys'
 import { createSession, resolveSession, deleteSession, purgeExpiredSessions, SESSION_TTL_MS } from '@/lib/services/sessions'
+import { COOKIE_MAX_AGE_S } from '@/lib/auth'
 
 async function key() {
   const r = await mintAccessKey('k')
@@ -37,6 +38,12 @@ describe('sessions', () => {
     expect(await resolveSession(id, new Date(t0.getTime() + 45 * day))).not.toBeNull()
     // then idle for 31 days: gone
     expect(await resolveSession(id, new Date(t0.getTime() + 45 * day + SESSION_TTL_MS + day))).toBeNull()
+  })
+
+  it('gives the cookie a longer life than the server-side idle window', () => {
+    // The server row is authoritative; a cookie that died first would log an
+    // active user out on day 30 no matter how often they used the portal.
+    expect(COOKIE_MAX_AGE_S * 1000).toBeGreaterThan(SESSION_TTL_MS)
   })
 
   it('deletes and purges', async () => {

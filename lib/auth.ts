@@ -6,7 +6,12 @@ import { redirect } from 'next/navigation'
 import { createSession, deleteSession, resolveSession } from '@/lib/services/sessions'
 
 export const SESSION_COOKIE = 'sp_session'
-const COOKIE_MAX_AGE_S = 30 * 86_400
+// The authoritative expiry is the server-side 30-day idle window in
+// lib/services/sessions.ts, which slides forward on use. The cookie only
+// has to outlive it, so it gets 400 days — the cap browsers clamp
+// Max-Age to. A cookie shorter than the idle window would log an active
+// user out while their session row was still valid.
+export const COOKIE_MAX_AGE_S = 400 * 86_400
 
 export type PortalSession = { sessionId: string; keyId: string; label: string }
 
