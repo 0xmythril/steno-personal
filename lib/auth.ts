@@ -4,6 +4,7 @@
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createSession, deleteSession, resolveSession } from '@/lib/services/sessions'
+import { verifyAccessKey } from '@/lib/services/access-keys'
 
 export const SESSION_COOKIE = 'sp_session'
 // The authoritative expiry is the server-side 30-day idle window in
@@ -48,4 +49,19 @@ export async function endSession(): Promise<void> {
   const id = jar.get(SESSION_COOKIE)?.value
   if (id) await deleteSession(id)
   jar.delete({ name: SESSION_COOKIE, path: '/' })
+}
+
+// Every API route accepts either the portal's session cookie or an access key
+// as a bearer token, so the same routes serve the browser and (from M3) an
+// agent. A bearer header that is present but bad is a REJECTION, never a
+// fall-through to the cookie: an agent sending a stale key must be told so,
+// not silently answered with whatever the browser happens to be logged in as.
+export async function authenticateRequest(req: Request): Promise<{ via: 'cookie' | 'bearer'; keyId: string } | null> {
+  const header = req.headers.get('authorization')
+  if (header?.startsWith('Bearer ')) {
+    const key = await verifyAccessKey(header.slice('Bearer '.length).trim())
+    return key ? { via: 'bearer', keyId: key.id } : null
+  }
+  const session = await currentSession()
+  return session ? { via: 'cookie', keyId: session.keyId } : null
 }
