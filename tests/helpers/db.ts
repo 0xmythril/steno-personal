@@ -13,7 +13,13 @@ export function useTempDataDir(): string {
 
 export async function resetDb(): Promise<void> {
   const { db } = await import('@/lib/db/client')
-  const { sessions, accessKeys } = await import('@/lib/db/schema')
+  const { sessions, accessKeys, messages, chats, connections } = await import('@/lib/db/schema')
+  // Children first. The FK cascades would reach them anyway, but deleting
+  // messages directly is what makes the AFTER DELETE trigger prune
+  // search_index without depending on the recursive_triggers pragma.
+  await db.delete(messages)
+  await db.delete(chats)
+  await db.delete(connections)
   await db.delete(sessions)
   await db.delete(accessKeys)
 }
