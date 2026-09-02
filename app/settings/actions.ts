@@ -1,15 +1,11 @@
 'use server'
 
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { requireSession, endSession } from '@/lib/auth'
+import { requireSession, endSession, isHttps } from '@/lib/auth'
 import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flash'
-
-async function secure(): Promise<boolean> {
-  return (await headers()).get('x-forwarded-proto') === 'https'
-}
 
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
@@ -18,7 +14,7 @@ export async function mintKeyAction(formData: FormData) {
   if (!result.ok) redirect(`/settings?mintError=${result.reason}`)
   const jar = await cookies()
   jar.set(MINTED_KEY_COOKIE, JSON.stringify({ id: result.id, rawKey: result.rawKey }), {
-    httpOnly: true, sameSite: 'lax', secure: await secure(), maxAge: 5 * 60, path: '/settings',
+    httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: 5 * 60, path: '/settings',
   })
   redirect('/settings')
 }
@@ -42,7 +38,7 @@ export async function revealKeyAction(formData: FormData) {
   }
   const jar = await cookies()
   jar.set(REVEALED_KEY_COOKIE, JSON.stringify({ id: keyId, rawKey }), {
-    httpOnly: true, sameSite: 'lax', secure: await secure(), maxAge: 2 * 60, path: '/settings',
+    httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: 2 * 60, path: '/settings',
   })
   redirect('/settings')
 }
@@ -69,6 +65,11 @@ export async function revokeKeyAction(formData: FormData) {
 export async function revokeAllKeysAction() {
   await requireSession()
   await revokeAllAccessKeys()
+  // Clear the flashes before the session ends, or a just-minted raw key sits
+  // in the browser jar for up to five minutes after logout.
+  const jar = await cookies()
+  jar.delete({ name: REVEALED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
   await endSession()
   redirect('/login')
 }

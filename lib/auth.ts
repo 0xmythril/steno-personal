@@ -28,11 +28,13 @@ export async function requireSession(): Promise<PortalSession> {
   return s
 }
 
-// `secure` follows the request: Railway terminates TLS and forwards
+// Cookie `secure` follows the request: Railway terminates TLS and forwards
 // x-forwarded-proto=https; a laptop on http://localhost must still log in.
-async function isHttps(): Promise<boolean> {
+// Behind chained proxies the header arrives as a comma list ('https,http'),
+// so only the first hop — the one that spoke to the client — counts.
+export async function isHttps(): Promise<boolean> {
   const h = await headers()
-  return h.get('x-forwarded-proto') === 'https'
+  return h.get('x-forwarded-proto')?.split(',')[0].trim() === 'https'
 }
 
 export async function startSession(keyId: string): Promise<void> {

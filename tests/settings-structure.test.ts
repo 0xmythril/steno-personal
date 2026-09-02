@@ -18,4 +18,20 @@ describe('settings keys page', () => {
       expect(s).toMatch(/maxAge:\s*(2|5) \* 60/)
     }
   })
+  it('revoking every key clears the flashes before the session ends', () => {
+    const actions = readFileSync('app/settings/actions.ts', 'utf8')
+    const start = actions.indexOf('export async function revokeAllKeysAction')
+    expect(start).toBeGreaterThan(-1)
+    const next = actions.indexOf('export async function ', start + 1)
+    const body = next === -1 ? actions.slice(start) : actions.slice(start, next)
+    expect(body).toMatch(/MINTED_KEY_COOKIE/)
+    expect(body).toMatch(/REVEALED_KEY_COOKIE/)
+    // A raw key must not outlive the logout that revoked it.
+    expect(body.indexOf('jar.delete')).toBeLessThan(body.indexOf('endSession()'))
+  })
+  it('reads the request scheme from lib/auth, not a second copy', () => {
+    const actions = readFileSync('app/settings/actions.ts', 'utf8')
+    expect(actions).not.toMatch(/x-forwarded-proto/)
+    expect(actions).toMatch(/isHttps\(\)/)
+  })
 })
