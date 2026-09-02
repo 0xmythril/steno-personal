@@ -40,18 +40,33 @@ type Running = {
   backfillSinceDays: number   // fixed at open time; retries reuse it
 }
 
-// One SessionManager per worker. tick() is idempotent and safe on an interval:
-// it converges the set of open channel sessions to the set of active rows.
+// One SessionManager per worker. tick() is idempotent, self-serializing (a
+// tick already in flight makes a concurrent call a no-op — never queued), and
+// safe on an interval: it converges the set of open channel sessions to the
+// set of active rows.
 export class SessionManager {
   private running = new Map<string, Running>()            // connectionId -> open session
   private loginsInFlight = new Map<string, Promise<void>>()
   private backfillsInFlight = new Map<string, Promise<void>>()
+  private ticking = false
+  private stopping = false
 
   constructor(private ports: Map<Channel, ChannelPort>) {}
 
+  // Self-serializing: a call while a tick is already in flight returns
+  // immediately rather than queueing — the poll interval is short enough that
+  // a queued tick would just pile up behind a slow one instead of ever
+  // converging. stopping keeps a new tick from starting once shutdown has
+  // begun.
   async tick(): Promise<void> {
-    await this.startPendingLogins()
-    await this.reconcileActive()
+    if (this.stopping || this.ticking) return
+    this.ticking = true
+    try {
+      await this.startPendingLogins()
+      await this.reconcileActive()
+    } finally {
+      this.ticking = false
+    }
   }
 
   // Awaits in-flight logins and backfills. Used by tests for determinism and
@@ -66,6 +81,7 @@ export class SessionManager {
   // from the row's own createdAt, not an in-process timer, so a worker restart
   // cannot reset the clock and re-drive a stale login forever.
   private async startPendingLogins(): Promise<void> {
+    if (this.stopping) return
     for (const conn of await claimPendingLogins()) {
       if (this.loginsInFlight.has(conn.id)) continue
       const port = this.ports.get(conn.channel)
@@ -80,6 +96,11 @@ export class SessionManager {
       }
       const p = this.driveLogin(port, conn.id, LOGIN_TIMEOUT_MS - age)
         .finally(() => this.loginsInFlight.delete(conn.id))
+        // Terminal: driveLogin is fire-and-forget, so nothing downstream
+        // awaits it directly. Without this, a failing write inside it (e.g.
+        // failLogin's own DB update throwing) would escape as an unhandled
+        // rejection instead of just being logged.
+        .catch(e => log.error({ err: errorShape(e), connectionId: conn.id }, 'login driver failed'))
       this.loginsInFlight.set(conn.id, p)
     }
   }
@@ -133,7 +154,16 @@ export class SessionManager {
         const existing = this.running.get(conn.id)
         if (existing) {
           if (!existing.backfilled) {
-            this.maybeStartBackfill(conn.id, existing)
+            // Same liveness reasoning as the backfilled branch below, but no
+            // recordSync here: a backfill still in progress has nothing
+            // durable to mark healthy yet, and a dead session caught by this
+            // ping must not be handed to maybeStartBackfill.
+            try {
+              await existing.session.ping()
+              this.maybeStartBackfill(conn.id, existing)
+            } catch (e) {
+              await this.handleSessionError(conn.id, e)
+            }
           } else {
             // A phone-side revocation never throws on its own inside a running
             // session, so without an active probe recordSync would keep
@@ -222,7 +252,12 @@ export class SessionManager {
       running.backfilled = true
       await recordSync(connId)
     } catch (e) {
-      log.error({ err: errorShape(e), connectionId: connId }, 'backfill failed; will retry')
+      // A dead session (killed from the phone) does not throw on its own
+      // elsewhere in the middle of a backfill — routing through
+      // handleSessionError catches that here too and revokes instead of
+      // retrying a session that is already gone; every other error is logged
+      // and retried next tick.
+      await this.handleSessionError(connId, e)
     }
   }
 
@@ -238,11 +273,18 @@ export class SessionManager {
     log.error({ err: errorShape(e), connectionId: connId }, 'session error; will retry next tick')
   }
 
+  // Awaits only in-flight BACKFILLS, never logins: a login can legitimately
+  // block for the full login window waiting on a QR scan or a password, and
+  // shutdown must not hang on that. Setting stopping first keeps tick() (and
+  // startPendingLogins) from starting any new work while this drains.
+  // whenIdle() stays the union of both — tests use it to wait out a login
+  // deliberately.
   async stopAll(): Promise<void> {
-    // Abort in-flight backfills up front so whenIdle() returns promptly
-    // instead of blocking shutdown on a slow scan.
+    this.stopping = true
+    // Abort in-flight backfills up front so awaiting them below returns
+    // promptly instead of blocking shutdown on a slow scan.
     for (const [, r] of this.running) r.stopped = true
-    await this.whenIdle()
+    await Promise.all([...this.backfillsInFlight.values()])
     for (const [, r] of this.running) await r.session.close().catch(() => {})
     this.running.clear()
   }

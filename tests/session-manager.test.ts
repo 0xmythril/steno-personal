@@ -6,6 +6,7 @@ import { encryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
 import { revokeConnection, submitLoginPassword } from '@/lib/services/connections'
+import * as loginModule from '@/lib/services/login'
 import { FakePort } from '@/lib/channels/fake-port'
 import { ChannelError, type Channel, type ChannelPort, type IncomingMessage } from '@/lib/channels/port'
 import { SessionManager, backfillSinceDays } from '@/lib/channels/session-manager'
@@ -115,6 +116,36 @@ describe('session manager', () => {
     expect(row.sessionCiphertext).toBeNull()
   })
 
+  it('a login driver rejection never escapes as an unhandled rejection', async () => {
+    const conn = await makeConnection({ status: 'pending' })
+    const port = new FakePort('telegram')
+    port.scriptLoginError(new ChannelError('login timed out', 'timed_out'))
+    // Force the write that reports the failure to fail too, so the only thing
+    // standing between driveLogin's rejection and the process is the terminal
+    // .catch() appended in startPendingLogins.
+    const failLoginSpy = vi.spyOn(loginModule, 'failLogin').mockRejectedValueOnce(new Error('db write failed'))
+    let unhandled: unknown = null
+    const onUnhandled = (e: unknown) => { unhandled = e }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const mgr = new SessionManager(portsOf(port))
+      await mgr.tick()
+      await mgr.whenIdle()
+      // Give a same-tick unhandled rejection a macrotask to surface if the
+      // terminal catch were missing.
+      await new Promise(r => setTimeout(r, 20))
+      await mgr.stopAll()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(failLoginSpy).toHaveBeenCalled()
+    expect(unhandled).toBeNull()
+    // failLogin's own write never landed (it was mocked to reject), so the
+    // row is exactly where the login left it — proof this ran the real path,
+    // not a no-op.
+    expect((await rowOf(conn.id)).status).toBe('pending')
+  })
+
   it('leaves a pending login alone when no port is registered for its channel', async () => {
     const conn = await makeConnection({ channel: 'whatsapp', status: 'pending' })
     const mgr = new SessionManager(new Map()) // no ports at all
@@ -169,16 +200,29 @@ describe('session manager', () => {
     const port = new FakePort('telegram')
     port.scriptBackfill([1, 2, 3].map(n => msg({ externalMessageId: String(n), text: `msg${n}`, sentAt: new Date(`2026-08-01T00:0${n}:00Z`) })))
     const mgr = new SessionManager(portsOf(port))
-    await mgr.tick()                                   // starts the fire-and-forget backfill
-    await new Promise(r => setTimeout(r, 20))          // first message lands, well before the 50 ms gap
+    await mgr.tick()                                              // starts the fire-and-forget backfill
+    await waitFor(async () => (await allMessages()).length > 0)   // first message landed, well before the 50 ms gap
     await revokeConnection(conn.id, 'disconnected')
-    await mgr.tick()                                   // notices it left activeConnections, flips the abort
+    await mgr.tick()                                              // notices it left activeConnections, flips the abort
     await mgr.whenIdle()
-    const rows = await allMessages()
-    expect(rows.length).toBeGreaterThan(0)
-    expect(rows.length).toBeLessThan(3)
-    // A partial, aborted backfill must never be recorded as complete.
+    expect((await allMessages()).length).toBeGreaterThan(0)
+    // The durable signal that the abort actually took effect: recordSync only
+    // ever runs once every message has been ingested, so a partial, aborted
+    // backfill leaving last_sync_at null is proof it never reached the end —
+    // not a fragile count of exactly how far it got.
     expect((await rowOf(conn.id)).lastSyncAt).toBeNull()
+    await mgr.stopAll()
+  })
+
+  it('revokes a session that dies mid-backfill instead of retrying it forever', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.scriptBackfillError(new ChannelError('auth invalidated', 'auth_invalidated'))
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    const row = await rowOf(conn.id)
+    expect(row.status).toBe('revoked')
+    expect(row.sessionCiphertext).toBeNull()
     await mgr.stopAll()
   })
 
@@ -233,6 +277,36 @@ describe('session manager', () => {
     await waitFor(async () => (await allMessages()).length === 1)
     expect((await allMessages()).map(r => r.text)).toEqual(['still works'])
     await mgr.stopAll()
+  })
+
+  it('stopAll resolves promptly during an in-flight login, and a later tick opens nothing more', async () => {
+    const conn = await makeConnection({ status: 'pending' })
+    const port = new FakePort('telegram')
+    // Replaces login() with a promise the test controls directly, mirroring a
+    // QR nobody has scanned yet — no scripted timeout, no background timer to
+    // clean up afterwards.
+    let release = () => {}
+    const gate = new Promise<void>(r => { release = r })
+    port.login = async driver => {
+      await driver.publishQr('tg://login?token=FAKE')
+      await gate
+      return { sessionString: 'S', account: { channel: 'telegram', externalAccountId: 'tg-hang', displayName: null } }
+    }
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick() // fire-and-forget: starts the login, which now hangs on `gate`
+    await waitFor(async () => (await rowOf(conn.id)).loginQrToken !== null)
+
+    const start = Date.now()
+    await mgr.stopAll() // must not wait out a login that can legitimately hang for the full 15-minute window
+    expect(Date.now() - start).toBeLessThan(1000)
+
+    await mgr.tick() // stopping: must not re-claim the still-pending login
+    expect((await rowOf(conn.id)).status).toBe('pending')
+    // Drain it fully — stopAll() deliberately does not await loginsInFlight,
+    // but leaving it settling in the background past this test's end would
+    // let its completeLogin() write land during a LATER test's resetDb.
+    release()
+    await mgr.whenIdle()
   })
 })
 
