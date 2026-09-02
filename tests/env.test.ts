@@ -20,6 +20,21 @@ describe('env schema', () => {
   it('defaults DATA_DIR to ./data', () => {
     expect(envSchema.parse({}).DATA_DIR).toBe('./data')
   })
+
+  it('falls back to the project Telegram defaults, and treats blanks as unset', () => {
+    const bare = envSchema.parse({ DATA_DIR: '/tmp/x' })
+    expect(bare.TELEGRAM_API_ID).toBe(0)
+    expect(bare.TELEGRAM_API_HASH).toBe('')
+    const blanked = envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '', TELEGRAM_API_HASH: '' })
+    expect(blanked.TELEGRAM_API_ID).toBe(0)
+    expect(blanked.TELEGRAM_API_HASH).toBe('')
+  })
+
+  it('accepts an owner-supplied Telegram pair', () => {
+    const e = envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '12345', TELEGRAM_API_HASH: 'abc' })
+    expect(e.TELEGRAM_API_ID).toBe(12345)
+    expect(e.TELEGRAM_API_HASH).toBe('abc')
+  })
 })
 
 describe('env proxy', () => {
