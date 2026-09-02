@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs'
+import { errorShape } from '@/lib/log'
 import { env } from '@/lib/env'
 import { getSecretKey } from '@/lib/services/secret-key'
 import { runMigrations } from '@/lib/db/migrate'
@@ -16,4 +17,4 @@ async function main() {
   console.log(`[boot] data dir ${env.DATA_DIR}; migrations applied; bootstrap key ${outcome}`)
 }
 
-main().catch(err => { console.error('[boot] failed:', err); process.exit(1) })
+main().catch(err => { console.error('[boot] failed:', errorShape(err)); process.exit(1) })

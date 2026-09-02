@@ -1,4 +1,4 @@
-import { log } from '@/lib/log'
+import { log, errorShape } from '@/lib/log'
 import { purgeExpiredSessions } from '@/lib/services/sessions'
 
 const TICK_MS = 60_000
@@ -23,10 +23,10 @@ async function main() {
     try {
       const purged = await purgeExpiredSessions()
       if (purged) log.info({ purged }, 'expired sessions purged')
-    } catch (e) { log.error({ err: e }, 'tick failed') }
+    } catch (e) { log.error({ err: errorShape(e) }, 'tick failed') }
     await new Promise<void>(r => { wake = r; timer = setTimeout(r, TICK_MS) })
   }
   process.exit(0)
 }
 
-main().catch(e => { log.error({ err: e }, 'worker crashed'); process.exit(1) })
+main().catch(e => { log.error({ err: errorShape(e) }, 'worker crashed'); process.exit(1) })
