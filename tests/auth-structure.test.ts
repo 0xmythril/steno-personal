@@ -1,23 +1,55 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 
 // A layout protects rendering, not the actions its pages post to. Each
 // exported server action must call requireSession() itself (loginAction is
 // the one exception: it is how a session comes to exist).
-const ACTION_FILES = ['app/login/actions.ts', 'app/settings/actions.ts']
+//
+// The file list is walked, not enumerated, so an actions.ts added by a later
+// milestone is covered the day it lands instead of passing CI unnoticed.
 const EXEMPT = new Set(['loginAction'])
 
+function actionFiles(dir: string): string[] {
+  const found: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) found.push(...actionFiles(full))
+    else if (entry.name === 'actions.ts') found.push(full)
+  }
+  return found.sort()
+}
+
+// The body of the function whose `export async function` starts at `from`,
+// found by matching braces rather than by slicing to the first column-0 `}`
+// (which only held while every inner block stayed indented).
+function functionBody(src: string, from: number): string {
+  const open = src.indexOf('{', from)
+  if (open === -1) return ''
+  let depth = 0
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++
+    else if (src[i] === '}' && --depth === 0) return src.slice(open + 1, i)
+  }
+  return src.slice(open)
+}
+
+const files = actionFiles('app')
+
 describe('server actions re-run the guard', () => {
-  for (const file of ACTION_FILES) {
+  it('finds the action files to check', () => {
+    expect(files).toContain(path.join('app', 'login', 'actions.ts'))
+    expect(files).toContain(path.join('app', 'settings', 'actions.ts'))
+  })
+
+  for (const file of files) {
     it(`${file}`, () => {
-      if (!existsSync(file)) return // settings arrives in Task 9
       const src = readFileSync(file, 'utf8')
-      const blocks = src.split(/export async function /).slice(1)
-      expect(blocks.length).toBeGreaterThan(0)
-      const unguarded = blocks
-        .map(b => ({ name: b.slice(0, b.indexOf('(')), body: b.slice(0, b.indexOf('\n}')) }))
-        .filter(b => !EXEMPT.has(b.name) && !b.body.includes('requireSession()'))
-        .map(b => b.name)
+      const actions = [...src.matchAll(/export async function (\w+)/g)]
+      expect(actions.length).toBeGreaterThan(0)
+      const unguarded = actions
+        .filter(m => !EXEMPT.has(m[1]) && !functionBody(src, m.index).includes('requireSession()'))
+        .map(m => m[1])
       expect(unguarded).toEqual([])
     })
   }
