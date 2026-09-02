@@ -5,7 +5,7 @@ import { connections } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
-import { revokeConnection, PASSWORD_REJECTED } from '@/lib/services/connections'
+import { revokeConnection, submitLoginPassword, getConnection, PASSWORD_REJECTED } from '@/lib/services/connections'
 import {
   claimPendingLogins, activeConnections, publishQr, requestPassword,
   takeLoginSecret, recordPasswordRejected, completeLogin, failLogin, recordSync,
@@ -121,5 +121,16 @@ describe('login handshake (worker-facing)', () => {
     expect(decryptSecret(rows[0].sessionCiphertext!)).toBe('S')
     await recordSync(conn.id)
     expect((await rowOf(conn.id)).lastSyncAt).toBeInstanceOf(Date)
+  })
+
+  it('a portal-submitted password flows through the worker and a rejection surfaces back on the portal', async () => {
+    const conn = await makeConnection({ status: 'pending' })
+    await requestPassword(conn.id)
+    expect(await submitLoginPassword(conn.id, 'pw')).toBe(true)
+    expect(await takeLoginSecret(conn.id)).toBe('pw')
+    await recordPasswordRejected(conn.id)
+    const status = await getConnection(conn.id)
+    expect(status!.login!.passwordRejected).toBe(true)
+    expect(status!.login!.needsPassword).toBe(true)
   })
 })

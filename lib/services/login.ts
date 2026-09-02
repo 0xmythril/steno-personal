@@ -41,6 +41,9 @@ export async function requestPassword(id: string): Promise<void> {
 
 // Decrypt the owner-supplied 2FA password ONCE: read it, null it immediately
 // (used or not — it is single-use), and ignore anything stale.
+// Not wrapped in a transaction on purpose: exactly one worker process runs,
+// and the SessionManager drives at most one login per connection
+// (loginsInFlight), so two concurrent takes cannot happen.
 export async function takeLoginSecret(id: string): Promise<string | null> {
   const [row] = await db.select({ ct: connections.loginSecretCiphertext, at: connections.loginSecretAt })
     .from(connections).where(and(eq(connections.id, id), isNull(connections.revokedAt)))
@@ -65,28 +68,20 @@ export async function recordPasswordRejected(id: string): Promise<void> {
 // login. A revoked or vanished row must never be resurrected — an unguarded
 // UPDATE would flip a revoked row back to active and hand it a fresh session
 // key, undoing the revocation. Zero matched rows is reported as 'gone'.
+// 'duplicate' is unreachable in single-user mode (one live connection per
+// channel); kept in the union so a future multi-account mode can produce it
+// without a signature change.
 export async function completeLogin(id: string, sessionString: string, account: ChannelAccount): Promise<'ok' | 'duplicate' | 'gone'> {
-  let updated: Array<{ id: string }>
-  try {
-    updated = await db.update(connections).set({
-      status: 'active', externalAccountId: account.externalAccountId, displayName: account.displayName,
-      sessionCiphertext: encryptSecret(sessionString), lastError: null,
-      loginQrToken: null, loginQrAt: null, loginNeedsPassword: false,
-      loginSecretCiphertext: null, loginSecretAt: null,
-    }).where(and(
-      eq(connections.id, id),
-      eq(connections.status, 'pending'),
-      isNull(connections.revokedAt),
-    )).returning({ id: connections.id })
-  } catch (err) {
-    // The only unique constraint this write can trip is connections_live_channel
-    // (one live row per channel), which means another attempt won the slot
-    // first. Report it as a duplicate so the worker fails this attempt with a
-    // reason instead of crashing the tick.
-    const code = (err as { code?: string; cause?: { code?: string } })?.code ?? (err as { cause?: { code?: string } })?.cause?.code
-    if (typeof code === 'string' && code.startsWith('SQLITE_CONSTRAINT')) return 'duplicate'
-    throw err
-  }
+  const updated = await db.update(connections).set({
+    status: 'active', externalAccountId: account.externalAccountId, displayName: account.displayName,
+    sessionCiphertext: encryptSecret(sessionString), lastError: null,
+    loginQrToken: null, loginQrAt: null, loginNeedsPassword: false,
+    loginSecretCiphertext: null, loginSecretAt: null,
+  }).where(and(
+    eq(connections.id, id),
+    eq(connections.status, 'pending'),
+    isNull(connections.revokedAt),
+  )).returning({ id: connections.id })
   return updated.length === 0 ? 'gone' : 'ok'
 }
 
