@@ -1,5 +1,15 @@
 import { Document, MemoryStorage, Photo, TelegramClient, tl } from '@mtcute/node'
 import type { Message, Peer } from '@mtcute/node'
+// mtcute's own TL codec, the same pair its session storage uses:
+// serializeObject() is TlBinaryWriter.serializeObject(__tlWriterMap, obj) and
+// deserializeObject() is TlBinaryReader.deserializeObject(__tlReaderMap, data)
+// (node_modules/@mtcute/core/utils/binary/serialization.js). It reaches us
+// through a package export path rather than a deep file import:
+// @mtcute/node/utils.js re-exports @mtcute/core/utils.js, which re-exports
+// that module. The deep paths the maps live at (@mtcute/core/tl/binary/*.js)
+// are NOT in @mtcute/core's package.json "exports", so importing them
+// directly would fail to resolve.
+import { deserializeObject, serializeObject } from '@mtcute/node/utils.js'
 import { DEVICE_MODEL } from '@/lib/channels/device-model'
 import { errorShape, log } from '@/lib/log'
 import {
@@ -24,7 +34,17 @@ const DEAD_SESSION_ERRORS = [
   'AUTH_KEY_DUPLICATED', 'SESSION_EXPIRED',
 ] as const
 
+// Every RPC this file makes is on the path of a manager tick, and mtcute's
+// own default is `timeout: Infinity`. An unbounded call would wedge the tick
+// (and, for ping, the liveness check that is supposed to notice trouble)
+// behind a connection that is neither answering nor failing.
+const STATUS_CALL_TIMEOUT_MS = 15_000
+
 function classify(e: unknown): ChannelError {
+  // Already classified — a ChannelError this file raised on purpose. Passing
+  // it through classify() again would flatten its kind to 'other', which is
+  // exactly what the wrappers around backfill() and downloadMedia() would do.
+  if (e instanceof ChannelError) return e
   if (DEAD_SESSION_ERRORS.some(text => tl.RpcError.is(e, text))) {
     return new ChannelError('auth invalidated', 'auth_invalidated')
   }
@@ -74,6 +94,31 @@ function mediaMeta(msg: Message): IncomingMessage['media'] {
   }
 }
 
+// IncomingMessage.raw is stored as a JSON column and comes back to
+// downloadMedia() only after JSON.stringify -> JSON.parse. A raw TL message
+// does not survive that trip: `accessHash` is a Long (an object with high/low
+// halves) and `fileReference` is a Uint8Array, and JSON turns both into shapes
+// the file-download path cannot use — so `new Document(media.document)` would
+// be handed garbage and the download could never work. Storing mtcute's own
+// binary TL encoding, base64'd, keeps the message byte-exact across the
+// database and hands back a real tl.RawMessage on the other side.
+export type TelegramRaw = { tl: string }
+
+export function encodeTlRaw(obj: tl.TlObject): TelegramRaw {
+  return { tl: Buffer.from(serializeObject(obj)).toString('base64') }
+}
+
+// Returns null for anything that is not one of our own encoded blobs — a row
+// written by another port, or (M1 being the first release) nothing at all.
+// The return type is deserializeObject's own (it can also yield an `mtp.*`
+// object, which encodeTlRaw never produces) so that no cast has to stand in
+// for it; callers narrow on `._` as usual.
+export function decodeTlRaw(raw: unknown): ReturnType<typeof deserializeObject> | null {
+  const encoded = (raw as TelegramRaw | null | undefined)?.tl
+  if (typeof encoded !== 'string') return null
+  return deserializeObject(new Uint8Array(Buffer.from(encoded, 'base64')))
+}
+
 function toIncoming(msg: Message, selfId: string): IncomingMessage {
   return {
     externalChatId: String(msg.chat.id), // marked peer id — stable per chat
@@ -92,7 +137,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     type: messageType(msg),
     text: msg.text || null,
     media: mediaMeta(msg),
-    raw: msg.raw,
+    raw: encodeTlRaw(msg.raw),
   }
 }
 
@@ -101,7 +146,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
 // it is only ever called with offline: true; going back online is never called
 // anywhere in this file.
 async function setInvisible(tg: TelegramClient): Promise<void> {
-  await tg.call({ _: 'account.updateStatus', offline: true })
+  await tg.call({ _: 'account.updateStatus', offline: true }, { timeout: STATUS_CALL_TIMEOUT_MS })
 }
 
 function newClient(opts: { apiId: number; apiHash: string }): TelegramClient {
@@ -124,7 +169,13 @@ export class MtcuteTelegramPort implements ChannelPort {
     const timer = setTimeout(() => abort.abort(), opts.timeoutMs)
     try {
       const self = await tg.start({
-        qrCodeHandler: (url: string) => { void driver.publishQr(url) },
+        // Never `void` this: the driver writes the QR to the database, and a
+        // dropped promise would surface as an unhandled rejection (fatal to
+        // the worker process) instead of a logged, survivable miss. The login
+        // itself continues — mtcute re-issues the URL before it expires.
+        qrCodeHandler: (url: string) => {
+          driver.publishQr(url).catch(e => log.error({ err: errorShape(e), connectionId: opts.connectionId }, 'could not publish the login QR'))
+        },
         // Invoked only when Telegram demands the 2FA password.
         password: async () => {
           await driver.requestPassword()
@@ -183,8 +234,14 @@ export class MtcuteTelegramPort implements ChannelPort {
       // state.
       const me = await tg.getMe()
       await tg.notifyLoggedIn(me.raw)
+      // mtcute reports background failures (an update-loop fault, a transport
+      // error) through this emitter rather than by rejecting anything we
+      // await. With no subscriber they are invisible; the manager still has
+      // ping() to decide whether the session is dead, so this is a log, not a
+      // control path.
+      tg.onError.add(e => log.error({ err: errorShape(e), connectionId: opts.connectionId }, 'mtcute client error'))
       await setInvisible(tg).catch(e => log.error({ err: errorShape(e), connectionId: opts.connectionId }, 'could not set the session offline'))
-      return new MtcuteSession(tg, String(me.id))
+      return new MtcuteSession(tg, String(me.id), opts.connectionId)
     } catch (e) {
       // Never leak a client: the manager retries open() every tick for a
       // connection it could not open, so a failure path without cleanup would
@@ -196,9 +253,33 @@ export class MtcuteTelegramPort implements ChannelPort {
 }
 
 class MtcuteSession implements ChannelSession {
-  constructor(private tg: TelegramClient, private selfId: string) {}
+  constructor(private tg: TelegramClient, private selfId: string, private connectionId: string) {}
+
+  // An exception thrown out of an update callback unwinds into mtcute's
+  // update loop, where it would take down the whole session (or the process)
+  // over one malformed message. One update is worth dropping; the loop is not.
+  private guarded(what: string, fn: () => void): void {
+    try {
+      fn()
+    } catch (e) {
+      log.error({ err: errorShape(e), connectionId: this.connectionId, update: what }, 'update handler failed; dropping the update')
+    }
+  }
 
   async *backfill(opts: BackfillOpts, shouldContinue: () => boolean = () => true): AsyncIterable<IncomingMessage> {
+    try {
+      yield* this.iterateBackfill(opts, shouldContinue)
+    } catch (e) {
+      // A backfill is a long run of network calls, so it is the likeliest
+      // place for the phone to revoke us mid-flight. Unclassified, that would
+      // reach the manager as a raw mtcute RpcError and be treated as a
+      // transient fault, retried forever instead of marking the connection
+      // revoked.
+      throw classify(e)
+    }
+  }
+
+  private async *iterateBackfill(opts: BackfillOpts, shouldContinue: () => boolean): AsyncIterable<IncomingMessage> {
     const since = Date.now() - opts.sinceDays * 86_400_000
     let dialogs = 0
     // iterDialogs defaults to archived: 'exclude'. Chats in the owner's
@@ -225,42 +306,51 @@ class MtcuteSession implements ChannelSession {
       // could never fire. A count that reached the cap is how truncation is
       // detected, and it is logged rather than left silent.
       if (count === opts.maxPerChat) {
-        log.warn({ cap: opts.maxPerChat }, 'backfill hit the per-chat message cap; older history in that chat was not archived')
+        log.warn({ cap: opts.maxPerChat, connectionId: this.connectionId }, 'backfill hit the per-chat message cap; older history in that chat was not archived')
       }
     }
     if (dialogs === opts.maxDialogs) {
-      log.warn({ cap: opts.maxDialogs }, 'backfill hit the dialog cap; some chats were not archived')
+      log.warn({ cap: opts.maxDialogs, connectionId: this.connectionId }, 'backfill hit the dialog cap; some chats were not archived')
     }
   }
 
   onMessage(cb: (m: IncomingMessage) => void): void {
-    this.tg.onNewMessage.add(msg => cb(toIncoming(msg, this.selfId)))
+    this.tg.onNewMessage.add(msg => this.guarded('message', () => cb(toIncoming(msg, this.selfId))))
   }
   onEdit(cb: (m: IncomingMessage) => void): void {
-    this.tg.onEditMessage.add(msg => cb(toIncoming(msg, this.selfId)))
+    this.tg.onEditMessage.add(msg => this.guarded('edit', () => cb(toIncoming(msg, this.selfId))))
   }
   onDelete(cb: (ref: { externalChatId?: string; externalMessageId: string }) => void): void {
-    this.tg.onDeleteMessage.add(upd => {
+    this.tg.onDeleteMessage.add(upd => this.guarded('delete', () => {
       const externalChatId = upd.channelId ? String(upd.channelId) : undefined
       for (const id of upd.messageIds) cb({ externalChatId, externalMessageId: String(id) })
-    })
+    }))
   }
 
   // Reads the attachment off the stored raw TL message. Nothing is uploaded,
   // reuploaded, or marked; this is a pure file read. M4's drain is the only
   // caller.
   async downloadMedia(raw: unknown): Promise<{ data: Buffer; mimeType: string | null }> {
-    const media = (raw as tl.RawMessage | undefined)?.media
-    if (!media) throw new ChannelError('message carries no media', 'other')
-    if (media._ === 'messageMediaPhoto' && media.photo?._ === 'photo') {
-      const data = await this.tg.downloadAsBuffer(new Photo(media.photo))
-      return { data: Buffer.from(data), mimeType: 'image/jpeg' }
+    try {
+      const decoded = decodeTlRaw(raw)
+      if (decoded?._ !== 'message') throw new ChannelError('stored message is not a downloadable Telegram message', 'other')
+      const media = decoded.media
+      if (!media) throw new ChannelError('message carries no media', 'other')
+      if (media._ === 'messageMediaPhoto' && media.photo?._ === 'photo') {
+        const data = await this.tg.downloadAsBuffer(new Photo(media.photo))
+        return { data: Buffer.from(data), mimeType: 'image/jpeg' }
+      }
+      if (media._ === 'messageMediaDocument' && media.document?._ === 'document') {
+        const data = await this.tg.downloadAsBuffer(new Document(media.document))
+        return { data: Buffer.from(data), mimeType: media.document.mimeType ?? null }
+      }
+      throw new ChannelError(`media ${media._} is not downloadable`, 'other')
+    } catch (e) {
+      // Same reasoning as backfill: a download is a network call like any
+      // other, and a dead session must not reach the caller as a raw RpcError.
+      // classify() returns the ChannelErrors raised just above untouched.
+      throw classify(e)
     }
-    if (media._ === 'messageMediaDocument' && media.document?._ === 'document') {
-      const data = await this.tg.downloadAsBuffer(new Document(media.document))
-      return { data: Buffer.from(data), mimeType: media.document.mimeType ?? null }
-    }
-    throw new ChannelError(`media ${media._} is not downloadable`, 'other')
   }
 
   // The client's teardown method is destroy(): "Destroy the client and all its
