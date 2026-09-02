@@ -22,13 +22,24 @@ if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
   const boot = spawnSync('node', ['node_modules/tsx/dist/cli.mjs', 'scripts/boot.ts'], { stdio: 'inherit', env: process.env })
   if (boot.status !== 0) { console.error('[supervisor] boot failed; refusing to start'); process.exit(boot.status ?? 1) }
 
+  let shuttingDown = false
   const children = []
+  let remaining = procs.length
   for (const [name, cmd, args] of procs) {
     const p = spawn(cmd, args, { stdio: 'inherit', env: process.env })
     children.push(p)
-    p.on('exit', code => { console.error(`[supervisor] ${name} exited with ${code}; shutting down`); process.exit(code ?? 1) })
+    p.on('exit', code => {
+      if (shuttingDown) {
+        console.error(`[supervisor] ${name} stopped`)
+        remaining -= 1
+        if (remaining <= 0) process.exit(0)
+        return
+      }
+      console.error(`[supervisor] ${name} exited with ${code}; shutting down`)
+      process.exit(code ?? 1)
+    })
   }
   for (const sig of ['SIGTERM', 'SIGINT']) {
-    process.on(sig, () => { for (const c of children) c.kill(sig) })
+    process.on(sig, () => { shuttingDown = true; for (const c of children) c.kill(sig) })
   }
 }
