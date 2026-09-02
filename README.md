@@ -31,6 +31,11 @@ See `.env.example`. `DATA_DIR` holds the database, media, and WhatsApp auth
 state. `SECRET_KEY` encrypts secrets at rest and is generated into the volume
 if unset. Lost every key? `docker compose exec app npm run mint-key -- recovery`.
 
+On Railway, attach a volume mounted at `/data` before the first deploy.
+Without one, every redeploy discards the database and the secret key, so
+every key you minted stops working and a new bootstrap key is printed in the
+deploy log.
+
 ## Licence
 
 AGPL-3.0. See LICENSE.
