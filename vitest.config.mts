@@ -8,5 +8,5 @@ export default defineConfig({
     pool: 'forks', // one process per file: each gets its own DATA_DIR and its own better-sqlite3 handle
     env: { NODE_ENV: 'test' },
   },
-  resolve: { alias: { '@': path.resolve(__dirname) } },
+  resolve: { alias: { '@': path.resolve(import.meta.dirname) } },
 })
