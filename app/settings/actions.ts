@@ -7,6 +7,7 @@ import { requireSession, endSession, isHttps } from '@/lib/auth'
 import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
+import { revokePasskey, revokeAllPasskeys } from '@/lib/services/passkeys'
 
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
@@ -99,6 +100,27 @@ export async function revokeAllKeysAction() {
   jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   await endSession()
   redirect('/login')
+}
+
+// Passkeys. No flash cookies here: nothing about a passkey is a secret the
+// page has to show once.
+
+export async function revokePasskeyAction(formData: FormData) {
+  const session = await requireSession()
+  const passkeyId = String(formData.get('passkeyId') ?? '')
+  await revokePasskey(passkeyId)
+  // Removing the passkey this browser logged in with ends this session too.
+  if (passkeyId === session.passkeyId) { await endSession(); redirect('/login') }
+  revalidatePath('/settings')
+}
+
+// Ends the current session only when a passkey opened it: a key session
+// that removes every passkey has nothing to lose.
+export async function revokeAllPasskeysAction() {
+  const session = await requireSession()
+  await revokeAllPasskeys()
+  if (session.via === 'passkey') { await endSession(); redirect('/login') }
+  revalidatePath('/settings')
 }
 
 // Enrichment (M4). Every one of these re-runs the guard, and none of them

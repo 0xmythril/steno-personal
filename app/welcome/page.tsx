@@ -4,6 +4,7 @@ import { requireSession } from '@/lib/auth'
 import { FIRST_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
 import { SaveKeyGate } from './save-key-gate'
+import { RegisterPasskey } from '@/app/register-passkey'
 import { welcomeDoneAction } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -41,6 +42,14 @@ export default async function WelcomePage() {
               agent. Logged out, nobody can show it to you: the way back in is to pair the same phone again from the login
               page, or a key minted by whoever runs this instance.
             </p>
+          </section>
+          <section className="card">
+            <h2>Add a passkey for this browser</h2>
+            <p>
+              Next time, log in with Touch ID, Windows Hello, or your phone instead of pasting the key. Optional — you can
+              add one later from Settings. A passkey only logs into this portal; agents keep using keys.
+            </p>
+            <RegisterPasskey />
           </section>
         </div>
       </main>
