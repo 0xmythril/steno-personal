@@ -9,7 +9,7 @@ import { MAX_MEDIA_BYTES, extForMime, getServableMedia, mediaFilePath } from '@/
 // to download as an opaque octet-stream.
 const INLINE_SAFE = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-  'video/mp4', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/wav', 'application/pdf',
+  'video/mp4', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/wav',
 ])
 
 // Cookie OR bearer: the portal renders these in a transcript, and an agent

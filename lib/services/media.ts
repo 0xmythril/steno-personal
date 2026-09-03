@@ -30,9 +30,23 @@ export function mediaDir(): string {
 
 // storage_path is stored RELATIVE to DATA_DIR/media so the database survives
 // the volume being mounted somewhere else. This is the only place the two
-// halves are joined.
+// halves are joined. storagePath is always server-generated (`${id}.${ext}`,
+// never a sender-controlled string), but this is the one chokepoint every
+// caller — the drain's own write, the route's read, deleteConnection's
+// unlink — goes through, so it refuses anything shaped like an escape
+// (a separator, `..`) outright, and re-checks the resolved path actually
+// lands inside DATA_DIR/media before ever touching the filesystem with it.
 export function mediaFilePath(storagePath: string): string {
-  return path.join(mediaDir(), storagePath)
+  if (/[\\/]/.test(storagePath) || storagePath.includes('..')) {
+    throw new Error('unsafe media storage path')
+  }
+  const dir = mediaDir()
+  const resolved = path.join(dir, storagePath)
+  const relative = path.relative(dir, resolved)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('unsafe media storage path')
+  }
+  return resolved
 }
 
 // Called by the session manager after ingest inserts a NEW message that

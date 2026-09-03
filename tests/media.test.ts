@@ -23,6 +23,14 @@ describe('media drain', () => {
     expect(extForMime(null)).toBe('bin')
   })
 
+  it('mediaFilePath refuses a storage path that tries to escape DATA_DIR/media', () => {
+    expect(() => mediaFilePath('../x')).toThrow()
+    expect(() => mediaFilePath('../../etc/passwd')).toThrow()
+    expect(() => mediaFilePath('sub/x.jpg')).toThrow() // a separator, even without '..'
+    expect(() => mediaFilePath('a\\b')).toThrow() // a backslash separator too
+    expect(mediaFilePath('x.jpg')).toBe(`${mediaDir()}/x.jpg`) // the ordinary shape still resolves
+  })
+
   it('enqueues one pending row per message, carrying the declared facts', async () => {
     const connection = await makeConnection()
     const chat = await makeChat(connection.id)

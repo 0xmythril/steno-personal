@@ -212,6 +212,17 @@ describe('connections service', () => {
     expect((await db.select().from(media)).map(m => m.id)).toEqual([survivor.media.id])
   })
 
+  it('deleteConnection still deletes the connection row when a media file fails to unlink', async () => {
+    const fixture = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'stubborn.jpg' })
+    // A directory sits where the file should be: rm(..., { force: true })
+    // rejects with EISDIR (not ENOENT, which force swallows), so this
+    // exercises the one failure mode force alone does not cover.
+    mkdirSync(mediaFilePath('stubborn.jpg'), { recursive: true })
+
+    expect(await deleteConnection(fixture.connection.id)).toBe(true)
+    expect(await db.select().from(connections).where(eq(connections.id, fixture.connection.id))).toEqual([])
+  })
+
   it('maps the partial-unique-index race to already_connected, top-level or under cause, and passes through anything else', () => {
     expect(mapInsertError({ code: 'SQLITE_CONSTRAINT_UNIQUE' })).toBe('already_connected')
     expect(mapInsertError({ message: 'wrapped', cause: { code: 'SQLITE_CONSTRAINT_UNIQUE' } })).toBe('already_connected')
