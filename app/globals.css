@@ -77,8 +77,12 @@ nav.top .session button { height: 30px; padding: 0 10px; font-size: 13px; }
 .page-head .sub { font-size: 13px; color: var(--muted); }
 
 /* Buttons. A bare <button> is secondary; opt in to primary or danger. */
-button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--hairline); font: 500 14px var(--sans); cursor: pointer; background: transparent; color: var(--ink); white-space: nowrap; text-decoration: none; }
+/* A bare button is secondary: a well fill and a hairline edge so it reads as a
+   control on both palettes; hover firms the edge. Opt in to primary or danger. */
+button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--hairline); font: 500 14px var(--sans); cursor: pointer; background: var(--well); color: var(--ink); white-space: nowrap; text-decoration: none; }
+button:hover:not([disabled]), .btn:hover { border-color: var(--muted); }
 button.primary, .btn.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: transparent; }
+button.primary:hover:not([disabled]) { border-color: transparent; opacity: 0.92; }
 button.danger, .btn.danger { color: var(--bad); }
 button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
@@ -114,6 +118,10 @@ a.chip:hover { text-decoration: none; }
 .banner.bad::before { background: var(--bad); }
 .banner strong { display: block; }
 .two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+/* A 1fr track is minmax(auto, 1fr): without this a <pre> or a token field sets
+   the column's floor at its longest line and the card runs off the page. */
+.two-up > * { min-width: 0; }
+.card { min-width: 0; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 
 /* Forms */
@@ -129,6 +137,19 @@ label.check:has(input[disabled]) { color: var(--muted); }
 .row .field { flex: 1; min-width: 200px; }
 
 /* Keys and snippets */
+details.snippet { border: 1px solid var(--hairline); border-radius: 8px; background: var(--card); }
+details.snippet summary { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; list-style: none; font-size: 14px; font-weight: 600; color: var(--ink); }
+details.snippet summary::-webkit-details-marker { display: none; }
+details.snippet summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); flex: none; }
+details.snippet[open] summary::before { transform: rotate(45deg); }
+details.snippet summary .sum { flex: 1; min-width: 0; }
+details.snippet summary .hint { font-weight: 400; font-size: 12px; color: var(--muted); }
+details.snippet[open] summary { border-bottom: 1px solid var(--hairline); }
+details.snippet .snippet-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+details.snippet .snippet-body p { font-size: 13px; }
+details.snippet pre { border: 0; border-radius: 6px; }
+.row > .auto-submit { flex: 1; min-width: 200px; display: flex; }
+.auto-submit > .field { flex: 1; }
 .token { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--well); font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .token code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: 0; padding: 0; }
 
