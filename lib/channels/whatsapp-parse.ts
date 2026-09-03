@@ -32,7 +32,6 @@ const WRAPPER_KEYS = [
   'viewOnceMessageV2Extension', 'documentWithCaptionMessage', 'editedMessage',
 ] as const
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export function unwrapContent(content: any): any {
   for (let i = 0; i < 5; i++) {
