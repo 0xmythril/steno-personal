@@ -1,10 +1,11 @@
 import { z } from 'zod'
+import { withErrorBoundary } from '@/lib/api'
 import { requireCookieAuth } from '@/lib/auth'
 import { submitLoginPassword } from '@/lib/services/connections'
 
 const bodySchema = z.object({ password: z.string().min(1).max(512) })
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withErrorBoundary(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const denied = await requireCookieAuth(req)
   if (denied) return denied
   const { id } = await params
@@ -15,4 +16,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const ok = await submitLoginPassword(id, parsed.data.password)
   if (!ok) return Response.json({ error: 'not_pending' }, { status: 409 })
   return Response.json({ ok: true })
-}
+})

@@ -4,6 +4,7 @@ import { listActiveAccessKeys, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/servic
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
+import { ConnectAgent } from './connect-agent'
 import { mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -95,6 +96,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <button type="submit" className="danger">Revoke all keys and log out</button>
         </form>
       </section>
+
+      <ConnectAgent rawKey={minted?.rawKey ?? null} />
     </main>
   )
 }

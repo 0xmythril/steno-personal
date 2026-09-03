@@ -96,28 +96,29 @@ describe('connections API', () => {
     expect((await passwordRoute.POST(anon(), params(conn.id))).status).toBe(401)
   })
 
-  it('refuses a bearer key on every route that changes a connection', async () => {
+  it('refuses a bearer key on every /api/connections route, reads included', async () => {
     // An access key is the credential the owner pastes into agents (M3), and
-    // those agents read attacker-controlled chat text. It may read a
-    // connection's status; it may not create, disconnect, delete, or answer a
-    // 2FA prompt. 403, not 401: the credential is valid, the route is not.
+    // those agents read attacker-controlled chat text. It may not create,
+    // disconnect, delete, or answer a 2FA prompt — nor read the status, whose
+    // payload carries the pairing QR: that QR is the credential for linking a
+    // device to the channel account, so a read key must never see it. 403,
+    // not 401: the credential is valid, the route is not.
     const k = await key()
     const conn = await makeConnection({ status: 'active' })
     const forbidden = [
       await createRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ channel: 'telegram' }) })),
+      await idRoute.GET(bearer(k.rawKey), params(conn.id)),
       await idRoute.DELETE(bearer(k.rawKey, { method: 'DELETE' }), params(conn.id)),
       await revokeRoute.POST(bearer(k.rawKey, { method: 'POST' }), params(conn.id)),
       await passwordRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ password: 'hunter2' }) }), params(conn.id)),
     ]
-    expect(forbidden.map(r => r.status)).toEqual([403, 403, 403, 403])
+    expect(forbidden.map(r => r.status)).toEqual([403, 403, 403, 403, 403])
     for (const r of forbidden) expect(await r.json()).toEqual({ error: 'cookie_session_required' })
     // Nothing was created, revoked, deleted, or stored.
     const [row] = await db.select().from(connections).where(eq(connections.id, conn.id))
     expect(row.status).toBe('active')
     expect(row.loginSecretCiphertext).toBeNull()
     expect(await db.select().from(connections)).toHaveLength(1)
-    // …and the read route still answers a bearer key.
-    expect((await idRoute.GET(bearer(k.rawKey), params(conn.id))).status).toBe(200)
   })
 
   it('creates a connection, then reports 409 while one is active', async () => {
@@ -139,18 +140,18 @@ describe('connections API', () => {
   })
 
   it('serves a status payload with the QR but no ciphertext, and 404s an unknown id', async () => {
-    const k = await key()
+    await signedIn()
     const conn = await makeConnection({ status: 'pending' })
     await db.update(connections).set({
       loginQrToken: 'tg://login?token=abc', sessionCiphertext: 'SESSION_SECRET', loginSecretCiphertext: 'PW_SECRET',
     }).where(eq(connections.id, conn.id))
-    const res = await idRoute.GET(bearer(k.rawKey), params(conn.id))
+    const res = await idRoute.GET(cookie(), params(conn.id))
     expect(res.status).toBe(200)
     const body = await res.text()
     expect(body).toContain('tg://login?token=abc')
     expect(body).not.toContain('SESSION_SECRET')
     expect(body).not.toContain('PW_SECRET')
-    expect((await idRoute.GET(bearer(k.rawKey), params('nope'))).status).toBe(404)
+    expect((await idRoute.GET(cookie(), params('nope'))).status).toBe(404)
   })
 
   it('revokes, and refuses to revoke twice', async () => {
