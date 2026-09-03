@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { randomUUID } from 'node:crypto'
 
 const now = () => new Date()
@@ -28,3 +28,62 @@ export const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('sessions_key_idx').on(t.keyId)])
+
+// One row per connection attempt on one channel. A row is LIVE while
+// revoked_at IS NULL; the partial unique index in 0001_channels.sql allows
+// exactly one live row per channel, which is what "one person, one account
+// per channel" means with no users table. Revoked rows are kept: the archive
+// they produced outlives the session that produced it.
+export const connections = sqliteTable('connections', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  status: text('status', { enum: ['pending', 'active', 'revoked', 'error'] }).notNull().default('pending'),
+  externalAccountId: text('external_account_id'),
+  displayName: text('display_name'),
+  // AES-GCM. Telegram: the mtcute session string. WhatsApp (M2): the auth
+  // directory name — encrypted too, so the column means exactly one thing.
+  sessionCiphertext: text('session_ciphertext'),
+  loginQrToken: text('login_qr_token'),
+  loginQrAt: integer('login_qr_at', { mode: 'timestamp_ms' }),
+  loginNeedsPassword: integer('login_needs_password', { mode: 'boolean' }).notNull().default(false),
+  loginSecretCiphertext: text('login_secret_ciphertext'),
+  loginSecretAt: integer('login_secret_at', { mode: 'timestamp_ms' }),
+  lastError: text('last_error'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+  lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
+})
+
+export const chats = sqliteTable('chats', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
+  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  externalChatId: text('external_chat_id').notNull(),
+  kind: text('kind', { enum: ['dm', 'group', 'channel'] }).notNull(),
+  title: text('title'),
+  lastMessageAt: integer('last_message_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [uniqueIndex('chats_connection_chat_unique').on(t.connectionId, t.externalChatId)])
+
+// Message identity is (chat_id, external_message_id), first-writer-wins: a
+// backfill that replays what live ingest already stored is a no-op. deleted_at
+// is a tombstone kept for dedupe only — no read path ever returns the row.
+export const messages = sqliteTable('messages', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  externalMessageId: text('external_message_id').notNull(),
+  senderExternalId: text('sender_external_id'),
+  senderName: text('sender_name'),
+  fromOwner: integer('from_owner', { mode: 'boolean' }).notNull().default(false),
+  sentAt: integer('sent_at', { mode: 'timestamp_ms' }).notNull(),
+  type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'system', 'unknown'] }).notNull(),
+  text: text('text'),
+  hasMedia: integer('has_media', { mode: 'boolean' }).notNull().default(false),
+  editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
+  deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  raw: text('raw', { mode: 'json' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [
+  uniqueIndex('messages_external_unique').on(t.chatId, t.externalMessageId),
+  index('messages_chat_sent_idx').on(t.chatId, t.sentAt),
+])

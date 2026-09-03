@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import 'dotenv/config'
+import { TELEGRAM_DEFAULT_API_ID, TELEGRAM_DEFAULT_API_HASH } from '@/lib/channels/telegram-defaults'
 
 // Railway clears a variable to '' rather than removing it, and .env.example
 // ships bare keys. Every optional var goes through this so '' means unset.
@@ -10,6 +11,10 @@ export const envSchema = z.object({
   PORT: blank(z.coerce.number().int().positive().optional()).default(3000),
   SECRET_KEY: blank(z.string().min(32, 'SECRET_KEY must be at least 32 characters').optional()),
   LOG_LEVEL: blank(z.enum(['trace', 'debug', 'info', 'warn', 'error']).optional()).default('info'),
+  // The project defaults are empty until the owner registers the app; an
+  // api_id of 0 and an empty hash both read as "unset" to the worker.
+  TELEGRAM_API_ID: blank(z.coerce.number().int().nonnegative().optional()).default(TELEGRAM_DEFAULT_API_ID),
+  TELEGRAM_API_HASH: blank(z.string().optional()).default(TELEGRAM_DEFAULT_API_HASH),
 })
 
 export type Env = z.infer<typeof envSchema>

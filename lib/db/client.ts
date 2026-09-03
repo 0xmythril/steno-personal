@@ -13,6 +13,11 @@ export function openDatabase(file: string) {
   sqlite.pragma('journal_mode = WAL')   // web + worker share the file safely
   sqlite.pragma('foreign_keys = ON')     // cascades depend on this
   sqlite.pragma('busy_timeout = 5000')   // wait instead of SQLITE_BUSY under the two-process write pattern
+  // Without this, SQLite does NOT fire row triggers for deletes performed by
+  // ON DELETE CASCADE. Deleting a connection cascades chats -> messages, and
+  // the messages AFTER DELETE trigger is what prunes search_index; skipping it
+  // would leave orphan FTS rows that match forever.
+  sqlite.pragma('recursive_triggers = ON')
   return drizzle(sqlite, { schema })
 }
 
