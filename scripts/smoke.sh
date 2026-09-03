@@ -60,6 +60,11 @@ wait_healthy() {
 
 status_of() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 
+# The container log as a string. Grepping `docker logs` through a pipe under
+# pipefail is a race: `grep -q` exits on its first match, `docker logs` takes a
+# SIGPIPE, and a line that IS there reads as a failure. Capture, then grep.
+container_logs() { docker logs "$NAME" 2>&1; }
+
 echo "==> build $IMAGE"
 docker build -t "$IMAGE" . || fail "docker build failed — see the build output above"
 
@@ -69,8 +74,9 @@ wait_healthy boot
 curl -sf "${BASE}/api/health" | grep -q '"ok":true' || fail "health payload is not {\"ok\":true}"
 
 echo "==> read the requested key from the log"
-docker logs "$NAME" 2>&1 | grep -q 'access key "smoke"' || fail "no STENO_MINT_KEY banner in the container log"
-KEY="$(docker logs "$NAME" 2>&1 | grep -o 'sp_[A-Za-z0-9_-]\{20,\}' | head -1)"
+logs="$(container_logs)"
+grep -q 'access key "smoke"' <<<"$logs" || fail "no STENO_MINT_KEY banner in the container log"
+KEY="$(grep -o 'sp_[A-Za-z0-9_-]\{20,\}' <<<"$logs" | head -1)"
 [ -n "$KEY" ] || fail "no key in the container log"
 
 echo "==> a key exists, so setup is closed"
@@ -105,7 +111,7 @@ echo "$body" | grep -q '"chats"' || fail "bearer response has no chats: $body"
 echo "==> restart keeps the volume and prints no second key"
 docker restart "$NAME" >/dev/null || fail "docker restart failed"
 wait_healthy "the restart"
-count="$(docker logs "$NAME" 2>&1 | grep -c 'access key "smoke"' || true)"
+count="$(grep -c 'access key "smoke"' <<<"$(container_logs)" || true)"
 [ "$count" = "1" ] || fail "the STENO_MINT_KEY banner appeared $count times, expected 1"
 curl -sf -H "Authorization: Bearer ${KEY}" "${BASE}/api/chats" >/dev/null \
   || fail "the original key stopped working after a restart"
@@ -114,8 +120,9 @@ echo "==> STENO_RESET on the same volume empties it and reopens setup"
 docker rm -f "$NAME" >/dev/null || fail "could not remove the container before the reset run"
 run_container -e STENO_RESET=smoke
 wait_healthy "the reset boot"
-docker logs "$NAME" 2>&1 | grep -q 'STENO_RESET handled' || fail "boot did not report the reset"
-docker logs "$NAME" 2>&1 | grep -q 'access key' && fail "a key was printed on the reset boot"
+logs="$(container_logs)"
+grep -q 'STENO_RESET handled' <<<"$logs" || fail "boot did not report the reset"
+if grep -q 'access key' <<<"$logs"; then fail "a key was printed on the reset boot"; fi
 code="$(status_of -H "Authorization: Bearer ${KEY}" "${BASE}/api/chats")"
 [ "$code" = "401" ] || fail "the old key still worked after the reset (got $code)"
 code="$(status_of "${BASE}/setup")"
@@ -125,7 +132,7 @@ curl -s -D - -o /dev/null "${BASE}/login" | grep -qi '^location: .*/setup' || fa
 echo "==> a restart with STENO_RESET still set resets nothing"
 docker restart "$NAME" >/dev/null || fail "docker restart failed after the reset"
 wait_healthy "the post-reset restart"
-count="$(docker logs "$NAME" 2>&1 | grep -c 'STENO_RESET handled' || true)"
+count="$(grep -c 'STENO_RESET handled' <<<"$(container_logs)" || true)"
 [ "$count" = "1" ] || fail "the reset ran $count times across restarts, expected 1"
 
 echo "SMOKE PASS"
