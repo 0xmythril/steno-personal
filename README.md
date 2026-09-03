@@ -205,10 +205,18 @@ never acts on one by itself — confirming is a button you press.
 **What your agent sees.** A chat or a message gains a `person` field —
 `{ id, name }` — when the sender or the other side of a direct chat is someone
 you have linked, and the `list_people` tool lists the address book: id, name,
-notes, which channels are linked, and how many chats they appear in. Never a
-phone number, and never the underlying Telegram id or WhatsApp number — the id
-is this instance's own and means nothing outside it. `GET /api/people` answers
-the same thing with the same key.
+your notes, which channels are linked, and how many chats they appear in. Never
+a phone number, and never the underlying Telegram id or WhatsApp number — the id
+is this instance's own and means nothing outside it. The notes are the one field
+you write yourself and they go out verbatim, so write them for an agent to read.
+`GET /api/people` answers the same thing with the same key.
+
+Two labels come from the same contact list, and they are not gated behind a
+link. A name you saved in your contacts is used as the sender label for that
+person's messages wherever the channel sent none — in the portal and to an agent
+— and a WhatsApp chat or sender nobody has any name for shows as the phone
+number that is its identity, again in both places. Neither adds a field: they
+fill in `senderName` and a chat's title, which an access key can already read.
 
 **Removing someone.** Deleting a person deletes the links and nothing else:
 the chats, the messages and the attachments are untouched, and the names go

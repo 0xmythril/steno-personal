@@ -120,8 +120,9 @@ const handler = createMcpHandler(server => {
     'list_people',
     {
       description:
-        "The people in this instance's address book: id, name, notes, which channels are linked, and how many "
-        + 'chats they appear in. Never a phone number. ' +
+        "The people in this instance's address book: id, name, your notes, which channels are linked, and how "
+        + "many chats they appear in. The notes are the owner's own free text and are returned verbatim. "
+        + 'Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('list_people', async () => {

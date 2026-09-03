@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 - **People**: an address book that groups a Telegram identity and a WhatsApp identity into one person, so chats and transcripts name them the same way on both channels. Manual at the core; suggestions from a matching phone number or an identical display name are offered on the page and never act on their own, and a dismissed pair is not offered again.
 - The channel port gains one read, `listContacts()`, and the worker refreshes the contact cache after a backfill and every six hours. Nothing is written back to Telegram or WhatsApp.
 - Chats and messages carry a `person` field — `{ id, name } | null` — wherever the sender or the other side of a direct chat is someone you have linked; the direct-chat title prefers the name you chose.
-- MCP tool `list_people` and `GET /api/people`: id, name, notes, linked channels and chat count, through one shared mapping that never serves a phone number or a channel identifier. `list_chats`, `get_messages` and `search_messages` now explain the `person` field in their descriptions.
+- MCP tool `list_people` and `GET /api/people`: id, name, your notes, linked channels and chat count, through one shared mapping that never serves a phone number or a channel identifier. Notes are your own free text and are returned verbatim, which the tool description and PRIVACY.md both say. `list_chats`, `get_messages` and `search_messages` now explain the `person` field in their descriptions.
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
 - Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
 - A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
@@ -18,7 +18,7 @@ All notable changes to this project are documented here. The format follows
 - A plain-language tagline on the login page.
 
 ### Changed
-- A WhatsApp sender with no name (history-synced messages carry none) shows as their phone number instead of "Unknown".
+- A message whose channel sent no sender name is labelled with the name you saved in your contacts, in the portal and to an agent alike; a WhatsApp sender nobody has a name for (history-synced messages carry none) shows as their phone number instead of "Unknown".
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.
 - Transcript pages have Older / Latest links at both ends and a Back to top link at the foot.
 - WhatsApp direct chats take their name from your contacts (saved name, then business name, then push name), and one with no name at all shows its phone number instead of "Untitled chat".

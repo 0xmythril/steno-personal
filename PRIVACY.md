@@ -41,13 +41,27 @@ numbers you talk to — and stores them in the same local SQLite file as
 everything else. It is a read, like reading a message. Nothing is written back,
 and no contact of yours is created, changed or deleted anywhere.
 
-Those phone numbers stay on this machine. They are shown to you on the People
-page, because you need to see which number you are linking; they never reach an
-agent, an API response, or a log. `whoami` still never returns one, and neither
-does `list_people` or `GET /api/people`: an agent is told a person's name, which
-channels are linked, and how many chats they appear in, under an id this
-instance minted for its own use — never the Telegram id or the WhatsApp number
-behind it.
+No field of the address book carries a phone number off this machine. The
+numbers are shown to you on the People page, because you need to see which
+number you are linking, and they never reach a log. `whoami` still never returns
+one, and neither does `list_people` or `GET /api/people`: an agent is told a
+person's name, whatever you wrote in their notes, which channels are linked, and
+how many chats they appear in, under an id this instance minted for its own use
+— never the Telegram id, never the WhatsApp number, never the number stored on
+the link. The notes are the one field you write yourself and they go out
+verbatim, so treat that box as something your agent will read.
+
+That is a promise about the address book, not about the archive underneath it,
+and the difference matters. **A WhatsApp identity *is* a phone number.** A
+WhatsApp chat or a WhatsApp sender that nobody — not you, not WhatsApp, not this
+archive — has a name for is shown as that number, everywhere: on the chat list,
+in a transcript, in `list_chats`, `get_messages`, `search_messages` and their
+REST equivalents. It is your own archive, and the number you would see on your
+phone beats *"Unknown"*. In the same way, **a name you saved in your own
+contacts is used to label that person's messages wherever the channel sent
+none** — in the portal and to an agent alike. Both only put a label on a message
+the archive already holds and an access key can already read, and neither is
+ever written to a log.
 
 The links are yours, not the channels'. Nothing is linked automatically: a
 suggested match sits on the page until you confirm it, and dismissing one is
@@ -140,6 +154,12 @@ The four content tools — `list_chats`, `get_messages`, `search_messages`,
 there is nothing at all to serve: no active connection **and** an empty
 archive. They will not describe chats you do not have, invent an empty state,
 or hint at what they could do once you connect something.
+
+The REST reads are deliberately not gated that way. `GET /api/people`, like
+`GET /api/chats`, answers an empty list on an empty instance: a REST client
+asked for a list and got the true one, and the sentence exists for an agent
+reading a tool description, not for a caller parsing JSON. Either way the key
+had to be valid first, and neither answer says anything about you.
 
 That gate is about a stranger who reaches a fresh instance, not about your
 archive. After you **Disconnect** an account, its chats stay readable — to an
