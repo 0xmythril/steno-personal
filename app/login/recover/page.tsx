@@ -15,7 +15,7 @@ import { recoverStartAction, recoverPasswordAction, recoverCancelAction, recover
 // build has no database to ask.
 export const dynamic = 'force-dynamic'
 
-export const LOST_ACCESS_DOCS = 'https://github.com/0xmythril/steno-personal/blob/main/docs/self-hosting.md#lost-access'
+const LOST_ACCESS_DOCS = 'https://github.com/0xmythril/steno-personal/blob/main/docs/self-hosting.md#lost-access'
 
 function StartCards({ channels }: { channels: Channel[] }) {
   if (channels.length === 0) {
