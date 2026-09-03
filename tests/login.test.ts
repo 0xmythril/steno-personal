@@ -21,8 +21,14 @@ describe('login handshake (worker-facing)', () => {
     await makeConnection({ channel: 'whatsapp', status: 'active' })
     const claimed = await claimPendingLogins()
     expect(claimed).toHaveLength(1)
-    expect(claimed[0]).toMatchObject({ id: pending.id, channel: 'telegram' })
+    expect(claimed[0]).toMatchObject({ id: pending.id, channel: 'telegram', purpose: 'archive' })
     expect(claimed[0].createdAt).toBeInstanceOf(Date)
+
+    const recovery = await makeConnection({ channel: 'whatsapp', purpose: 'recovery', status: 'pending' })
+    expect((await claimPendingLogins()).map(c => [c.id, c.purpose])).toEqual([
+      [pending.id, 'archive'], [recovery.id, 'recovery'],
+    ])
+    await revokeConnection(recovery.id, 'done')
 
     await revokeConnection(pending.id, 'gone')
     expect(await claimPendingLogins()).toEqual([])

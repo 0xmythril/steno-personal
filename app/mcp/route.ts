@@ -139,7 +139,9 @@ const handler = createMcpHandler(server => {
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('whoami', async () => {
-      const connections = (await listConnections()).map(c => ({
+      // Archive rows only: a recovery attempt is a login-page event, not an
+      // account this instance reads.
+      const connections = (await listConnections()).filter(c => c.purpose === 'archive').map(c => ({
         channel: c.channel,
         displayName: c.displayName,
         status: c.status,

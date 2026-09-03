@@ -24,7 +24,10 @@ user, read [../PRIVACY.md](../PRIVACY.md); for what it protects against, read
 
 1. runs `scripts/boot.ts` once and refuses to continue if it fails — that
    creates `DATA_DIR`, resolves or generates `SECRET_KEY`, applies migrations,
-   purges expired sessions, and mints the bootstrap key if no key exists;
+   purges expired sessions, and performs a requested `STENO_RESET` (before
+   anything is opened) or `STENO_MINT_KEY` (after migrations) exactly once per
+   value — `lib/services/boot-ops.ts`. No key is minted otherwise: a fresh
+   instance hands its first key out on `/setup`;
 2. spawns **web** (`next start`) and **worker** (`worker/index.ts` under `tsx`);
 3. exits the moment either child exits, so the host restarts a clean container.
 
@@ -174,7 +177,10 @@ connection.
 
 | Route | Auth | Notes |
 |---|---|---|
-| `/login` | none | Paste an access key; sets the session cookie. |
+| `/setup` | none, fresh instance only | First run: pair a channel, then mint the first key and start a session. Redirects to `/login` once any key exists. |
+| `/welcome` | cookie | Shows the first key once, out of an httpOnly flash, behind a copy-or-confirm gate. |
+| `/login` | none | Paste an access key; sets the session cookie. Redirects to `/setup` while the instance is fresh. |
+| `/login/recover` | none | Lost-key recovery: pair the same account again. The attempt is bound to the httpOnly `sp_recovery` cookie. |
 | `/` | cookie | Chats list. |
 | `/chats/[id]` | cookie | Transcript. No form, textarea, or submit control — enforced by a test. |
 | `/connections` | cookie | One card per channel: consent, QR, disconnect, delete everything. |
@@ -183,6 +189,8 @@ connection.
 | `/api/health` | none | `{ "ok": true }`. Railway's healthcheck path. |
 | `/api/login` | none | `POST {"key": "sp_…"}` → `204` and a session cookie. The scriptable twin of `/login`; used by `scripts/smoke.sh`. |
 | `/api/connections`, `/api/connections/[id]`, `…/revoke`, `…/password` | cookie | Portal plumbing, including reads — a bearer key handed to an agent must never be able to pair or unpair a device. |
+| `/api/setup/connections/[id]` | none, fresh instance only | The setup page's status poll; `404` once any key exists. |
+| `/api/recovery/status` | `sp_recovery` cookie | The recovery page's status poll; the attempt id never appears in a URL. |
 | `/api/chats`, `/api/chats/[id]/messages`, `/api/search` | cookie **or** bearer | Same data the portal shows. |
 | `/api/people` | cookie **or** bearer | The address book through `publicPeople()` — the same mapping `list_people` uses, so neither serves a phone number or a channel identifier. |
 | `/media/[id]` | cookie **or** bearer | Streams one attachment, whole file into memory (bounded by `MAX_MEDIA_BYTES`), no `Range` support. |

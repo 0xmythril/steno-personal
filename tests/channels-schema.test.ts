@@ -31,6 +31,25 @@ describe('channel tables', () => {
     expect(second.id).not.toBe(first.id)
   })
 
+  it('allows one live recovery row beside the live archive row, and only one', async () => {
+    // Recovery pairs the same account a second time to prove ownership; the
+    // archive connection must not be disturbed by it, so the slot is per
+    // (channel, purpose), not per channel.
+    await makeConnection({ channel: 'telegram' })
+    const [rec] = await db.insert(connections).values({ channel: 'telegram', purpose: 'recovery' }).returning()
+    expect(rec.purpose).toBe('recovery')
+    expect(rec.recoveryOutcome).toBeNull()
+    expect(rec.recoveryKeyId).toBeNull()
+    await expect(db.insert(connections).values({ channel: 'telegram', purpose: 'recovery' })).rejects.toThrow()
+    await db.update(connections).set({ status: 'revoked', revokedAt: new Date() }).where(eq(connections.id, rec.id))
+    await db.insert(connections).values({ channel: 'telegram', purpose: 'recovery' })
+  })
+
+  it('a connection is an archive connection unless it says otherwise', async () => {
+    const [row] = await db.insert(connections).values({ channel: 'whatsapp' }).returning()
+    expect(row.purpose).toBe('archive')
+  })
+
   it('enforces chat and message identity', async () => {
     const conn = await makeConnection()
     await makeChat(conn, { externalChatId: '5' })

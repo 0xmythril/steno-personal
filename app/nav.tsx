@@ -13,7 +13,7 @@ const LINKS: { page: NavPage; href: string; text: string }[] = [
 
 // Four pages, and the session's key label with a Log out where the shared
 // design system draws an avatar: this edition signs in with access keys.
-export function Nav({ label, current }: { label: string; current: NavPage }) {
+export function Nav({ label, current }: { label: string; current?: NavPage }) {
   return (
     <nav className="top" aria-label="Main">
       <Link href="/" className="brand"><BrandLogo size={24} /><Wordmark /></Link>

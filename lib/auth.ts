@@ -4,7 +4,8 @@
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createSession, deleteSession, resolveSession } from '@/lib/services/sessions'
-import { verifyAccessKey } from '@/lib/services/access-keys'
+import { hasAnyAccessKey, verifyAccessKey } from '@/lib/services/access-keys'
+import { FIRST_KEY_COOKIE } from '@/lib/services/keys-flash'
 
 export const SESSION_COOKIE = 'sp_session'
 // The authoritative expiry is the server-side 30-day idle window in
@@ -23,10 +24,26 @@ export async function currentSession(): Promise<PortalSession | null> {
   return resolveSession(id)
 }
 
+// A fresh instance — no key has ever existed — has nothing to log in with, so
+// the session-less visitor is sent to /setup to pair a channel and receive the
+// first key. Once any key row exists (even revoked) /setup is closed and the
+// visitor goes to /login, which offers recovery.
+export async function isFreshInstance(): Promise<boolean> {
+  return !(await hasAnyAccessKey())
+}
+
 export async function requireSession(): Promise<PortalSession> {
   const s = await currentSession()
-  if (!s) redirect('/login')
+  if (!s) redirect((await isFreshInstance()) ? '/setup' : '/login')
   return s
+}
+
+// The guard for the setup pages and their server actions, in place of
+// requireSession(): they are meant to be reached without a session, but only
+// while the instance is fresh. tests/auth-structure.test.ts accepts exactly
+// this guard in exactly app/setup/actions.ts.
+export async function requireFreshInstance(): Promise<void> {
+  if (!(await isFreshInstance())) redirect('/login')
 }
 
 // Cookie `secure` follows the request: Railway terminates TLS and forwards
@@ -81,4 +98,58 @@ export async function requireCookieAuth(req: Request): Promise<Response | null> 
   if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 })
   if (auth.via !== 'cookie') return Response.json({ error: 'cookie_session_required' }, { status: 403 })
   return null
+}
+
+// ---- Recovery (app/login/recover) ----
+//
+// A recovery attempt is bound to the browser that started it by an httpOnly
+// cookie carrying the attempt id — never a URL, so the id reaches no log and
+// no Referer. The status route and every recovery action resolve the attempt
+// from this cookie alone.
+export const RECOVERY_COOKIE = 'sp_recovery'
+// A login window is 15 minutes (session-manager LOGIN_TIMEOUT_MS); the cookie
+// outlives it so a finished attempt can still be read and claimed.
+export const RECOVERY_COOKIE_MAX_AGE_S = 20 * 60
+
+export async function currentRecoveryAttempt(): Promise<string | null> {
+  const jar = await cookies()
+  return jar.get(RECOVERY_COOKIE)?.value ?? null
+}
+
+export async function setRecoveryCookie(id: string): Promise<void> {
+  const jar = await cookies()
+  jar.set(RECOVERY_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: RECOVERY_COOKIE_MAX_AGE_S, path: '/' })
+}
+
+export async function clearRecoveryCookie(): Promise<void> {
+  const jar = await cookies()
+  jar.delete({ name: RECOVERY_COOKIE, path: '/' })
+}
+
+// Recovery is for a locked-out owner of a non-fresh instance: a fresh one has
+// /setup, and a browser that is already logged in has nothing to recover.
+export async function requireRecoveryOpen(): Promise<void> {
+  if (await isFreshInstance()) redirect('/setup')
+  if (await currentSession()) redirect('/')
+}
+
+// The guard for every recovery action past Start: the attempt this browser
+// owns, or back to the beginning. tests/auth-structure.test.ts accepts this
+// guard (and requireRecoveryOpen, for Start) in exactly
+// app/login/recover/actions.ts.
+export async function requireRecoveryAttempt(): Promise<string> {
+  await requireRecoveryOpen()
+  const id = await currentRecoveryAttempt()
+  if (!id) redirect('/login/recover')
+  return id
+}
+
+// The first key — from setup or from recovery — is shown exactly once, on
+// /welcome, out of this flash. Same shape as the Settings flashes: httpOnly,
+// path-scoped, minutes long.
+export async function setFirstKeyFlash(id: string, rawKey: string): Promise<void> {
+  const jar = await cookies()
+  jar.set(FIRST_KEY_COOKIE, JSON.stringify({ id, rawKey }), {
+    httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: 5 * 60, path: '/welcome',
+  })
 }

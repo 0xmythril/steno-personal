@@ -86,9 +86,12 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
 export default async function ConnectionsPage() {
   const session = await requireSession()
   const all = await listConnections()
-  // Newest first, so the first row per channel with no revoked_at is the live
-  // one; revoked rows stay in the list below as history.
-  const liveOf = (channel: Channel) => all.find(c => c.channel === channel && c.revokedAt === null)
+  // Newest first, so the first ARCHIVE row per channel with no revoked_at is
+  // the live one; revoked rows stay in the list below as history. A live
+  // recovery row is someone proving ownership on /login/recover — it is not a
+  // connection and never shows as one; finished attempts are listed below so
+  // the owner can see one happened.
+  const liveOf = (channel: Channel) => all.find(c => c.channel === channel && c.purpose === 'archive' && c.revokedAt === null)
   const history = all.filter(c => c.revokedAt !== null)
 
   return (
@@ -105,7 +108,7 @@ export default async function ConnectionsPage() {
         {history.length > 0 && (
           <section className="card">
             <h2>Past connections</h2>
-            <p className="muted">Ended, but whatever they archived is still readable.</p>
+            <p className="muted">Ended, but whatever they archived is still readable. Recovery attempts — someone pairing a phone on the login page to prove this archive is theirs — are listed too.</p>
             <div className="tbl"><div className="scroll">
               <table>
                 <thead><tr><th>Channel</th><th>Account</th><th>Ended</th><th>Reason</th></tr></thead>
@@ -113,7 +116,7 @@ export default async function ConnectionsPage() {
                   {history.map(c => (
                     <tr key={c.id}>
                       <td>{CHANNEL_LABELS[c.channel]}</td>
-                      <td className="name">{c.displayName ?? '—'}</td>
+                      <td className="name">{c.purpose === 'recovery' ? <span className="chip off">Recovery attempt</span> : (c.displayName ?? '—')}</td>
                       <td className="mono">{formatRelativeTime(c.revokedAt)}</td>
                       <td>{errorText(c) ? <span className="chip bad">{errorText(c)}</span> : '—'}</td>
                     </tr>

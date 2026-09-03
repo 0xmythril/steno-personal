@@ -22,6 +22,10 @@ export const PASSWORD_REJECTED = 'password_rejected'
 export type ConnectionStatus = {
   id: string
   channel: Channel
+  // 'archive' reads the account; 'recovery' only proves the owner still holds
+  // it (lib/services/recovery.ts). The connections page picks its live card
+  // from archive rows alone and lists finished recovery attempts as history.
+  purpose: 'archive' | 'recovery'
   status: 'pending' | 'active' | 'revoked' | 'error'
   displayName: string | null
   createdAt: Date
@@ -37,7 +41,7 @@ type Row = typeof connections.$inferSelect
 
 function toStatus(row: Row): ConnectionStatus {
   return {
-    id: row.id, channel: row.channel, status: row.status,
+    id: row.id, channel: row.channel, purpose: row.purpose, status: row.status,
     displayName: row.displayName, createdAt: row.createdAt,
     revokedAt: row.revokedAt, lastSyncAt: row.lastSyncAt, lastError: row.lastError,
     login: row.status === 'pending' ? {
@@ -63,13 +67,15 @@ export function mapInsertError(err: unknown): 'already_connected' | null {
 }
 
 // A LIVE row is one with revoked_at IS NULL. The partial unique index allows
-// exactly one per channel, so a new attempt must first free the slot: an
-// ACTIVE row blocks it outright; a dead one (pending/error) is deleted when it
-// holds nothing and revoked when it holds an archive, which is never deleted
-// behind the owner's back.
+// exactly one per (channel, purpose), so a new attempt must first free the
+// archive slot: an ACTIVE row blocks it outright; a dead one (pending/error)
+// is deleted when it holds nothing and revoked when it holds an archive, which
+// is never deleted behind the owner's back. A live RECOVERY row on the same
+// channel is somebody proving ownership; it neither blocks nor is touched.
 export async function createConnection(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'already_connected' }> {
   const live = await db.select({ id: connections.id, status: connections.status })
-    .from(connections).where(and(eq(connections.channel, channel), isNull(connections.revokedAt)))
+    .from(connections)
+    .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), isNull(connections.revokedAt)))
 
   if (live.some(r => r.status === 'active')) return { ok: false, reason: 'already_connected' }
 

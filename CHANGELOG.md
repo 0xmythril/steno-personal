@@ -11,6 +11,9 @@ All notable changes to this project are documented here. The format follows
 - The channel port gains one read, `listContacts()`, and the worker refreshes the contact cache after a backfill and every six hours. Nothing is written back to Telegram or WhatsApp.
 - Chats and messages carry a `person` field — `{ id, name } | null` — wherever the sender or the other side of a direct chat is someone you have linked; the direct-chat title prefers the name you chose.
 - MCP tool `list_people` and `GET /api/people`: id, name, your notes, linked channels and chat count, through one shared mapping that never serves a phone number or a channel identifier. Notes are your own free text and are returned verbatim, which the tool description and PRIVACY.md both say. `list_chats`, `get_messages` and `search_messages` now explain the `person` field in their descriptions.
+- **Setup on first visit.** A fresh instance lands on `/setup`: pair Telegram or WhatsApp, then receive your first access key once on `/welcome`, with a Copy button and a Continue that waits until you have copied it or ticked that you wrote it down.
+- **Lost-key recovery.** `/login` → "Pair your phone again": pairing the same account this archive reads (now or in the past) proves it is yours and mints a new key; a different account is told it needs a key or the host procedure. The pairing device is unlinked again immediately, and finished attempts appear under Past connections.
+- `STENO_MINT_KEY` and `STENO_RESET`: one-shot boot operations for the host operator — mint a key and print it once, or empty `DATA_DIR` — remembered in `$DATA_DIR/boot-ops.json` so a variable left set does nothing on the next restart. Documented under "Lost access" in docs/self-hosting.md.
 - DESIGN.md: the Steno design system for this edition. Tokens live in `app/globals.css`; `tests/design-tokens.test.ts` checks contrast on both palettes, that theme blocks only redefine tokens, and that fonts never load from Google at runtime.
 - Release procedure in `docs/releasing.md`, repository metadata in `package.json`, and CI and licence badges in the README.
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
@@ -19,8 +22,8 @@ All notable changes to this project are documented here. The format follows
 - A one-line footer on every page with the GitHub and X links.
 - A plain-language tagline on the login page.
 
-### Fixed
-- The Docker image builds on Railway: the Dockerfile no longer declares a `VOLUME`, which Railway's builder rejects. Compose and the Railway template mount `/data` themselves, so nothing changes for Docker at home.
+### Removed
+- The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
 - A message whose channel sent no sender name is labelled with the name you saved in your contacts, in the portal and to an agent alike; a WhatsApp sender nobody has a name for (history-synced messages carry none) shows as their phone number instead of "Unknown".
@@ -36,6 +39,7 @@ All notable changes to this project are documented here. The format follows
 - The WhatsApp pending screen no longer shows Telegram-only copy.
 
 ### Fixed
+- The Docker image builds on Railway: the Dockerfile no longer declares a `VOLUME`, which Railway's builder rejects. Compose and the Railway template mount `/data` themselves, so nothing changes for Docker at home.
 - `npm run build` on a fresh clone (no `./data` yet) no longer fails with `SqliteError: database is locked`: the chat list's message-count subquery touched the database at import time, so Next's parallel page-data workers each created and WAL-switched a brand-new `data/steno.db` at once. Importing the app now opens nothing; only the first query does, and a build no longer leaves a `data/` directory behind.
 
 ## [0.1.0] — 2026-09-03

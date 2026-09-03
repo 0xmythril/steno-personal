@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import {
   mintAccessKey, verifyAccessKey, listActiveAccessKeys, revealAccessKey,
-  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, KEY_PREFIX,
+  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, KEY_PREFIX,
 } from '@/lib/services/access-keys'
 
 describe('access keys', () => {
@@ -54,6 +54,16 @@ describe('access keys', () => {
     expect(await countActiveAccessKeys()).toBe(2)
     expect(await revokeAllAccessKeys()).toBe(2)
     expect(await countActiveAccessKeys()).toBe(0)
+  })
+
+  it('hasAnyAccessKey counts revoked keys too: a revoked instance is not a fresh one', async () => {
+    expect(await hasAnyAccessKey()).toBe(false)
+    const r = await mintAccessKey('a')
+    if (!r.ok) throw new Error(r.reason)
+    expect(await hasAnyAccessKey()).toBe(true)
+    await revokeAllAccessKeys()
+    expect(await countActiveAccessKeys()).toBe(0)
+    expect(await hasAnyAccessKey()).toBe(true)
   })
 
   it('never returns a hash or ciphertext from list', async () => {

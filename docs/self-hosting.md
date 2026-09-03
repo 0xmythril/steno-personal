@@ -9,7 +9,9 @@ end in the same place — one process tree, one directory of state.
   non-goal.
 - `DATA_DIR` is the entire state. Wherever you run this, know where that
   directory is and back it up.
-- The first boot prints an access key. That is your only way in, so read the log.
+- Nothing is printed to the log. The first visit to the portal is **Setup**:
+  pair a channel, receive your first access key, save it. Whoever reaches a
+  fresh instance first becomes its owner, so open it as soon as it is up.
 
 ## Docker
 
@@ -29,7 +31,7 @@ Useful commands:
 
 ```bash
 docker compose logs -f app                        # follow the log
-docker compose exec app npm run mint-key -- laptop # recovery key
+docker compose exec app npm run mint-key -- laptop # emergency key (see Lost access)
 docker compose down                                # stop, keep data
 docker compose down -v                             # stop, destroy data
 ```
@@ -86,8 +88,8 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-`systemctl enable --now steno-personal`, then
-`journalctl -u steno-personal -f` to find the bootstrap key.
+`systemctl enable --now steno-personal`, then open the portal to set it up;
+`journalctl -u steno-personal -f` follows the log.
 
 ## Railway
 
@@ -104,8 +106,9 @@ it up yourself, or the template is not published yet:
    sensible start; media is what grows.
 5. Set variables: `DATA_DIR=/data`, and a `SECRET_KEY` of at least 32
    characters (`openssl rand -base64 48`). Railway supplies `PORT` itself.
-6. Deploy, then **read the deploy log** for the bootstrap access key.
-7. **Generate a domain** under Settings → Networking, open it, and log in.
+6. Deploy, and **generate a domain** under Settings → Networking.
+7. Open the domain straight away: it lands on **Setup**. Pair a channel and
+   save the access key it hands you.
 
 Two Railway details worth knowing, both from
 <https://docs.railway.com/volumes>: volumes are mounted only when the container
@@ -237,9 +240,59 @@ container with a readable error rather than a half-migrated database. Take a
 backup before a major upgrade anyway; migrations are forward-only and there is
 no down path.
 
-Your access keys, connections, and archive survive an upgrade. Container
-restarts do not re-print a bootstrap key: it is minted only when no active key
-exists.
+Your access keys, connections, and archive survive an upgrade. Nothing is ever
+printed to the log on a restart unless you asked for a key with
+`STENO_MINT_KEY` (below).
+
+## Lost access
+
+Three situations, three answers. None of them run through the web portal, on
+purpose: nothing reachable from the network can hand out a key or wipe an
+instance. The first is self-service; the other two are for whoever runs the
+host, because the host is what proves you are allowed to do them.
+
+**Lost the key, still have the account.** Open `/login` and choose **Pair your
+phone again**. Pairing the same Telegram account or WhatsApp number this archive
+reads — now or at any time in the past — proves it is yours: a new key is
+created and shown once, exactly like the first one. The pairing device is
+unlinked again the moment the account is confirmed; nothing is read from it.
+Someone who pairs a different account is told so, unlinked, and given nothing —
+you will see their attempt under **Past connections**.
+
+**Lost the key and the account, want to keep the archive.** Mint a key from the
+host. Set the variable `STENO_MINT_KEY` to a label, say `laptop`, and restart:
+boot mints a key with that label and prints it **once** in the boot log —
+
+```
+==========================================================
+  steno-personal: access key "laptop"
+  sp_…
+  Paste it at /login. Remove STENO_MINT_KEY now; this banner
+  will not print again for this value.
+==========================================================
+```
+
+— then remembers the value in `$DATA_DIR/boot-ops.json`, so a restart with the
+variable still set prints nothing. Paste the key at `/login`, remove the
+variable, and revoke that key under **Settings** once you have made your own:
+it is sitting in a log. With a shell you can skip the variable:
+`docker compose exec app npm run mint-key -- laptop`, or on Railway
+`railway ssh` then `npm run mint-key -- laptop`.
+
+**Start over.** Set `STENO_RESET` to any word and restart: boot empties
+`DATA_DIR` — database, media, WhatsApp auth state, the generated secret — once
+for that word, records the word, and the next visit lands on **Setup**. A
+reset cannot reach your phone: open Telegram → Settings → Devices and WhatsApp →
+Linked devices and remove **steno-personal** yourself. The native equivalents
+do the same thing: `docker compose down -v`, wiping or recreating the Railway
+volume from its settings, or stopping the service and deleting `DATA_DIR` on
+bare Node.
+
+Where to set a variable: Railway — the service's **Variables** tab (a change
+redeploys automatically). Docker Compose — the `environment:` block or an
+`.env` file next to the compose file, then `docker compose up -d`. systemd — an
+`Environment=` line in the unit, then `systemctl restart`. Remove it afterwards
+either way; leaving it set is harmless but untidy.
 
 ## Publishing the Railway template (maintainers)
 
@@ -255,9 +308,9 @@ dashboard composer or generated from a live project, per
 start, in case Railway has since shipped a file format.
 
 **1. Build a working project first.** Follow the Railway section above and get a
-real deploy green, with the volume attached and a bootstrap key in the log. A
-template generated from something that works is worth more than one assembled
-blind.
+real deploy green, with the volume attached and Setup served on the generated
+domain. A template generated from something that works is worth more than one
+assembled blind.
 
 **2. Create the template.** Either
 
@@ -304,10 +357,13 @@ and confirm, in order:
 - the volume is mounted at `/data`;
 - `SECRET_KEY` in the deployed service is a 48-character random string, not the
   literal `${{secret(48)}}`;
-- the deploy log contains the bootstrap key banner with an `sp_…` key;
-- the generated domain serves `/login`, and that key logs in;
+- the deploy log ends its `[boot]` line with `no key yet — open the portal to
+  set up`, and contains no `sp_…` key;
+- the generated domain redirects to `/setup`, and a paired channel there hands
+  out a key that logs in;
 - `/api/health` returns `{"ok":true}`;
-- redeploying does **not** print a new key (the volume persisted).
+- redeploying keeps that key working and does **not** reopen Setup (the volume
+  persisted).
 
 That list is the exit criterion for M5: one click gives a running instance.
 
@@ -354,8 +410,12 @@ left in any shipped document. Keep it green.
 
 ## Troubleshooting
 
-**No key in the log.** A key already exists — a bootstrap key is minted only
-when there are none. Use `npm run mint-key -- recovery` inside the container.
+**No key in the log.** That is normal: the log never carries a key unless you
+set `STENO_MINT_KEY`. A fresh instance hands its first key out on `/setup`; a
+locked-out one is recovered from `/login` or from the host — see Lost access.
+
+**`/setup` says the instance already has an owner.** A key exists, so Setup is
+closed. Log in with a key, or recover from `/login`.
 
 **"secret key mismatch" after a restore.** `SECRET_KEY` differs from the one the
 data was encrypted with. Restore `secret.key` from the backup, or set the same
