@@ -82,6 +82,34 @@ export interface WaSocket {
   updateMediaMessage(message: unknown): Promise<unknown>
 }
 
+// Compile-time seam check, erased by tsc. WaSocket above is hand-written from
+// a reading of the library, and nothing at runtime ever compares it to the
+// real thing: the fake socket in the tests satisfies OUR interface, so a
+// Baileys upgrade that renames or re-signs a member this port calls would
+// sail through the whole suite and fail in production. These aliases turn that
+// into a `tsc --noEmit` failure. Types only — `BaileysModule` is a type-only
+// import, so the single dynamic import() below stays the only way the library
+// is loaded.
+type RealWaSocket = ReturnType<BaileysModule['default']>
+/** Refuses to instantiate unless Theirs is assignable to Ours. */
+type Satisfies<Ours, Theirs extends Ours> = Theirs
+
+export type WaSocketSeamCheck = {
+  end: Satisfies<WaSocket['end'], RealWaSocket['end']>
+  logout: Satisfies<WaSocket['logout'], RealWaSocket['logout']>
+  groupMetadata: Satisfies<WaSocket['groupMetadata'], RealWaSocket['groupMetadata']>
+  updateMediaMessage: Satisfies<WaSocket['updateMediaMessage'], RealWaSocket['updateMediaMessage']>
+  getPNForLID: Satisfies<
+    WaSocket['signalRepository']['lidMapping']['getPNForLID'],
+    RealWaSocket['signalRepository']['lidMapping']['getPNForLID']
+  >
+  user: Satisfies<WaSocket['user'], RealWaSocket['user']>
+  // Not a WaSocket member — this port never touches the raw WebSocket. Named
+  // anyway because a Baileys that no longer exposes `ws` has restructured the
+  // socket far enough that every line above deserves a fresh read.
+  ws: RealWaSocket['ws']
+}
+
 export type WaAuth = { state: unknown; saveCreds: () => Promise<void> }
 export type WaSocketOpts = { auth: unknown; version: WaVersion | undefined; syncFullHistory: boolean }
 
@@ -397,7 +425,347 @@ export class BaileysWhatsAppPort implements ChannelPort {
   }
 
   async open(sessionString: string, _opts: { connectionId: string }): Promise<ChannelSession> {
-    this.authDir(sessionString)
-    throw new ChannelError('not implemented yet', 'other') // TODO(Task 3)
+    const dir = this.authDir(sessionString)
+    const deps = this.deps
+    const { state, saveCreds } = await deps.useAuthState(dir)
+    const version = await deps.fetchVersion()
+
+    const markerPath = path.join(dir, HISTORY_MARKER)
+    // "First open" per spec 4.3: the auth dir has no history-synced marker.
+    // The marker is written once a history batch has actually been ingested,
+    // not merely once we connected, so a crash mid-sync retries next time.
+    let historyPending = !(await exists(markerPath))
+
+    let sock: WaSocket | null = null
+    let connected = false
+    let connecting = false
+    let closing = false
+    let loggedOut = false
+    let lastEventAt = Date.now()
+    let backoff = this.reconnectMinMs
+    let retryTimer: Timer | null = null
+    let openTimer: Timer | null = null
+    const reconnectMaxMs = this.reconnectMaxMs
+    const reconnectMinMs = this.reconnectMinMs
+    const staleMs = this.staleMs
+
+    let onMessageCb: ((m: IncomingMessage) => void) | null = null
+    let onEditCb: ((m: IncomingMessage) => void) | null = null
+    let onDeleteCb: ((ref: { externalChatId?: string; externalMessageId: string }) => void) | null = null
+    // The SessionManager registers its callbacks immediately after open()
+    // resolves, but Baileys can deliver a history batch in that gap. Buffer
+    // rather than drop.
+    const pendingMessages: IncomingMessage[] = []
+    const pendingEdits: IncomingMessage[] = []
+    const pendingDeletes: Array<{ externalChatId?: string; externalMessageId: string }> = []
+
+    const titles = new Map<string, string>()
+    const metadataTried = new Set<string>()
+    const lidToPn = new Map<string, string | null>()
+
+    // Every event handler runs through one chain, so two batches can never
+    // interleave and a thrown handler cannot take the socket down.
+    let chain: Promise<void> = Promise.resolve()
+    const enqueue = (fn: () => Promise<void>): void => {
+      chain = chain.then(fn).catch(err => log.error({ err: errorShape(err) }, 'whatsapp event handling failed'))
+    }
+
+    const emitMessage = (m: IncomingMessage): void => {
+      if (onMessageCb) onMessageCb(m)
+      else pendingMessages.push(m)
+    }
+    const emitEdit = (m: IncomingMessage): void => {
+      if (onEditCb) onEditCb(m)
+      else pendingEdits.push(m)
+    }
+    const emitDelete = (ref: { externalChatId?: string; externalMessageId: string }): void => {
+      if (onDeleteCb) onDeleteCb(ref)
+      else pendingDeletes.push(ref)
+    }
+
+    const markHistorySynced = async (): Promise<void> => {
+      if (!historyPending) return
+      historyPending = false
+      try {
+        await writeFile(markerPath, new Date().toISOString(), 'utf8')
+      } catch (err) {
+        log.error({ err: errorShape(err) }, 'whatsapp history marker write failed')
+        historyPending = true
+      }
+    }
+
+    // A @lid is an opaque identity. Resolving it to the phone-number JID is
+    // what keeps one human in one chat instead of two (spec 4.3). Best-effort
+    // and cached, including the negative answer.
+    const canonicalJid = async (jid: string): Promise<string> => {
+      if (!jid.endsWith('@lid')) return jid
+      if (!lidToPn.has(jid)) {
+        let pn: string | null = null
+        try {
+          pn = (await sock?.signalRepository.lidMapping.getPNForLID(jid)) ?? null
+        } catch (err) {
+          log.warn({ err: errorShape(err) }, 'whatsapp lid resolution failed')
+        }
+        lidToPn.set(jid, pn)
+      }
+      return lidToPn.get(jid) ?? jid
+    }
+
+    // Titles come from history chats[].name and groups.upsert/update; a group
+    // first seen through a message gets one lazy groupMetadata read, once.
+    const titleFor = async (chatId: string, kind: WaChatKind, parsed: ParsedWaMessage | null): Promise<string | null> => {
+      const known = titles.get(chatId)
+      if (known) return known
+      const s = sock
+      if (kind === 'group' && s && !metadataTried.has(chatId)) {
+        metadataTried.add(chatId)
+        try {
+          const meta = await s.groupMetadata(chatId)
+          if (meta?.subject) { titles.set(chatId, meta.subject); return meta.subject }
+        } catch (err) {
+          log.warn({ err: errorShape(err) }, 'whatsapp group metadata lookup failed')
+        }
+      }
+      // A DM has no subject of its own. The counterparty's push name is the
+      // only title WhatsApp offers until a history sync delivers chats[].name.
+      if (kind === 'dm' && parsed && !parsed.fromOwner && parsed.senderName) {
+        titles.set(chatId, parsed.senderName)
+        return parsed.senderName
+      }
+      return null
+    }
+
+    const handleRaw = async (raw: unknown): Promise<void> => {
+      const event = parseProtocolEvent(raw)
+      if (event) {
+        const kind = chatKindForJid(event.remoteJid)
+        if (!kind) return
+        const chatId = await canonicalJid(event.remoteJid)
+        if (event.kind === 'delete') {
+          emitDelete({ externalChatId: chatId, externalMessageId: event.waId })
+          return
+        }
+        // An edit payload with no recognisable text must never blank a row.
+        if (!event.newText) return
+        const key = (raw as { key?: { fromMe?: boolean } } | null)?.key
+        emitEdit({
+          externalChatId: chatId,
+          chatKind: kind,
+          chatTitle: titles.get(chatId) ?? null,
+          externalMessageId: event.waId,
+          senderExternalId: null,
+          senderName: null,
+          fromOwner: !!key?.fromMe,
+          sentAt: tsToDate((raw as { messageTimestamp?: unknown } | null)?.messageTimestamp),
+          type: 'text',
+          text: event.newText,
+          media: null,
+          raw,
+        })
+        return
+      }
+
+      const parsed = parseWaMessage(raw)
+      if (!parsed) return
+      const chatId = await canonicalJid(parsed.remoteJid)
+      const senderExternalId = parsed.sender ? await canonicalJid(parsed.sender.jid) : null
+      const chatTitle = await titleFor(chatId, parsed.chatKind, parsed)
+      emitMessage(toIncoming(parsed, { chatTitle, externalChatId: chatId, senderExternalId }))
+    }
+
+    const rememberTitles = (groups: WaGroup[] | undefined): void => {
+      for (const g of groups ?? []) if (g?.id && g.subject) titles.set(g.id, g.subject)
+    }
+
+    let settleOpen: ((err?: unknown) => void) | null = null
+    const ready = new Promise<void>((resolve, reject) => {
+      openTimer = setTimeout(() => finishOpen(new ChannelError('whatsapp did not connect', 'timed_out')), this.openTimeoutMs)
+      unref(openTimer)
+      settleOpen = (err?: unknown) => {
+        if (openTimer) { clearTimeout(openTimer); openTimer = null }
+        if (err) reject(err)
+        else resolve()
+      }
+    })
+    // connect() can throw before `ready` is ever awaited, which would leave the
+    // open timeout rejecting a promise nobody listens to. One inert handler
+    // keeps that off the unhandled-rejection channel; `await ready` below still
+    // observes the rejection itself.
+    void ready.catch(() => {})
+    function finishOpen(err?: unknown): void {
+      const settle = settleOpen
+      settleOpen = null
+      settle?.(err)
+    }
+
+    const scheduleReconnect = (): void => {
+      if (closing || loggedOut || retryTimer) return
+      const delay = backoff
+      backoff = Math.min(backoff * 2, reconnectMaxMs)
+      retryTimer = setTimeout(() => {
+        retryTimer = null
+        connect().catch(err => {
+          log.error({ err: errorShape(err) }, 'whatsapp reconnect failed')
+          scheduleReconnect()
+        })
+      }, delay)
+      unref(retryTimer)
+    }
+
+    const wire = (s: WaSocket): void => {
+      s.ev.on('creds.update', () => {
+        lastEventAt = Date.now()
+        void saveCreds().catch(err => log.error({ err: errorShape(err) }, 'whatsapp creds save failed'))
+      })
+
+      s.ev.on('groups.upsert', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
+      s.ev.on('groups.update', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
+
+      s.ev.on('messaging-history.set', ({ chats, messages }) => {
+        lastEventAt = Date.now()
+        enqueue(async () => {
+          for (const c of chats ?? []) if (c?.id && c.name) titles.set(c.id, c.name)
+          for (const raw of messages ?? []) await handleRaw(raw)
+          // Counts and kinds only (spec invariant 6).
+          log.info({ chats: (chats ?? []).length, messages: (messages ?? []).length }, 'whatsapp history batch')
+          await markHistorySynced()
+        })
+      })
+
+      s.ev.on('messages.upsert', ({ messages }) => {
+        lastEventAt = Date.now()
+        enqueue(async () => {
+          for (const raw of messages ?? []) await handleRaw(raw)
+          log.info({ messages: (messages ?? []).length }, 'whatsapp live batch')
+        })
+      })
+
+      s.ev.on('connection.update', update => {
+        lastEventAt = Date.now()
+        if (update.connection === 'open') {
+          connected = true
+          backoff = reconnectMinMs
+          log.info('whatsapp session open')
+          finishOpen()
+          return
+        }
+        if (update.connection !== 'close') return
+        connected = false
+        if (closing) return
+        const code = closeStatus(update.lastDisconnect?.error)
+        if (code === LOGGED_OUT) {
+          loggedOut = true
+          log.warn({ code }, 'whatsapp session logged out')
+          finishOpen(new ChannelError('whatsapp session logged out', 'auth_invalidated'))
+          return
+        }
+        log.warn({ code: code ?? null, backoffMs: backoff }, 'whatsapp disconnected; reconnecting')
+        scheduleReconnect()
+      })
+    }
+
+    async function connect(): Promise<void> {
+      if (closing || loggedOut) return
+      connecting = true
+      try {
+        // sock.end() destroys the event emitter (lib/Socket/socket.js:506), so
+        // every reconnect is a brand-new socket, never a re-listen.
+        const s = await deps.makeSocket({ auth: state, version, syncFullHistory: historyPending })
+        // close(), logOut() or a 401 can land while makeSocket is in flight.
+        // A socket built after the session is finished belongs to nobody, and
+        // holding it would leak a live WhatsApp connection past close().
+        if (closing || loggedOut) {
+          void s.end(undefined).catch(() => {})
+          return
+        }
+        sock = s
+        wire(s)
+      } finally {
+        connecting = false
+      }
+    }
+
+    const teardown = async (): Promise<void> => {
+      closing = true
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+      if (openTimer) { clearTimeout(openTimer); openTimer = null }
+      try { await sock?.end(undefined) } catch (err) { log.warn({ err: errorShape(err) }, 'whatsapp socket end failed') }
+      connected = false
+    }
+
+    try {
+      await connect()
+      await ready
+    } catch (err) {
+      await teardown()
+      throw err
+    }
+
+    const session: ChannelSession = {
+      // eslint-disable-next-line require-yield
+      async *backfill(_opts: BackfillOpts, _shouldContinue?: () => boolean): AsyncGenerator<IncomingMessage> {
+        // WhatsApp answers no history query. The phone PUSHES history
+        // (messaging-history.set) and those messages go to onMessage exactly
+        // like live ones (spec 4.3). Ingest is first-writer-wins, so a replay
+        // is a no-op.
+      },
+
+      onMessage(cb) {
+        onMessageCb = cb
+        for (const m of pendingMessages.splice(0)) cb(m)
+      },
+      onEdit(cb) {
+        onEditCb = cb
+        for (const m of pendingEdits.splice(0)) cb(m)
+      },
+      onDelete(cb) {
+        onDeleteCb = cb
+        for (const ref of pendingDeletes.splice(0)) cb(ref)
+      },
+
+      async downloadMedia(raw: unknown): Promise<{ data: Buffer; mimeType: string | null }> {
+        const s = sock
+        if (!s) throw new ChannelError('whatsapp socket is not open', 'other')
+        const message = reviveRawMessage(raw)
+        try {
+          const data = await deps.downloadMedia(message, { reuploadRequest: m => s.updateMediaMessage(m) })
+          return { data, mimeType: parseWaMessage(message)?.media?.mimeType ?? null }
+        } catch (err) {
+          throw new ChannelError(`whatsapp media download failed: ${errText(err)}`, 'other')
+        }
+      },
+
+      async ping(): Promise<void> {
+        if (loggedOut) throw new ChannelError('whatsapp session logged out', 'auth_invalidated')
+        if (connected) return
+        if (connecting) return // a reconnect is in flight
+        if (Date.now() - lastEventAt > staleMs) {
+          throw new ChannelError('whatsapp socket closed and silent', 'other')
+        }
+      },
+
+      async logOut(): Promise<void> {
+        closing = true
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+        if (openTimer) { clearTimeout(openTimer); openTimer = null }
+        try {
+          // lib/Socket/socket.js:572 — removes THIS companion device only.
+          await sock?.logout()
+        } catch (err) {
+          log.warn({ err: errorShape(err) }, 'whatsapp unlink call failed; removing local auth state anyway')
+        }
+        try { await sock?.end(undefined) } catch { /* already closing */ }
+        connected = false
+        loggedOut = true
+        await rm(dir, { recursive: true, force: true })
+        log.info('whatsapp device unlinked and auth state removed')
+      },
+
+      async close(): Promise<void> {
+        await teardown()
+      },
+    }
+
+    return session
   }
 }
