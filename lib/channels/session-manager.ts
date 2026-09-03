@@ -15,6 +15,24 @@ const MAX_BACKFILL_DAYS = 30
 // A persistently failing backfill must not re-scan every 3 s tick — that is
 // self-amplifying against the very throttling likely causing it to fail.
 const BACKFILL_RETRY_BACKOFF_MS = 60_000
+// The teardown logOut() is awaited inside a tick, which the worker's own loop
+// awaits, so an unanswered one wedges the manager entirely: no other
+// connection converges and SIGTERM is ignored until the orchestrator SIGKILLs.
+// The port bounds its own RPCs too; this is the belt-and-braces bound that
+// does not depend on a port getting that right.
+const LOGOUT_TIMEOUT_MS = 20_000
+
+// Bounds a promise that must never hold the tick loop. The loser of the race
+// is not cancellable — it keeps running in the background — but Promise.race
+// has already attached handlers to it, so a late rejection is delivered to a
+// handler that ignores it rather than escaping as an unhandled rejection.
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms)
+  })
+  return Promise.race([p, bound]).finally(() => clearTimeout(timer))
+}
 
 // Bounds the re-scan window by the durable last_sync_at marker, so a worker
 // restart does not re-run a full 30-day scan: forward ingest through the
@@ -135,13 +153,15 @@ export class SessionManager {
     // disconnected, or the row was revoked, since the last tick. This is the
     // only teardown reached from OUTSIDE this pass, so it is the only place a
     // still-authenticated logOut() is meaningful. Fall back to close() when it
-    // throws: an already-dead session cannot log itself out, and that must
-    // never break the loop for the other connections.
+    // throws OR when it does not answer within LOGOUT_TIMEOUT_MS: an
+    // already-dead session cannot log itself out, and a revoke is exactly when
+    // the channel is least likely to answer promptly — neither may break the
+    // loop for the other connections.
     for (const [connId, r] of this.running) {
       if (activeIds.has(connId)) continue
       r.stopped = true
       try {
-        await r.session.logOut()
+        await withTimeout(r.session.logOut(), LOGOUT_TIMEOUT_MS, 'logOut')
       } catch (e) {
         log.error({ err: errorShape(e), connectionId: connId }, 'logOut failed; falling back to close')
         await r.session.close().catch(() => {})

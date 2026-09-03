@@ -37,8 +37,16 @@ const DEAD_SESSION_ERRORS = [
 // Every RPC this file makes is on the path of a manager tick, and mtcute's
 // own default is `timeout: Infinity`. An unbounded call would wedge the tick
 // (and, for ping, the liveness check that is supposed to notice trouble)
-// behind a connection that is neither answering nor failing.
-const STATUS_CALL_TIMEOUT_MS = 15_000
+// behind a connection that is neither answering nor failing. Applied to every
+// on-tick call: the raw account.updateStatus below, getMe() in open(), and
+// the auth.logOut RPC inside logOut() — the last one matters most, because it
+// runs during a revoke, exactly when Telegram is least likely to answer.
+//
+// tg.withParams({ timeout }) is mtcute's own wrapper for the calls that take
+// no per-call options: it proxies the client so every client.call() the
+// method makes inherits these params
+// (node_modules/@mtcute/core/highlevel/methods/misc/with-params.js).
+const RPC_TIMEOUT_MS = 15_000
 
 function classify(e: unknown): ChannelError {
   // Already classified — a ChannelError this file raised on purpose. Passing
@@ -146,7 +154,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
 // it is only ever called with offline: true; going back online is never called
 // anywhere in this file.
 async function setInvisible(tg: TelegramClient): Promise<void> {
-  await tg.call({ _: 'account.updateStatus', offline: true }, { timeout: STATUS_CALL_TIMEOUT_MS })
+  await tg.call({ _: 'account.updateStatus', offline: true }, { timeout: RPC_TIMEOUT_MS })
 }
 
 function newClient(opts: { apiId: number; apiHash: string }): TelegramClient {
@@ -223,6 +231,10 @@ export class MtcuteTelegramPort implements ChannelPort {
   async open(sessionString: string, opts: { connectionId: string }): Promise<ChannelSession> {
     const tg = newClient(this.opts)
     try {
+      // importSession is local: it only reads the string and writes the DCs,
+      // auth key and self into MemoryStorage
+      // (@mtcute/core/highlevel/base.js#importSession) — no network, so
+      // nothing to bound.
       await tg.importSession(sessionString)
       // Deliberately NOT start({}): it swallows AUTH_KEY_UNREGISTERED and
       // rethrows an argument error, which would classify as transient and hide
@@ -232,7 +244,11 @@ export class MtcuteTelegramPort implements ChannelPort {
       // call (its guard is only set after an awaited round trip), which
       // double-registers the update handler and runs two loops over the same
       // state.
-      const me = await tg.getMe()
+      const me = await tg.withParams({ timeout: RPC_TIMEOUT_MS }).getMe()
+      // notifyLoggedIn is local bookkeeping, not an RPC: it stores `self`,
+      // relabels the logger, and kicks the updates loop with a start it does
+      // not await (@mtcute/core/highlevel/base.js#notifyLoggedIn ->
+      // updates/manager.js#notifyLoggedIn). Left unbounded deliberately.
       await tg.notifyLoggedIn(me.raw)
       // mtcute reports background failures (an update-loop fault, a transport
       // error) through this emitter rather than by rejecting anything we
@@ -367,7 +383,7 @@ class MtcuteSession implements ChannelSession {
   // rejects WITHOUT calling destroy(): the manager falls back to close(), and
   // destroy() is idempotent, so there is no double-teardown hazard either way.
   async logOut(): Promise<void> {
-    await this.tg.logOut()
+    await this.tg.withParams({ timeout: RPC_TIMEOUT_MS }).logOut()
     await this.tg.destroy()
   }
 

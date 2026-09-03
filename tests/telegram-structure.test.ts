@@ -41,6 +41,18 @@ describe('the mtcute boundary', () => {
     expect(code).not.toMatch(/offline:\s*false/)
   })
 
+  it('bounds every RPC that runs on a manager tick', () => {
+    // mtcute defaults to `timeout: Infinity`, and every call here is awaited
+    // inside reconcileActive — an unanswered one wedges the tick, and with it
+    // SIGTERM. The raw call carries its own timeout; getMe() and logOut()
+    // take no per-call options, so they inherit one through withParams.
+    expect(code).toMatch(/account\.updateStatus[\s\S]{0,80}timeout: RPC_TIMEOUT_MS/)
+    expect(code).toMatch(/withParams\(\{ timeout: RPC_TIMEOUT_MS \}\)\.getMe\(\)/)
+    expect(code).toMatch(/withParams\(\{ timeout: RPC_TIMEOUT_MS \}\)\.logOut\(\)/)
+    // No unbounded survivor of either call.
+    expect(code).not.toMatch(/(?<!withParams\(\{ timeout: RPC_TIMEOUT_MS \}\))\.getMe\(\)/)
+  })
+
   it('never reaches for the log-out-everywhere primitive', () => {
     // auth.resetAuthorizations is a DIFFERENT MTProto call from the one
     // logOut() wraps, and it would kill the owner's other devices.

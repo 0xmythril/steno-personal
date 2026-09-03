@@ -15,6 +15,7 @@ export class FakePort implements ChannelPort {
   private backfillError: Error | null = null
   private pingError: Error | null = null
   private logOutError: Error | null = null
+  private logOutHangs = false
   private download: { data: Buffer; mimeType: string | null } | null = null
   private session: FakeSession | null = null
 
@@ -36,6 +37,10 @@ export class FakePort implements ChannelPort {
   scriptPingError(err: Error | null) { this.pingError = err }
   // Simulates an already-dead session that cannot log itself out.
   scriptLogOutError(err: Error | null) { this.logOutError = err }
+  // Simulates a channel that accepts the log-out call and never answers it —
+  // the shape that would wedge a tick (and with it SIGTERM) if the manager
+  // awaited it unbounded.
+  scriptLogOutHang(hangs = true) { this.logOutHangs = hangs }
   scriptDownload(payload: { data: Buffer; mimeType: string | null }) { this.download = payload }
 
   private requireSession(): FakeSession {
@@ -70,7 +75,8 @@ export class FakePort implements ChannelPort {
   async open(_sessionString: string, _opts: { connectionId: string }): Promise<ChannelSession> {
     this.session = new FakeSession(
       this.backfillMessages,
-      () => this.backfillError, () => this.pingError, () => this.logOutError, () => this.download,
+      () => this.backfillError, () => this.pingError, () => this.logOutError,
+      () => this.logOutHangs, () => this.download,
     )
     return this.session
   }
@@ -88,6 +94,7 @@ class FakeSession implements ChannelSession {
     private getBackfillError: () => Error | null,
     private getPingError: () => Error | null,
     private getLogOutError: () => Error | null,
+    private getLogOutHangs: () => boolean,
     private getDownload: () => { data: Buffer; mimeType: string | null } | null,
   ) {}
 
@@ -124,6 +131,7 @@ class FakeSession implements ChannelSession {
   }
 
   async logOut(): Promise<void> {
+    if (this.getLogOutHangs()) return new Promise<never>(() => {})
     const err = this.getLogOutError()
     if (err) throw err
     this.loggedOut = true

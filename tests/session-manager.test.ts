@@ -281,6 +281,31 @@ describe('session manager', () => {
     await mgr.stopAll()
   })
 
+  it('falls back to close() when logOut never answers, without wedging the tick', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    port.scriptLogOutHang()                       // the channel accepts the call and goes quiet
+    await revokeConnection(conn.id, 'disconnected')
+    try {
+      // Only the timers: the DB driver is synchronous, so nothing else in the
+      // tick depends on a clock that has stopped.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const ticked = mgr.tick()
+      // Let the tick reach the bounded race before the clock jumps.
+      while (vi.getTimerCount() === 0) await new Promise(r => setImmediate(r))
+      await vi.advanceTimersByTimeAsync(20_000)
+      await ticked                                // resolves: the tick is not wedged
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(port.sessionClosed).toBe(true)
+    expect(port.loggedOut).toBe(false)
+    port.scriptLogOutHang(false)
+    await mgr.stopAll()
+  })
+
   it('revokes a session killed from the phone, and never tries to log that one out', async () => {
     const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
     const port = new FakePort('telegram')
