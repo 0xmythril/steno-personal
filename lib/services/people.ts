@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import {
-  channelContacts, chats, dismissedSuggestions, messages, people, personIdentities,
+  channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
 } from '@/lib/db/schema'
 import type { Channel } from '@/lib/channels/port'
 
@@ -368,6 +368,14 @@ export async function syncContacts(
   return { upserted: values.length }
 }
 
+// One name, compared the way a person would read it: trimmed, and the same
+// whichever way it was capitalised. Null for a name that is only whitespace,
+// so two people with no name never match each other.
+const nameKey = (name: string | null): string | null => {
+  const n = name?.trim().toLowerCase()
+  return n ? n : null
+}
+
 export type IdentityCandidate = IdentityRef & {
   displayName: string | null; phone: string | null
   kind: 'contact' | 'dm' | 'sender'
@@ -385,8 +393,21 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
     phone: channelContacts.phone,
   }).from(channelContacts).where(eq(channelContacts.channel, channel))
 
-  const dmRows = await db.select({ externalId: chats.externalChatId, displayName: chats.title })
-    .from(chats).where(and(eq(chats.channel, channel), eq(chats.kind, 'dm')))
+  // The owner's own display name comes along because a DM's stored title is
+  // sometimes the WRONG SIDE of the conversation: WhatsApp has no subject for a
+  // direct chat, and a history sync can leave the owner's own name in it.
+  // queries.ts already guards its read path with nullif(title, ownerDisplayName)
+  // for exactly this; the candidate list is where a person would otherwise be
+  // CREATED under that name, and a person row wins the read path's coalesce
+  // ahead of the guard — so the address book would override the defence rather
+  // than merely bypass it.
+  const dmRows = await db.select({
+    externalId: chats.externalChatId,
+    displayName: chats.title,
+    ownerName: connections.displayName,
+  }).from(chats)
+    .innerJoin(connections, eq(connections.id, chats.connectionId))
+    .where(and(eq(chats.channel, channel), eq(chats.kind, 'dm')))
 
   // Grouped by (id, name) with max(sent_at) so a sender who has been renamed
   // is offered under the name they most recently wrote under, deterministically
@@ -425,7 +446,13 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
   }
 
   for (const r of contactRows) put(r.externalId, r.displayName, r.phone, 'contact')
-  for (const r of dmRows) put(r.externalId, r.displayName, null, 'dm')
+  for (const r of dmRows) {
+    // Dropped rather than kept: the counterparty's own sender name may still
+    // fill it in below, which is the right name for them. What must not happen
+    // is the owner's name becoming somebody else's.
+    const title = nameKey(r.displayName) === nameKey(r.ownerName) ? null : r.displayName
+    put(r.externalId, title, null, 'dm')
+  }
   // Most recent first, because the first writer for an id wins below.
   for (const r of [...senderRows].sort((a, b) => Number(b.lastAt) - Number(a.lastAt))) {
     put(r.externalId, r.displayName, null, 'sender')
@@ -460,11 +487,6 @@ export type Suggestion = { telegram: IdentityCandidate; whatsapp: IdentityCandid
 // principle contain. '|' appears in no Telegram user id and in no WhatsApp JID.
 const pairKey = (telegramExternalId: string, whatsappExternalId: string) =>
   `${telegramExternalId}|${whatsappExternalId}`
-
-const nameKey = (name: string | null): string | null => {
-  const n = name?.trim().toLowerCase()
-  return n ? n : null
-}
 
 function matchReason(telegram: IdentityCandidate, whatsapp: IdentityCandidate): Suggestion['reason'] | null {
   // The phone number is the only identifier the two channels share, so it is

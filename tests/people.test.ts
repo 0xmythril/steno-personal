@@ -351,6 +351,39 @@ describe('the self-populating address book', () => {
     expect(await listPeople()).toHaveLength(2)
   })
 
+  // A WhatsApp history sync can leave the OWNER'S own display name in a direct
+  // chat's title — it is the wrong side of the conversation, which is why
+  // queries.ts titles a DM with nullif(title, ownerDisplayName). Creating a
+  // person from that title would do worse than bypass the guard: a person row
+  // wins the read path's coalesce ahead of it, so every message the
+  // counterparty ever sent would be labelled with the owner's name, and
+  // list_people would serve the owner back to an agent as a correspondent.
+  it('never names anyone after the owner, however the DM title was written', async () => {
+    const wa = await makeConnection({ channel: 'whatsapp', displayName: 'Cham' })
+    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: '  cham  ' })
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham' })
+    await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Cham' })
+    // Someone genuinely called something else is still a person, so the rule is
+    // narrow rather than "skip DMs".
+    await makeChat(tg, { kind: 'dm', externalChatId: '43', title: 'Grace' })
+
+    expect((await listIdentityCandidates('whatsapp'))[0])
+      .toMatchObject({ externalId: ADA_JID, displayName: null, kind: 'dm' })
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Grace'])
+  })
+
+  // …and the counterparty's own sender name is still the right name for them,
+  // so dropping the title is a fallback and not a refusal.
+  it('falls back to the counterparty\'s own name when the title was the owner\'s', async () => {
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham' })
+    const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Cham' })
+    await addMessage(dm, { senderExternalId: '42', senderName: 'Ada' })
+
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada'])
+  })
+
   it('merges by phone into the older person, and the alias the owner typed wins', async () => {
     const older = await createPerson({ name: 'Ada', nameSource: 'channel' })
     await linkIdentity(older.id, { channel: 'telegram', externalId: '42', phone: '+44 7700 900123' })
