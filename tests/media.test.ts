@@ -102,6 +102,32 @@ describe('media drain', () => {
     expect(after.attempts).toBe(0)
   })
 
+  it('a dead connection\'s backlog cannot starve a live connection', async () => {
+    // C1: the batch used to be selected oldest-first across ALL pending rows
+    // and only then filtered against the live map, so `batch` rows on a
+    // revoked connection occupied every slot on every pass, forever.
+    const dead = await makeConnection('telegram')
+    const deadChat = await makeChat(dead.id)
+    for (let i = 0; i < 3; i++) {
+      const m = await makeMessage(deadChat.id)
+      const md = await makeMedia(m.id, dead.id, { mimeType: 'image/png' })
+      // Explicitly older than the fresh row, so the starving order is the one
+      // the drain would actually see rather than an insertion-time accident.
+      await db.update(media).set({ createdAt: new Date(Date.now() - 60_000) }).where(eq(media.id, md.id))
+    }
+    // A reconnect: makeConnection revokes the prior live row on the channel,
+    // which is exactly how a Disconnect strands the rows above.
+    const live = await makeConnection('telegram')
+    const liveChat = await makeChat(live.id)
+    const freshMessage = await makeMessage(liveChat.id)
+    const fresh = await makeMedia(freshMessage.id, live.id, { mimeType: 'image/png' })
+
+    const out = await processPendingMedia(new Map([[live.id, ok('fresh-bytes')]]), { batch: 3 })
+    expect(out).toEqual({ done: 1, failed: 0, skipped: 3 })
+    const [after] = await db.select().from(media).where(eq(media.id, fresh.id))
+    expect(after.status).toBe('done')
+  })
+
   it('does not even query when no session is live', async () => {
     const { media: md } = await makeAttachment()
     const out = await processPendingMedia(new Map())

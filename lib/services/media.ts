@@ -2,7 +2,7 @@ import { db } from '@/lib/db/client'
 import { media, messages } from '@/lib/db/schema'
 import { env } from '@/lib/env'
 import type { IncomingMessage } from '@/lib/services/ingest'
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
 import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -100,9 +100,19 @@ export type MediaDrainSummary = { done: number; failed: number; skipped: number 
 // channel's media URLs expire: the rows nearest expiry go first.
 //
 // `downloaders` is the set of connections with a live session RIGHT NOW. A row
-// whose connection is not in it is skipped without an attempt: there is no
+// whose connection is not in it cannot be downloaded at all: there is no
 // session to download it with, and burning a retry on that would exhaust the
 // three attempts of every queued row during a reconnect.
+//
+// Liveness is therefore part of the SELECT, not a filter applied after it.
+// Selecting oldest-first across ALL pending rows and skipping the dead ones in
+// the loop lets an undownloadable row occupy a batch slot on every pass
+// forever: revoking a connection leaves its queued rows pending with a
+// connection_id that will never be live again, and they sort FIRST because
+// they are the oldest. `batch` of them and no other attachment is ever
+// downloaded again, silently. `skipped` keeps its contract meaning — pending
+// rows this pass could not touch because their connection has no live
+// session — as one count rather than as consumed slots.
 export async function processPendingMedia(
   downloaders: Map<string, Downloader>,
   opts: { maxAttempts?: number; batch?: number } = {},
@@ -110,18 +120,36 @@ export async function processPendingMedia(
   const maxAttempts = opts.maxAttempts ?? 3
   const batch = opts.batch ?? 20
   const summary: MediaDrainSummary = { done: 0, failed: 0, skipped: 0 }
+  // No live session at all: nothing is downloadable, so neither query is worth
+  // running. Every pending row would be `skipped` and the next tick re-counts.
   if (downloaders.size === 0) return summary
+  const live = [...downloaders.keys()]
+
+  const [stranded] = await db.select({ n: sql<number>`count(*)` })
+    .from(media)
+    .innerJoin(messages, eq(media.messageId, messages.id))
+    .where(and(
+      eq(media.status, 'pending'),
+      isNull(messages.deletedAt),
+      notInArray(media.connectionId, live),
+    ))
+  summary.skipped = Number(stranded?.n ?? 0)
 
   const pending = await db.select({ md: media, raw: messages.raw })
     .from(media)
     .innerJoin(messages, eq(media.messageId, messages.id))
-    .where(and(eq(media.status, 'pending'), isNull(messages.deletedAt)))
+    .where(and(
+      eq(media.status, 'pending'),
+      isNull(messages.deletedAt),
+      inArray(media.connectionId, live),
+    ))
     .orderBy(asc(media.createdAt), asc(media.id))
     .limit(batch)
   if (pending.length === 0) return summary
   mkdirSync(mediaDir(), { recursive: true })
 
   for (const { md, raw } of pending) {
+    // Non-null by the SELECT above; the lookup is what narrows the type.
     const download = downloaders.get(md.connectionId)
     if (!download) { summary.skipped++; continue }
     // Tracked outside the try so the catch block can clean up a partial
