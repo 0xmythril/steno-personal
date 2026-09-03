@@ -10,6 +10,11 @@ import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
 import { recoverStartAction, recoverPasswordAction, recoverCancelAction, recoverClaimAction } from './actions'
 
+// Reads the database (is the instance fresh?) before any request API, so
+// Next must be told not to prerender this at build time — an env-less Docker
+// build has no database to ask.
+export const dynamic = 'force-dynamic'
+
 export const LOST_ACCESS_DOCS = 'https://github.com/0xmythril/steno-personal/blob/main/docs/self-hosting.md#lost-access'
 
 function StartCards({ channels }: { channels: Channel[] }) {

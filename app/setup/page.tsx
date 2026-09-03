@@ -15,6 +15,11 @@ import { setupConnectAction, setupPasswordAction, setupCancelAction, finishSetup
 // the moment a key exists. Pairing an account is what makes the visitor the
 // owner: that account becomes the proof recovery checks against later.
 
+// Reads the database (is the instance fresh?) before any request API, so
+// Next must be told not to prerender this at build time — an env-less Docker
+// build has no database to ask.
+export const dynamic = 'force-dynamic'
+
 function errorText(c: ConnectionStatus): string | null {
   if (!c.lastError || c.lastError === PASSWORD_REJECTED) return null
   return c.lastError
