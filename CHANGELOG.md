@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
+- Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
+- A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
+- A one-line footer on every page with the GitHub and X links.
+- A plain-language tagline on the login page.
 
 ### Changed
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.
