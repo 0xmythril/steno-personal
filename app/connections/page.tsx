@@ -3,6 +3,7 @@ import { Nav } from '@/app/nav'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS, formatRelativeTime } from '@/lib/format'
+import { ChannelName } from '@/app/channel-name'
 import type { Channel } from '@/lib/channels/port'
 import { Consent } from './consent'
 import { WhatsAppConsent } from './whatsapp-consent'
@@ -22,7 +23,7 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
   if (live?.status === 'active') {
     return (
       <section className="card">
-        <h2>{CHANNEL_LABELS[channel]}{live.displayName ? `: ${live.displayName}` : ''}</h2>
+        <h2><ChannelName channel={channel} />{live.displayName ? `: ${live.displayName}` : ''}</h2>
         <p className="muted">
           Connected, read-only. Last synced {formatRelativeTime(live.lastSyncAt)}.
         </p>
@@ -41,7 +42,7 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
   if (live?.status === 'pending') {
     return (
       <section className="card">
-        <h2>{CHANNEL_LABELS[channel]}</h2>
+        <h2><ChannelName channel={channel} /></h2>
         {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
         <ConnectPanel
           connectionId={live.id}
@@ -95,7 +96,7 @@ export default async function ConnectionsPage() {
             <tbody>
               {history.map(c => (
                 <tr key={c.id}>
-                  <td>{CHANNEL_LABELS[c.channel]}</td>
+                  <td><ChannelName channel={c.channel} /></td>
                   <td>{c.displayName ?? '—'}</td>
                   <td>{formatRelativeTime(c.revokedAt)}</td>
                   <td>{errorText(c) ?? '—'}</td>
