@@ -7,6 +7,7 @@ export function Nav({ label }: { label: string }) {
     <nav>
       <Link href="/" className="brand"><BrandLogo /> steno-personal</Link>
       <Link href="/">Chats</Link>
+      <Link href="/people">People</Link>
       <Link href="/connections">Connections</Link>
       <Link href="/settings">Settings</Link>
       <span className="muted" style={{ marginLeft: 'auto' }}>key: {label}</span>
