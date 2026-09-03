@@ -395,6 +395,46 @@ describe('session manager', () => {
     await mgr.stopAll()
   })
 
+  // Regression for the bug in c154533: a session whose backfill never
+  // completes stays on the UNTHROTTLED !existing.backfilled ping branch
+  // forever, at the 3 s tick cadence rather than PING_EVERY_MS. A FLOOD_WAIT
+  // there is expected load from a long backfill, not a wedged session, so it
+  // must never count toward consecutiveOther — only the throttled,
+  // backfilled-branch probe may recycle.
+  it('never recycles a session stuck pre-backfill, even after five consecutive other ping failures', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    // Backfill never completes: a non-auth error, retried on its own
+    // BACKFILL_RETRY_BACKOFF_MS backoff, never flips `backfilled` true — so
+    // every tick below keeps taking the pre-backfill ping branch.
+    port.scriptBackfillError(new Error('network blip'))
+    port.scriptPingError(new ChannelError('FLOOD_WAIT (420)', 'other'))
+    const mgr = new SessionManager(portsOf(port))
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle() // opens the session; first (failing) backfill attempt
+      expect(port.pingCount).toBe(0)         // pings only fire for an already-running session
+
+      // Five consecutive ticks, each pinging — unthrottled, no PING_EVERY_MS
+      // gate on this branch — and each failing 'other'. Under the bug this
+      // being fixed, three of these would have recycled the session.
+      for (let i = 0; i < 5; i++) {
+        await mgr.tick(); await mgr.whenIdle()
+      }
+
+      expect(port.pingCount).toBe(5)
+      expect(port.sessionClosed).toBe(false) // never recycled
+      expect(warn.mock.calls.find(c => c[1] === 'session recycled')).toBeUndefined()
+
+      const row = await rowOf(conn.id)
+      expect(row.status).toBe('active')
+      expect(row.lastSyncAt).toBeNull() // the backfill genuinely never completed
+    } finally {
+      warn.mockRestore()
+    }
+    await mgr.stopAll()
+  })
+
   it('a successful ping clears the recycle counter', async () => {
     await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
     const port = new FakePort('telegram')

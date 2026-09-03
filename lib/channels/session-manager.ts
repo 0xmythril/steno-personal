@@ -65,8 +65,11 @@ type Running = {
   lastBackfillAttempt: number // epoch ms; 0 means never attempted
   lastPingAt: number          // epoch ms; 0 means never probed, so the first tick probes
   backfillSinceDays: number   // fixed at open time; retries reuse it
-  // Consecutive 'other' ping failures. Reset by any successful ping; at
-  // MAX_CONSECUTIVE_OTHER the session is recycled. See handleSessionError.
+  // Consecutive 'other' failures of the THROTTLED (backfilled-branch, once a
+  // minute) liveness probe only. Reset by any successful ping on that branch;
+  // at MAX_CONSECUTIVE_OTHER the session is recycled. The unthrottled
+  // pre-backfill ping below never touches this counter — see the comment on
+  // that branch. See handleSessionError.
   consecutiveOther: number
 }
 
@@ -203,12 +206,24 @@ export class SessionManager {
             // recordSync here: a backfill still in progress has nothing
             // durable to mark healthy yet, and a dead session caught by this
             // ping must not be handed to maybeStartBackfill.
+            //
+            // Unlike the backfilled branch, this ping is NOT throttled — it
+            // fires every tick (every 3 s) for as long as backfill has not
+            // finished. A FLOOD_WAIT here (classified 'other', same as the
+            // WhatsApp stale-reconnect case) is an expected side effect of a
+            // long backfill hammering the same account, not evidence the
+            // session is wedged, and three of them are three ticks — nine
+            // seconds — not three minutes. So this call must NEVER count
+            // toward consecutiveOther: no fromPing flag, meaning 'other' just
+            // logs and retries next tick while backfill's own retry/backoff
+            // in runBackfill keeps making progress. auth_invalidated still
+            // revokes either way, via handleSessionError below.
             try {
               await existing.session.ping()
               existing.consecutiveOther = 0
               this.maybeStartBackfill(conn.id, existing)
             } catch (e) {
-              await this.handleSessionError(conn.id, e, { fromPing: true })
+              await this.handleSessionError(conn.id, e)
             }
           } else {
             // A phone-side revocation never throws on its own inside a running
@@ -221,6 +236,10 @@ export class SessionManager {
             // the tick cadence. lastPingAt is stamped BEFORE the await, so a
             // probe that fails (FLOOD_WAIT, a transient fault) also waits out
             // the window instead of re-firing — and re-logging — every tick.
+            // This throttling is exactly why THIS is the only ping call site
+            // allowed to pass fromPing: true below — three consecutive
+            // failures here really are three minutes of a wedged session, not
+            // three seconds of an unthrottled loop tripping over itself.
             if (Date.now() - existing.lastPingAt >= PING_EVERY_MS) {
               existing.lastPingAt = Date.now()
               try {
@@ -337,17 +356,24 @@ export class SessionManager {
       return
     }
     // Not fatal, so the row is left alone — the connection is still active and
-    // still the owner's. But a LIVENESS PROBE that fails this way three times
-    // running is a wedged session (for WhatsApp: a reconnect loop that never
-    // reaches 'open', raised after the port's own 10-minute stale window), and
-    // "retry next tick" retries nothing — it re-pings the same wedged session
-    // forever while the archive stops. Throw it away instead; the next tick
+    // still the owner's. But the THROTTLED LIVENESS PROBE (once a minute, on
+    // the backfilled branch) failing this way three times running is a wedged
+    // session (for WhatsApp: a reconnect loop that never reaches 'open',
+    // raised after the port's own 10-minute stale window), and "retry next
+    // tick" retries nothing — it re-pings the same wedged session forever
+    // while the archive stops. Throw it away instead; the next tick
     // re-open()s it from the connection row, which is the only recovery
     // available from here. No last_error write: the connection has not failed,
     // and nothing outside revokeConnection may write that column's sentinels.
     //
-    // Counted for pings only. A failing backfill has its own retry backoff and
-    // is not evidence that the session is unusable.
+    // Counted ONLY for that throttled ping — callers pass fromPing: true from
+    // exactly that one call site. The unthrottled pre-backfill ping (every 3 s
+    // tick, for as long as backfill has not finished) never passes it: an
+    // account mid-backfill drawing rate-limit errors there is expected load,
+    // not a wedged session, and at the tick cadence three of them is nine
+    // seconds, not three minutes. A failing backfill itself also never counts
+    // here — it has its own retry backoff and is not evidence the session is
+    // unusable.
     const kind = e instanceof ChannelError ? e.kind : 'other'
     const r = this.running.get(connId)
     if (opts.fromPing && kind === 'other' && r && ++r.consecutiveOther >= MAX_CONSECUTIVE_OTHER) {
