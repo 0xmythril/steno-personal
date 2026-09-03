@@ -73,9 +73,10 @@ describe('licence', () => {
 })
 
 describe('the WhatsApp warning is on the front page', () => {
-  // The exact three sentences from the consent screen (shared-interfaces,
-  // "Consent copy"). The README must say what the user is told before
-  // pairing, word for word, so nobody discovers it only after the QR.
+  // The exact three sentences from the consent screen
+  // (app/connections/whatsapp-consent.tsx). The README must say what the user
+  // is told before pairing, word for word, so nobody discovers it only after
+  // the QR.
   const SENTENCES = [
     'WhatsApp does not permit unofficial clients.',
     'Your number can be restricted or banned, and your phone will show an unofficial-client notice under Linked devices.',

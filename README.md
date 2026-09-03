@@ -1,5 +1,8 @@
 # steno-personal
 
+[![CI](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml)
+[![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
+
 Your own Telegram and WhatsApp chats, archived read-only into one SQLite file
 on a machine you control, and readable by your agents over MCP.
 
@@ -239,6 +242,8 @@ become. Conduct is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 | [docs/self-hosting.md](docs/self-hosting.md) | Docker, bare Node, Railway, reverse proxies, backups, upgrades. |
 | [docs/architecture.md](docs/architecture.md) | How the two processes and the channel port fit together. |
 | [docs/threat-model.md](docs/threat-model.md) | What this protects against, and what it does not. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Ground rules, development setup, what the project will not become. |
+| [docs/releasing.md](docs/releasing.md) | How a release is cut. |
 | [CHANGELOG.md](CHANGELOG.md) | Releases. |
 
 ## Licence
