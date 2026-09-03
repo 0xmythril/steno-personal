@@ -11,6 +11,13 @@ export const envSchema = z.object({
   PORT: blank(z.coerce.number().int().positive().optional()).default(3000),
   SECRET_KEY: blank(z.string().min(32, 'SECRET_KEY must be at least 32 characters').optional()),
   LOG_LEVEL: blank(z.enum(['trace', 'debug', 'info', 'warn', 'error']).optional()).default('info'),
+  // Backstop against runaway provider spend: billed analyses in the trailing
+  // 24 h. 0 disables the drain entirely, which is why the bound is nonnegative
+  // rather than positive.
+  ANALYSIS_DAILY_LIMIT: blank(z.coerce.number().int().nonnegative().optional()).default(500),
+  // Rows enqueued and drained per medium per pass. Meters a backfill out over
+  // many passes instead of one open-ended one.
+  ANALYSIS_BACKFILL_BATCH: blank(z.coerce.number().int().positive().optional()).default(20),
   // The project defaults are empty until the owner registers the app; an
   // api_id of 0 and an empty hash both read as "unset" to the worker.
   TELEGRAM_API_ID: blank(z.coerce.number().int().nonnegative().optional()).default(TELEGRAM_DEFAULT_API_ID),
