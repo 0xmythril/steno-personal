@@ -156,3 +156,35 @@ export async function setFirstKeyFlash(id: string, rawKey: string): Promise<void
     httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: 5 * 60, path: '/welcome',
   })
 }
+
+// ---- Passkeys (app/api/passkeys) ----
+//
+// A WebAuthn ceremony is two requests: options (which carry a challenge the
+// authenticator must sign) and verify. The challenge rides between them in
+// an httpOnly cookie, never a URL, so only the browser that asked for the
+// options can answer them. The purpose is stored with it so a registration
+// challenge can never satisfy a login, or the reverse. The cookie is taken —
+// read and deleted — on every verify, success or failure.
+export const WEBAUTHN_COOKIE = 'sp_webauthn'
+export const WEBAUTHN_COOKIE_MAX_AGE_S = 5 * 60
+export type ChallengePurpose = 'register' | 'login'
+
+export async function setChallengeCookie(challenge: string, purpose: ChallengePurpose): Promise<void> {
+  const jar = await cookies()
+  jar.set(WEBAUTHN_COOKIE, JSON.stringify({ challenge, purpose }), {
+    httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: WEBAUTHN_COOKIE_MAX_AGE_S, path: '/api/passkeys',
+  })
+}
+
+export async function takeChallengeCookie(purpose: ChallengePurpose): Promise<string | null> {
+  const jar = await cookies()
+  const raw = jar.get(WEBAUTHN_COOKIE)?.value
+  jar.delete({ name: WEBAUTHN_COOKIE, path: '/api/passkeys' })
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as { challenge?: unknown; purpose?: unknown }
+    return parsed.purpose === purpose && typeof parsed.challenge === 'string' ? parsed.challenge : null
+  } catch {
+    return null
+  }
+}
