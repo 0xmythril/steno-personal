@@ -22,8 +22,9 @@ type Status = {
 const TERMINAL = ['active', 'revoked', 'error']
 const POLL_MS = 2000
 
-export function ConnectPanel({ connectionId, initial, qrSvg }: {
+export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
   connectionId: string
+  channel: 'telegram' | 'whatsapp'
   initial: Status
   qrSvg: string | null
 }) {
@@ -82,11 +83,19 @@ export function ConnectPanel({ connectionId, initial, qrSvg }: {
   if (qrSvg) {
     return (
       <>
-        <ol>
-          <li>Open Telegram.</li>
-          <li>Go to <strong>Settings &rarr; Devices &rarr; Link Desktop Device</strong>.</li>
-          <li>Scan this code.</li>
-        </ol>
+        {channel === 'whatsapp' ? (
+          <ol>
+            <li>Open WhatsApp on your phone.</li>
+            <li>Go to <strong>Settings &rarr; Linked devices &rarr; Link a device</strong>.</li>
+            <li>Scan this code.</li>
+          </ol>
+        ) : (
+          <ol>
+            <li>Open Telegram.</li>
+            <li>Go to <strong>Settings &rarr; Devices &rarr; Link Desktop Device</strong>.</li>
+            <li>Scan this code.</li>
+          </ol>
+        )}
         {/* Finished SVG from the server: the component receives an image, not
             a token, and polls only a timestamp to learn when a fresh code was
             published. */}
@@ -96,14 +105,15 @@ export function ConnectPanel({ connectionId, initial, qrSvg }: {
   }
 
   // The QR is published by the worker, not by this app: the page only writes a
-  // pending row and waits. With no worker running (or no Telegram API
+  // pending row and waits. With no worker running (or, for Telegram, no API
   // credentials) this is where the reader sits, so say what is being waited on
   // and let them leave — without Cancel a stuck row survives a refresh.
   return (
     <>
       <p className="muted">
-        Waiting for a login code. This needs the worker to be running with
-        Telegram API credentials set; if it is not, no code will appear.
+        {channel === 'whatsapp'
+          ? 'Waiting for a login code. This needs the worker to be running; if it is not, no code will appear.'
+          : 'Waiting for a login code. This needs the worker to be running with Telegram API credentials set; if it is not, no code will appear.'}
       </p>
       <form action={cancelConnectionAction}>
         <input type="hidden" name="connectionId" value={connectionId} />

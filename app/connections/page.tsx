@@ -46,6 +46,7 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
         {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
         <ConnectPanel
           connectionId={live.id}
+          channel={channel}
           initial={{
             status: live.status,
             qrAt: live.login?.qrAt ? live.login.qrAt.toISOString() : null,

@@ -35,6 +35,21 @@ describe('connections page', () => {
     expect(src).toContain('DEVICE_MODEL')
   })
 
+  it('the connect panel shows channel-specific pairing copy', () => {
+    // The WhatsApp pending screen once told the reader it was waiting on
+    // Telegram API credentials and to open Telegram to scan. Both the scan
+    // instructions and the waiting sentence must branch on the channel prop,
+    // and the WhatsApp branch must not mention Telegram at all.
+    const src = readFileSync('app/connections/connect-panel.tsx', 'utf8')
+    expect(src).toMatch(/channel: 'telegram' \| 'whatsapp'/)
+    expect(src).toMatch(/Linked devices/)
+    const waSentence = src.match(/\? '(Waiting for a login code[^']*)'/)?.[1]
+    expect(waSentence).toBeDefined()
+    expect(waSentence).not.toMatch(/Telegram/)
+    const page = readFileSync('app/connections/page.tsx', 'utf8')
+    expect(page).toMatch(/<ConnectPanel[\s\S]*?channel=\{channel\}/)
+  })
+
   it('gates the Telegram-only training bullet on channel === telegram', () => {
     // The training claim is a Telegram terms-of-service fact; it does not
     // apply to WhatsApp and must not render on the WhatsApp consent screen.
