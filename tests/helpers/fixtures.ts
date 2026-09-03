@@ -11,6 +11,9 @@ export async function makeConnection(opts: {
   status?: 'pending' | 'active' | 'revoked' | 'error'
   externalAccountId?: string
   sessionCiphertext?: string
+  // The owner's own name on that account. It is what a DM title has to be
+  // compared against before anyone is named after it.
+  displayName?: string | null
 } = {}) {
   const status = opts.status ?? 'active'
   const [row] = await db.insert(connections).values({
@@ -19,6 +22,7 @@ export async function makeConnection(opts: {
     status,
     externalAccountId: opts.externalAccountId ?? randomUUID(),
     sessionCiphertext: opts.sessionCiphertext,
+    displayName: opts.displayName,
     // A 'revoked' status without revoked_at is exactly the disagreement the
     // single revoke authority exists to prevent; never manufacture it.
     revokedAt: status === 'revoked' ? new Date() : undefined,

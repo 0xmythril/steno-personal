@@ -7,7 +7,10 @@ import { listChats } from '@/lib/services/queries'
 import { CHANNEL_LABELS } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { candidateLabel, PEOPLE_ERRORS, CHANNELS, SOURCE_LABELS } from '../labels'
-import { updatePersonAction, deletePersonAction, linkIdentityAction, unlinkIdentityAction } from '../actions'
+import {
+  updatePersonAction, resetNameAction, mergePeopleAction, hidePersonAction,
+  linkIdentityAction, unlinkIdentityAction,
+} from '../actions'
 
 // One person: what they are called here, which channel identities are theirs,
 // and the direct chats those identities are the other side of.
@@ -36,13 +39,20 @@ export default async function PersonPage({ params, searchParams }: {
   // listChats resolves the person for direct chats only: a group is a room,
   // not someone. The copy below says so rather than implying completeness.
   const theirChats = chats.filter(c => c.person?.id === person.id)
+  // Everyone this person could be merged into. Themselves excluded, because
+  // "merge into me" is a slip rather than an instruction; hidden people are
+  // not in listPeople at all, and merging into one would resurrect nothing.
+  const others = everyone.filter(p => p.id !== person.id)
 
   return (
     <>
       <Nav label={session.label} current="people" />
       <main>
       <p className="muted"><Link href="/people">&larr; All people</Link></p>
-      <h1>{person.name}</h1>
+      <h1>
+        {person.name}
+        {person.nameSource === 'owner' && <> <span className="eyebrow" title="A name you typed">alias</span></>}
+      </h1>
       {person.notes && <p>{person.notes}</p>}
       {error && <p className="danger" role="alert">{error}</p>}
 
@@ -54,6 +64,23 @@ export default async function PersonPage({ params, searchParams }: {
           <label>Notes <input name="notes" defaultValue={person.notes ?? ''} placeholder="optional" /></label>{' '}
           <button type="submit">Save</button>
         </form>
+        {person.nameSource === 'owner' ? (
+          <>
+            <p className="muted">
+              This is your name for them, and no contact sync will overwrite it. Hand it back and
+              they are called whatever the channel calls them, now and after every later sync.
+            </p>
+            <form action={resetNameAction} className="inline">
+              <input type="hidden" name="personId" value={person.id} />
+              <button type="submit">Use channel name</button>
+            </form>
+          </>
+        ) : (
+          <p className="muted">
+            This name comes from your contacts and follows it: rename them here and your name wins
+            from then on.
+          </p>
+        )}
       </section>
 
       <section className="card">
@@ -135,14 +162,41 @@ export default async function PersonPage({ params, searchParams }: {
       </section>
 
       <section className="card">
-        <h2>Delete</h2>
+        <h2>Merge into</h2>
         <p className="muted">
-          Removes this person and the links only. Every chat and message stays exactly where it is,
-          under whatever name the channel stored.
+          Two rows for one person. Every identity here moves to whoever you choose, and this row is
+          deleted for good — Hide can be undone, this cannot. The other one keeps its name, unless
+          it only has a channel name and this one carries a name you typed, and it takes these
+          notes if it has none of its own. Chats and messages are untouched.
         </p>
-        <form action={deletePersonAction}>
+        {others.length === 0 ? (
+          <p className="muted">Nobody else to merge into yet.</p>
+        ) : (
+          <form action={mergePeopleAction} className="inline">
+            <input type="hidden" name="personId" value={person.id} />
+            <label>
+              Move everything to{' '}
+              <select name="intoId" defaultValue="">
+                <option value="">Choose someone…</option>
+                {others.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>{' '}
+            <button type="submit" className="danger">Merge</button>
+          </form>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>Hide</h2>
+        <p className="muted">
+          Hides this person from the address book and from agents. Their links stay, so they will
+          not be recreated. You can restore them from the People page.
+        </p>
+        <form action={hidePersonAction}>
           <input type="hidden" name="personId" value={person.id} />
-          <button type="submit" className="danger">Delete this person</button>
+          <button type="submit" className="danger">Hide this person</button>
         </form>
       </section>
       </main>

@@ -80,9 +80,17 @@ const whatsappNumber = sql`case when ${chats.channel} = 'whatsapp' and ${chats.e
 const dmIdentity = sql`${chats.kind} = 'dm'
   and ${personIdentities.channel} = ${chats.channel}
   and ${personIdentities.externalId} = ${chats.externalChatId}`
-const dmPersonId = nested(sql<string | null>`(select ${personIdentities.personId} from ${personIdentities} where ${dmIdentity})`)
+// A hidden person is nobody on every read path (people design addendum 2,
+// decision 14): the identity row stays linked — that is what stops the
+// populater recreating them — but it resolves to no name and no id here, so
+// the chat falls back to whatever the channel calls it. Both columns join
+// `people` for that reason; neither may answer without the other.
+const dmPersonId = nested(sql<string | null>`(select ${personIdentities.personId} from ${personIdentities}
+  inner join ${people} on ${people.id} = ${personIdentities.personId}
+  where ${dmIdentity} and ${people.archivedAt} is null)`)
 const dmPersonName = nested(sql<string | null>`(select ${people.name} from ${personIdentities}
-  inner join ${people} on ${people.id} = ${personIdentities.personId} where ${dmIdentity})`)
+  inner join ${people} on ${people.id} = ${personIdentities.personId}
+  where ${dmIdentity} and ${people.archivedAt} is null)`)
 
 // What the owner decided to call this person outranks every name a channel
 // supplied: the address book is the answer they wrote down themselves.
@@ -139,9 +147,11 @@ const senderIdentity = sql`${messages.fromOwner} = 0
   and ${personIdentities.channel} = ${senderChannel}
   and ${personIdentities.externalId} = ${messages.senderExternalId}`
 const senderPersonId = nested(sql<string | null>`(select ${personIdentities.personId} from ${personIdentities}
-  where ${senderIdentity})`).as('person_id')
+  inner join ${people} on ${people.id} = ${personIdentities.personId}
+  where ${senderIdentity} and ${people.archivedAt} is null)`).as('person_id')
 const senderPersonName = nested(sql<string | null>`(select ${people.name} from ${personIdentities}
-  inner join ${people} on ${people.id} = ${personIdentities.personId} where ${senderIdentity})`).as('person_name')
+  inner join ${people} on ${people.id} = ${personIdentities.personId}
+  where ${senderIdentity} and ${people.archivedAt} is null)`).as('person_name')
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
