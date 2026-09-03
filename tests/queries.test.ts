@@ -78,6 +78,19 @@ describe('listChats', () => {
 describe('getMessages', () => {
   beforeEach(resetDb)
 
+  it('shows a nameless WhatsApp sender as their phone number, and a nameless Telegram sender as nothing', async () => {
+    const wa = await makeChat(await makeConnection({ channel: 'whatsapp' }), { kind: 'group', title: 'Team' })
+    await addMessage(wa, { senderName: null, senderExternalId: '15551230000@s.whatsapp.net', text: 'synced' })
+    await addMessage(wa, { senderName: 'Ada', senderExternalId: '15559990000@s.whatsapp.net', text: 'live' })
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'Team' })
+    await addMessage(tg, { senderName: null, senderExternalId: '123456789', text: 'anon' })
+    const waNames = (await getMessages(wa.id))!.messages.map(m => m.senderName).sort()
+    expect(waNames).toEqual(['+15551230000', 'Ada'])
+    expect((await getMessages(tg.id))!.messages[0].senderName).toBeNull()
+    // The same rule reaches search results.
+    expect((await searchMessages('synced'))[0].senderName).toBe('+15551230000')
+  })
+
   it('reads newest-first with a working cursor and returns the chat alongside', async () => {
     const chat = await makeChat(await makeConnection(), { title: 'Mum' })
     for (let i = 0; i < 5; i++) await addMessage(chat, { text: `m${i}`, sentAt: new Date(Date.UTC(2026, 0, 1 + i)) })

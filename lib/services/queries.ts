@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { QueryBuilder } from 'drizzle-orm/sqlite-core'
 import { db } from '@/lib/db/client'
 import { chats, media, mediaAnalysis, messages, connections } from '@/lib/db/schema'
 import { searchIndex } from '@/lib/db/fts'
@@ -30,7 +31,13 @@ const DEFAULT_SEARCH_LIMIT = 50
 // messages.chat_id = messages.id and silently miscounts). Building the
 // correlated subquery through the query builder instead keeps both sides
 // correctly qualified as messages.chat_id = chats.id.
-const liveMessageCount = sql<number>`(${db.select({ count: sql<number>`count(*)` }).from(messages)
+//
+// A standalone QueryBuilder, not `db.select`: this runs at module load, and
+// `db` is lazy precisely so that importing the app (as `next build` does in
+// parallel page-data workers) opens nothing. Touching `db` here would create
+// and WAL-switch a fresh data/steno.db from several workers at once and fail
+// the build with SQLITE_BUSY; tests/build-time-imports.test.ts guards this.
+const liveMessageCount = sql<number>`(${new QueryBuilder().select({ count: sql<number>`count(*)` }).from(messages)
   .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt)))})`
 
 // A direct chat is named after the person on the other side. Channels do not
@@ -56,9 +63,20 @@ const chatSelection = {
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
 }
 
+// WhatsApp history sync carries no push name, so almost every synced message
+// from someone else arrives nameless — but never id-less. A sender with no
+// name shows as the phone number that is their JID rather than "Unknown";
+// Telegram ids are opaque, so a nameless Telegram sender stays null.
+const senderChannel = sql`(select ${chats.channel} from ${chats} where ${chats.id} = ${messages.chatId})`
+// Aliased: searchMessages selects this inside a subquery, and drizzle refuses
+// an unaliased raw column there.
+const senderLabel = sql<string | null>`coalesce(${messages.senderName},
+  case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
+    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`.as('sender_name')
+
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
-  senderName: messages.senderName, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
+  senderName: senderLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
 }
 

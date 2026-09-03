@@ -38,7 +38,7 @@ export async function makeChat(connection: { id: string; channel: 'telegram' | '
 }
 
 export async function addMessage(chat: { id: string }, opts: {
-  text?: string | null; sentAt?: Date; senderName?: string | null; fromOwner?: boolean
+  text?: string | null; sentAt?: Date; senderName?: string | null; senderExternalId?: string | null; fromOwner?: boolean
   externalMessageId?: string; deletedAt?: Date; hasMedia?: boolean
   type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
 } = {}) {
@@ -46,6 +46,7 @@ export async function addMessage(chat: { id: string }, opts: {
     chatId: chat.id,
     externalMessageId: opts.externalMessageId ?? randomUUID(),
     senderName: opts.senderName === undefined ? 'Alice' : opts.senderName,
+    senderExternalId: opts.senderExternalId ?? null,
     fromOwner: opts.fromOwner ?? false,
     sentAt: opts.sentAt ?? new Date(),
     type: opts.type ?? 'text',

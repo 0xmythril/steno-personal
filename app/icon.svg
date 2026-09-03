@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- steno-personal favicon: the Steno mark with the palette inverted
+       (dark glyph on the family green) so it is distinguishable from the
+       hosted Steno tab. Geometry mirrors app/brand-logo.tsx. -->
+  <rect width="64" height="64" rx="16" fill="#A7E1D3"/>
+  <g transform="translate(6,6) scale(2)">
+    <path d="M11 2C6 2 2 5.8 2 10.4c0 2.1.8 4 2.2 5.4L3.2 19l4-1.3c1.2.4 2.5.7 3.8.7 5 0 9-3.8 9-8.4S16 2 11 2z" fill="#002536"/>
+    <path d="M23.4 12.2 14 21.6l-3.6.9.9-3.6 9.4-9.4z" fill="#A7E1D3" stroke="#002536" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="m18.6 11.2 3.2 3.2" stroke="#002536" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+</svg>
