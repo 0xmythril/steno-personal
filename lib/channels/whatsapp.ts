@@ -882,7 +882,6 @@ export class BaileysWhatsAppPort implements ChannelPort {
     }
 
     const session: ChannelSession = {
-      // eslint-disable-next-line require-yield
       async *backfill(_opts: BackfillOpts, _shouldContinue?: () => boolean): AsyncGenerator<IncomingMessage> {
         // WhatsApp answers no history query. The phone PUSHES history
         // (messaging-history.set) and those messages go to onMessage exactly

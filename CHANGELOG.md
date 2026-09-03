@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
+
 ### Changed
 - Chats page shows each chat's channel, with Telegram / WhatsApp filter links; `GET /api/chats?channel=` filters the same way.
 - A direct chat is named after the person on the other side: when its stored title is missing or is your own display name, the latest counterparty's name is shown instead.
