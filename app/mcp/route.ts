@@ -1,7 +1,9 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
-import { CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, NO_CONNECTION } from '@/lib/mcp/copy'
+import {
+  CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, MEDIA_URL_NOTE, NO_CONNECTION,
+} from '@/lib/mcp/copy'
 import { archiveIsEmpty } from '@/lib/mcp/gate'
 import { verifyAccessKey } from '@/lib/services/access-keys'
 import { hasActiveConnection, listConnections } from '@/lib/services/connections'
@@ -75,6 +77,7 @@ const handler = createMcpHandler(server => {
       description:
         'Read one chat, newest message first. Pass the nextCursor from a previous call to page further back, ' +
         'or before/after as ISO-8601 timestamps to bound the range. ' +
+        MEDIA_URL_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: getMessagesInput,
     },
@@ -95,6 +98,7 @@ const handler = createMcpHandler(server => {
     {
       description:
         'Full-text search across the archive, or within one chat when chat_id is given. Matches are returned newest first. ' +
+        MEDIA_URL_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: searchInput,
     },
