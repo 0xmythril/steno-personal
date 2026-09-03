@@ -24,6 +24,7 @@ export async function resetDb(): Promise<void> {
   await db.delete(s.people)
   await db.delete(s.connections)
   await db.delete(s.sessions)
+  await db.delete(s.passkeys)
   await db.delete(s.accessKeys)
   await db.update(s.settings).set({
     openrouterKeyCiphertext: null, analyzeImages: false, analyzeAudio: false,

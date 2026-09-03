@@ -36,6 +36,13 @@
       "when": 1788459979503,
       "tag": "0004_people",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788467509055,
+      "tag": "0005_passkeys",
+      "breakpoints": true
     }
   ]
 }
