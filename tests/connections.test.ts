@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { connections, chats, messages } from '@/lib/db/schema'
+import { connections, chats, messages, media } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { env } from '@/lib/env'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
+import { mediaDir, mediaFilePath } from '@/lib/services/media'
+import { makeAttachment } from './helpers/media-fixtures'
 import {
   createConnection, listConnections, getConnection, submitLoginPassword,
   revokeConnection, deleteConnection, hasActiveConnection, PASSWORD_REJECTED, mapInsertError,
@@ -184,6 +186,41 @@ describe('connections service', () => {
     const before = existsSync(whatsappRoot)
     expect(await deleteConnection(conn.id)).toBe(true)
     expect(existsSync(whatsappRoot)).toBe(before) // rm never invoked for a non-WhatsApp row
+  })
+
+  it('deleteConnection unlinks the downloaded files, not just their rows', async () => {
+    const fixture = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'x.jpg' })
+    mkdirSync(mediaDir(), { recursive: true })
+    writeFileSync(mediaFilePath('x.jpg'), 'bytes')
+
+    expect(await deleteConnection(fixture.connection.id)).toBe(true)
+    expect(await db.select().from(media)).toEqual([])
+    expect(existsSync(mediaFilePath('x.jpg'))).toBe(false)
+  })
+
+  it('deleteConnection leaves another connection\'s downloaded files untouched', async () => {
+    const doomed = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'doomed.jpg' })
+    mkdirSync(mediaDir(), { recursive: true })
+    writeFileSync(mediaFilePath('doomed.jpg'), 'bytes')
+
+    const survivor = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'survivor.jpg' })
+    writeFileSync(mediaFilePath('survivor.jpg'), 'bytes')
+
+    expect(await deleteConnection(doomed.connection.id)).toBe(true)
+    expect(existsSync(mediaFilePath('doomed.jpg'))).toBe(false)
+    expect(existsSync(mediaFilePath('survivor.jpg'))).toBe(true)
+    expect((await db.select().from(media)).map(m => m.id)).toEqual([survivor.media.id])
+  })
+
+  it('deleteConnection still deletes the connection row when a media file fails to unlink', async () => {
+    const fixture = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'stubborn.jpg' })
+    // A directory sits where the file should be: rm(..., { force: true })
+    // rejects with EISDIR (not ENOENT, which force swallows), so this
+    // exercises the one failure mode force alone does not cover.
+    mkdirSync(mediaFilePath('stubborn.jpg'), { recursive: true })
+
+    expect(await deleteConnection(fixture.connection.id)).toBe(true)
+    expect(await db.select().from(connections).where(eq(connections.id, fixture.connection.id))).toEqual([])
   })
 
   it('maps the partial-unique-index race to already_connected, top-level or under cause, and passes through anything else', () => {

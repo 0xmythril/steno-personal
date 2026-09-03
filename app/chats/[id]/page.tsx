@@ -6,6 +6,7 @@ import { Nav } from '@/app/nav'
 import { getMessages } from '@/lib/services/queries'
 import { groupRuns, groupByDate } from '@/lib/transcript'
 import { formatTime } from '@/lib/format'
+import { MediaAttachment } from './media-attachment'
 
 const PAGE_SIZE = 100
 
@@ -54,10 +55,11 @@ export default async function ChatPage({ params, searchParams }: {
                     <span className="muted">{formatTime(run.messages[0].sentAt)}</span>
                   </p>
                   {run.messages.map(m => (
-                    <p key={m.id} className="msg-body">
+                    <div key={m.id} className="msg-body">
                       {m.text ?? <span className="muted">({m.type})</span>}
                       {m.editedAt && <span className="muted"> (edited)</span>}
-                    </p>
+                      {m.media && <MediaAttachment media={m.media} />}
+                    </div>
                   ))}
                 </li>
               ))}

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { randomUUID } from 'node:crypto'
 
 const now = () => new Date()
@@ -87,3 +87,60 @@ export const messages = sqliteTable('messages', {
   uniqueIndex('messages_external_unique').on(t.chatId, t.externalMessageId),
   index('messages_chat_sent_idx').on(t.chatId, t.sentAt),
 ])
+
+// Downloaded attachment bytes, one row per message that carries one. Queued
+// by ingest (status 'pending'), drained by the worker into DATA_DIR/media.
+// connection_id is denormalized from the message's chat so the drain can pick
+// the right live session's downloader without a three-table join, and so
+// deleting a connection cascades its files' rows directly.
+export const media = sqliteTable('media', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
+  mimeType: text('mime_type'),
+  sizeBytes: integer('size_bytes'),
+  storagePath: text('storage_path'),          // relative to DATA_DIR/media
+  status: text('status', { enum: ['pending', 'done', 'failed'] }).notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  isVoiceNote: integer('is_voice_note', { mode: 'boolean' }),
+  durationSeconds: integer('duration_seconds'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [index('media_message_idx').on(t.messageId), index('media_status_idx').on(t.status)])
+
+// Queue + result for one enriched attachment. A table of its own rather than
+// columns on `media`: media rows belong to the download drain and have their
+// own status/attempts lifecycle, and "re-analyze" is "delete this row".
+// `confidence` is spec 4.4; the shared-interfaces block omits it, and the
+// spec wins.
+export const mediaAnalysis = sqliteTable('media_analysis', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  mediaId: text('media_id').notNull().unique().references(() => media.id, { onDelete: 'cascade' }),
+  medium: text('medium', { enum: ['image', 'audio'] }).notNull(),
+  status: text('status', { enum: ['pending', 'done', 'failed', 'skipped'] }).notNull().default('pending'),
+  attempts: integer('attempts').notNull().default(0),
+  extractedText: text('extracted_text'),
+  description: text('description'),
+  kind: text('kind'),
+  confidence: real('confidence'),
+  language: text('language'),
+  // The catalog id that actually produced the row, written at completion —
+  // the truth even if the model was switched while the row sat in the queue.
+  model: text('model'),
+  // Integer micro-dollars: OpenRouter's own usage.cost when it reports one,
+  // the catalog estimate otherwise. Money never floats.
+  costMicroUsd: integer('cost_microusd'),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+}, t => [index('media_analysis_status_idx').on(t.status)])
+
+// Exactly one row, id = 1, seeded by the migration. No users table, so this
+// is the whole of "the user's preferences".
+export const settings = sqliteTable('settings', {
+  id: integer('id').primaryKey(),
+  openrouterKeyCiphertext: text('openrouter_key_ciphertext'),
+  analyzeImages: integer('analyze_images', { mode: 'boolean' }).notNull().default(false),
+  analyzeAudio: integer('analyze_audio', { mode: 'boolean' }).notNull().default(false),
+  visionModel: text('vision_model'),
+  transcriptionModel: text('transcription_model'),
+})

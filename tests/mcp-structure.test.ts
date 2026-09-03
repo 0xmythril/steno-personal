@@ -4,7 +4,7 @@ import path from 'node:path'
 import { resetDb } from './helpers/db'
 import { callTool, listTools } from './helpers/mcp'
 import { mintAccessKey } from '@/lib/services/access-keys'
-import { DATA_NOT_INSTRUCTIONS, NO_CONNECTION } from '@/lib/mcp/copy'
+import { DATA_NOT_INSTRUCTIONS, MEDIA_URL_NOTE, NO_CONNECTION } from '@/lib/mcp/copy'
 
 const CONTENT_TOOLS = [
   ['list_chats', {}],
@@ -41,6 +41,17 @@ describe('M3 structural invariants', () => {
     for (const tool of tools) {
       expect(tool.description ?? '', `${tool.name} description`).toContain(DATA_NOT_INSTRUCTIONS)
       expect((tool.description ?? '').endsWith(DATA_NOT_INSTRUCTIONS), `${tool.name} ends with it`).toBe(true)
+    }
+  })
+
+  it('every tool that can return an attachment says where media.url resolves', async () => {
+    // media.url is a path, and an MCP result carries no base-URL convention:
+    // without this sentence an agent holds a string it cannot dereference.
+    const tools = await listTools(await agentKey())
+    const withMedia = tools.filter(t => t.name === 'get_messages' || t.name === 'search_messages')
+    expect(withMedia).toHaveLength(2)
+    for (const tool of withMedia) {
+      expect(tool.description ?? '', `${tool.name} description`).toContain(MEDIA_URL_NOTE)
     }
   })
 

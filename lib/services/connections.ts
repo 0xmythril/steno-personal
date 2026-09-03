@@ -2,8 +2,10 @@ import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { chats, connections } from '@/lib/db/schema'
+import { chats, connections, media } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
+import { mediaFilePath } from '@/lib/services/media'
+import { errorShape, log } from '@/lib/log'
 import type { Channel } from '@/lib/channels/port'
 import { env } from '@/lib/env'
 
@@ -167,8 +169,8 @@ function whatsappDirsFor(id: string, sessionCiphertext: string | null): string[]
 
 // Delete everything: revoke first so the session is torn down and the secrets
 // are gone even if the delete below fails, then drop the row — chats, messages
-// and (from M4) media rows follow by cascade. WhatsApp's auth directory is
-// removed after the row is gone; M4 adds unlinking the media files.
+// and media rows follow by cascade. WhatsApp's auth directory is removed
+// after the row is gone.
 export async function deleteConnection(id: string): Promise<boolean> {
   const [row] = await db.select({
     id: connections.id,
@@ -183,8 +185,38 @@ export async function deleteConnection(id: string): Promise<boolean> {
   const whatsappDirs = row.channel === 'whatsapp' ? whatsappDirsFor(row.id, row.sessionCiphertext) : []
 
   await revokeConnection(id, 'Deleted, along with everything it archived.')
+
+  // The media rows cascade away with the connection row, but the bytes do not.
+  // Collect the paths while the rows still exist and unlink them here, so
+  // "Delete everything" reaches the volume too — PRIVACY.md promises exactly
+  // that. force: true because a file that is already gone (a failed download,
+  // a hand-cleaned volume) is not an error. A single stubborn file (a
+  // directory somehow written at that path, a permissions problem) must
+  // never abort the row delete — the archive is gone either way, and the
+  // owner asked for it gone — so every failure is caught and counted rather
+  // than thrown. Only name/code from the first failure is logged: Node's own
+  // fs error messages (EISDIR, EACCES, ...) embed the absolute path, and
+  // errorShape's message passthrough exists for drizzle's query errors, not
+  // this — the path itself must never reach the log.
+  const files = await db.select({ storagePath: media.storagePath })
+    .from(media).where(eq(media.connectionId, id))
+  let unlinkFailures = 0
+  let firstUnlinkError: unknown = null
+  for (const f of files) {
+    if (!f.storagePath) continue
+    try {
+      await rm(mediaFilePath(f.storagePath), { force: true })
+    } catch (err) {
+      unlinkFailures++
+      firstUnlinkError ??= err
+    }
+  }
+  if (unlinkFailures > 0) {
+    const { name, code } = errorShape(firstUnlinkError)
+    log.error({ connectionId: id, unlinkFailures, err: { name, code } }, 'failed to unlink some media files')
+  }
+
   await db.delete(connections).where(eq(connections.id, id))
-  // TODO(M4): unlink media files
   for (const dir of whatsappDirs) {
     await rm(path.join(env.DATA_DIR, 'whatsapp', dir), { recursive: true, force: true })
   }

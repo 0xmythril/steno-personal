@@ -6,7 +6,7 @@ import {
 } from '@/lib/services/login'
 import { revokeConnection } from '@/lib/services/connections'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
-import { enqueueMedia } from '@/lib/services/media'
+import { enqueueMedia, type Downloader } from '@/lib/services/media'
 import { ChannelError, type Channel, type ChannelPort, type ChannelSession, type IncomingMessage } from '@/lib/channels/port'
 
 const LOGIN_TIMEOUT_MS = 15 * 60_000
@@ -114,6 +114,23 @@ export class SessionManager {
   // by stopAll for a clean shutdown.
   async whenIdle(): Promise<void> {
     await Promise.all([...this.loginsInFlight.values(), ...this.backfillsInFlight.values()])
+  }
+
+  // The ONE addition M4 makes to the M1 interface. The media drain needs a way
+  // to download bytes for a connection, and only the manager knows which
+  // sessions are open right now. Returning a bound function rather than the
+  // session keeps the drain from reaching the rest of ChannelSession, and
+  // returning a fresh Map keeps a caller from mutating the manager's own.
+  //
+  // A session already being torn down is excluded: downloading through it
+  // would race the close, and the row stays pending for the next pass.
+  downloaders(): Map<string, Downloader> {
+    const out = new Map<string, Downloader>()
+    for (const [connectionId, running] of this.running) {
+      if (running.stopped) continue
+      out.set(connectionId, raw => running.session.downloadMedia(raw))
+    }
+    return out
   }
 
   // A real QR login blocks for up to timeoutMs waiting for a scan, so each
@@ -294,7 +311,8 @@ export class SessionManager {
   }
 
   // The one place a message becomes a row, so the media hook has exactly one
-  // call site. enqueueMedia is a no-op until M4 replaces the module.
+  // call site. enqueueMedia queues the attachment for the download drain; it
+  // is idempotent by message, so a history replay never queues one twice.
   private async ingest(connId: string, channel: Channel, m: IncomingMessage): Promise<void> {
     const res = await recordMessage(connId, channel, m)
     if (res.inserted && m.media) await enqueueMedia(res.messageId, connId, m.media)
