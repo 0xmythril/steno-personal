@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
 
 ### Changed
+- Warning and Revoke text uses a lighter red in dark mode so it is readable.
 - Transcript pages have Older / Latest links at both ends and a Back to top link at the foot.
 - WhatsApp direct chats take their name from your contacts (saved name, then business name, then push name), and one with no name at all shows its phone number instead of "Untitled chat".
 - Chats page shows each chat's channel, with Telegram / WhatsApp filter links; `GET /api/chats?channel=` filters the same way.
