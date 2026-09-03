@@ -34,13 +34,6 @@ export function Consent({ channel }: { channel: 'telegram' | 'whatsapp' }) {
             : <>WhatsApp &rarr; Linked devices</>}{' '}
           and remove <strong>{DEVICE_MODEL}</strong> if it is still listed.
         </li>
-        {channel === 'telegram' && (
-          <li>
-            Telegram&apos;s terms forbid using its data to train models. Reading your
-            own messages so an agent can answer with your context is not training,
-            and nothing here trains on them.
-          </li>
-        )}
       </ul>
     </div>
   )

@@ -161,14 +161,13 @@ an agent you can revoke.
 
 ## 5. WhatsApp account restriction
 
-**The risk.** WhatsApp does not permit unofficial clients. Connecting through
-one can get a number restricted or banned, and recent phone builds show an
-unofficial-client notice under Linked devices. The risk is higher on a cloud
-host than on a machine at home — a datacentre IP linking to a number is exactly
-the pattern their enforcement looks for.
+**The risk.** This connects through an unofficial WhatsApp client, which
+WhatsApp's terms do not cover; a number linked this way can be restricted.
+Use it at your own risk. Anyone who would rather not link their own number can
+use Steno Cloud, which records with a number it provides.
 
-**Controls.** Honesty and nothing else. The consent screen shows those sentences
-before the QR; the README shows them on the front page. The client never sends
+**Controls.** Honesty and nothing else. The consent screen says so before the
+QR; the README says so on the front page. The client never sends
 anything user-visible, never marks read, never sets presence, and identifies as
 a linked device rather than impersonating the phone — which reduces the surface
 but does not make it a permitted client.
