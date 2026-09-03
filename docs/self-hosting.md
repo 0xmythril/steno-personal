@@ -323,10 +323,19 @@ https://railway.com/new/template/<template-code>?utm_medium=integration&utm_sour
 The button image is `https://railway.com/button.svg`. Docs:
 <https://docs.railway.com/templates/publish-and-share>.
 
-**9. Re-run the invariant sweep.** `npx vitest run tests/launch-invariants.test.ts`
-fails while `<RAILWAY_TEMPLATE_URL>` is still in the README — that is
-deliberate, and it is how you remember step 8. Update the assertion in the same
-commit that fills the URL in.
+**9. Re-run the invariant sweep.** It runs the other way round from what you
+might expect, and deliberately so: `tests/launch-invariants.test.ts` asserts
+that the placeholder **is** present —
+
+```
+expect(readFileSync('README.md', 'utf8')).toContain('<RAILWAY_TEMPLATE_URL>')
+```
+
+— in the test *"the Railway template URL is the only placeholder in the repo
+docs"*. It is green today, and it goes red the moment you do step 8. That is
+how you are reminded: flip that one assertion to require the real URL (e.g.
+`toContain('railway.com/new/template/')`) in the same commit that fills the URL
+into the README.
 
 ## Troubleshooting
 

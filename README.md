@@ -174,9 +174,9 @@ means unset.
 | `SECRET_KEY` | generated | Encrypts your OpenRouter key, your revealable access keys, and the Telegram session at rest. If unset, one is generated into `$DATA_DIR/secret.key` on first boot. Set it yourself and the file is not used. **Changing or losing it makes those encrypted values unreadable** — you re-pair the channels and re-enter the OpenRouter key; your messages are unaffected. |
 | `TELEGRAM_API_ID` | none — set your own | Telegram application id, from <https://my.telegram.org>. Until this project ships its own registered pair, Telegram needs yours: without it the worker logs one warning, skips Telegram, and no QR code ever appears. |
 | `TELEGRAM_API_HASH` | none — set your own | Telegram application hash, from the same page. Both are required together. |
-| `ANALYSIS_DAILY_LIMIT` | `500` | Most images plus voice notes sent for enrichment per day. Your spending cap. |
+| `ANALYSIS_DAILY_LIMIT` | `500` | Images plus voice notes sent for enrichment per day. A ceiling, not an exact quota: the count is taken once per pass, before either medium runs, so a pass starting just under the limit can still drain a full batch of each — worst case `2 × ANALYSIS_BACKFILL_BATCH − 1` rows beyond it. `0` disables enrichment entirely. |
 | `ANALYSIS_BACKFILL_BATCH` | `20` | How many old attachments are enriched per pass, so a backfill does not spend the day's budget at once. |
-| `LOG_LEVEL` | `info` | `trace`…`fatal`. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
+| `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
 | `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
 | `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
 

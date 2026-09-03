@@ -36,8 +36,9 @@ First public release. Everything below is new.
   credential; optional image text extraction and voice-note transcription
   through OpenRouter, off until you save a key, with a daily cap and per-item
   cost recorded.
-- **Deployment**: Dockerfile, `docker compose up`, a Railway configuration with
-  a healthcheck, and a one-click Railway template.
+- **Deployment**: Dockerfile, `docker compose up`, and a `railway.json` with a
+  healthcheck and a restart policy — ready for a one-click template, which the
+  owner publishes from the dashboard (`docs/self-hosting.md`).
 - **Documentation**: README, PRIVACY, SECURITY, architecture, self-hosting, and
   threat model.
 - **Release gate**: `scripts/smoke.sh` builds the image, boots it on a fresh
