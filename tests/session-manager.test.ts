@@ -10,6 +10,8 @@ import { encryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
 import { revokeConnection, submitLoginPassword } from '@/lib/services/connections'
+import { startRecovery } from '@/lib/services/recovery'
+import { countActiveAccessKeys } from '@/lib/services/access-keys'
 import * as connectionsModule from '@/lib/services/connections'
 import * as loginModule from '@/lib/services/login'
 import { FakePort } from '@/lib/channels/fake-port'
@@ -605,5 +607,78 @@ describe('backfillSinceDays', () => {
   })
   it('synced 90 days ago -> 30, capped at the ceiling', () => {
     expect(backfillSinceDays(daysAgo(90), NOW)).toBe(30)
+  })
+})
+
+describe('recovery pairings', () => {
+  beforeEach(resetDb)
+
+  async function recoveryRow(externalAccountId: string) {
+    await makeConnection({ channel: 'telegram', status: 'revoked', externalAccountId })
+    const rec = await startRecovery('telegram')
+    if (!rec.ok) throw new Error(rec.reason)
+    return rec.id
+  }
+
+  it('a matching account mints a key, ends the attempt revoked, and logs the device out', async () => {
+    const id = await recoveryRow('tg-1')
+    const port = new FakePort('telegram')
+    port.scriptLogin({ sessionString: 'RECOVERY_SESS', account: { channel: 'telegram', externalAccountId: 'tg-1', displayName: 'Me' } })
+    port.scriptBackfill([msg()])
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    const row = await rowOf(id)
+    expect(row.status).toBe('revoked')
+    expect(row.recoveryOutcome).toBe('matched')
+    expect(row.recoveryKeyId).not.toBeNull()
+    expect(row.sessionCiphertext).toBeNull()
+    expect(await countActiveAccessKeys()).toBe(1)
+    expect(port.loggedOut).toBe(true)
+    expect(port.sessionClosed).toBe(true)
+    // The row is not active, so the next tick opens nothing and archives nothing.
+    await mgr.tick(); await mgr.whenIdle()
+    expect(await allMessages()).toHaveLength(0)
+    await mgr.stopAll()
+  })
+
+  it('a different account mints nothing and still logs the device out', async () => {
+    const id = await recoveryRow('tg-1')
+    const port = new FakePort('telegram')
+    port.scriptLogin({ sessionString: 'S', account: { channel: 'telegram', externalAccountId: 'tg-2', displayName: 'Stranger' } })
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    const row = await rowOf(id)
+    expect(row.status).toBe('revoked')
+    expect(row.recoveryOutcome).toBe('mismatched')
+    expect(row.externalAccountId).toBeNull()
+    expect(row.displayName).toBeNull()
+    expect(await countActiveAccessKeys()).toBe(0)
+    expect(port.loggedOut).toBe(true)
+    await mgr.stopAll()
+  })
+
+  it('a logOut that hangs does not wedge the manager, and the verdict stands', async () => {
+    const id = await recoveryRow('tg-1')
+    const port = new FakePort('telegram')
+    port.scriptLogin({ sessionString: 'S', account: { channel: 'telegram', externalAccountId: 'tg-1', displayName: null } })
+    port.scriptLogOutError(new Error('already gone'))
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    expect((await rowOf(id)).recoveryOutcome).toBe('matched')
+    expect(port.sessionClosed).toBe(true) // the fallback
+    await mgr.stopAll()
+  })
+
+  it('a failed recovery login is retryable, like any other login', async () => {
+    const id = await recoveryRow('tg-1')
+    const port = new FakePort('telegram')
+    port.scriptLoginError(new ChannelError('login timed out', 'timed_out'))
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    const row = await rowOf(id)
+    expect(row.status).toBe('error')
+    expect(row.purpose).toBe('recovery')
+    expect(row.revokedAt).toBeNull()
+    expect(await countActiveAccessKeys()).toBe(0)
   })
 })
