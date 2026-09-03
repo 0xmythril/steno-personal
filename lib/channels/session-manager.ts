@@ -5,6 +5,7 @@ import {
   takeLoginSecret, recordPasswordRejected, completeLogin, failLogin, recordSync,
 } from '@/lib/services/login'
 import { removeWhatsappAuthDirs, revokedWhatsappConnectionIds, revokeConnection } from '@/lib/services/connections'
+import { completeRecovery } from '@/lib/services/recovery'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
 import { enqueueMedia, type Downloader } from '@/lib/services/media'
 import { ChannelError, type Channel, type ChannelPort, type ChannelSession, type IncomingMessage } from '@/lib/channels/port'
@@ -160,7 +161,7 @@ export class SessionManager {
         await failLogin(conn.id, 'Login timed out — please try again.')
         continue
       }
-      const p = this.driveLogin(port, conn.id, LOGIN_TIMEOUT_MS - age)
+      const p = this.driveLogin(port, conn, LOGIN_TIMEOUT_MS - age)
         .finally(() => this.loginsInFlight.delete(conn.id))
         // Terminal: driveLogin is fire-and-forget, so nothing downstream
         // awaits it directly. Without this, a failing write inside it (e.g.
@@ -171,7 +172,14 @@ export class SessionManager {
     }
   }
 
-  private async driveLogin(port: ChannelPort, connId: string, timeoutMs: number): Promise<void> {
+  // The handshake is the same for both purposes; what happens to its result is
+  // not. An archive login becomes an active connection the next tick opens. A
+  // RECOVERY login only proves which account was paired: completeRecovery
+  // records the verdict (and mints a key on a match), and the device that was
+  // just linked is logged out again right here — the session string never
+  // reaches the database.
+  private async driveLogin(port: ChannelPort, conn: { id: string; purpose: 'archive' | 'recovery' }, timeoutMs: number): Promise<void> {
+    const connId = conn.id
     const driver = {
       publishQr: (url: string) => publishQr(connId, url),
       requestPassword: () => requestPassword(connId),
@@ -180,6 +188,12 @@ export class SessionManager {
     }
     try {
       const { sessionString, account } = await port.login(driver, { timeoutMs, connectionId: connId })
+      if (conn.purpose === 'recovery') {
+        const outcome = await completeRecovery(connId, account)
+        log.info({ connectionId: connId, outcome }, 'recovery pairing finished')
+        await this.logOutRecoveryDevice(port, connId, sessionString)
+        return
+      }
       const res = await completeLogin(connId, sessionString, account)
       if (res === 'duplicate') await failLogin(connId, 'That account is already connected.')
       // 'gone' = revoked or deleted mid-login. The write was refused on
@@ -195,6 +209,23 @@ export class SessionManager {
       // The error only — never the driver payload, never a QR.
       log.warn({ err: errorShape(e), connectionId: connId, kind }, 'login failed')
       await failLogin(connId, message)
+    }
+  }
+
+  // A recovery pairing linked a device to the owner's account for the sole
+  // purpose of reading its account id; it must not stay linked. Bounded like
+  // every other logOut, with close() as the fallback, and never thrown: the
+  // verdict is already recorded, and the revoked-row sweep removes WhatsApp's
+  // auth files either way.
+  private async logOutRecoveryDevice(port: ChannelPort, connId: string, sessionString: string): Promise<void> {
+    let session: ChannelSession | null = null
+    try {
+      session = await port.open(sessionString, { connectionId: connId })
+      await withTimeout(session.logOut(), LOGOUT_TIMEOUT_MS, 'logOut')
+    } catch (e) {
+      log.error({ err: errorShape(e), connectionId: connId }, 'recovery device logOut failed; falling back to close')
+    } finally {
+      await session?.close().catch(() => {})
     }
   }
 

@@ -62,9 +62,10 @@ one is visible.
 **Secrets stay inside the process.** The Telegram session, the OpenRouter key,
 and the re-readable copy of each access key are encrypted at rest with a key
 derived from `SECRET_KEY`. None of them appears in a log line, an API response,
-or a status payload. The one documented exception is the bootstrap key printed
-on first boot, because with no key there would be no way in — revoke it as soon
-as you have minted your own.
+or a status payload. The one documented exception is a key you ask for by
+setting `STENO_MINT_KEY`, printed once in the boot log because with every key
+lost and no phone to pair there would be no other way in — remove the variable
+and revoke that key as soon as you have minted your own.
 
 **Only two files can talk to a chat network.** The Telegram library is imported
 by exactly one file, the WhatsApp library by exactly one other. Nothing else in
@@ -91,7 +92,10 @@ test enforces that.
 - Put it behind a reverse proxy with TLS, and make sure the proxy sets
   `X-Forwarded-Proto: https` so the session cookie is issued as `Secure`. See
   [docs/self-hosting.md](docs/self-hosting.md).
-- Mint one key per device or agent and revoke the bootstrap key.
+- Claim a public deploy as soon as it is green: until a channel has been
+  paired, `/setup` is open to whoever reaches the URL first.
+- Mint one key per device or agent, and revoke any key that was ever printed
+  to a log once you have replaced it.
 - Do not expose the port to the internet if you only use it at home; the
   supplied compose file binds to `127.0.0.1` on purpose.
 - Encrypt the disk. Encryption at rest here covers the secrets that have to be

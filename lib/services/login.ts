@@ -15,8 +15,11 @@ import type { Channel, ChannelAccount } from '@/lib/channels/port'
 // short enough that a forgotten tab cannot arm a later attempt.
 const STALE_SECRET_MS = 5 * 60_000
 
-export async function claimPendingLogins(): Promise<Array<{ id: string; channel: Channel; createdAt: Date }>> {
-  return db.select({ id: connections.id, channel: connections.channel, createdAt: connections.createdAt })
+// purpose rides along so the manager knows whether a finished handshake
+// becomes an archive connection (completeLogin) or a recovery verdict
+// (lib/services/recovery.ts#completeRecovery).
+export async function claimPendingLogins(): Promise<Array<{ id: string; channel: Channel; purpose: 'archive' | 'recovery'; createdAt: Date }>> {
+  return db.select({ id: connections.id, channel: connections.channel, purpose: connections.purpose, createdAt: connections.createdAt })
     .from(connections)
     .where(and(eq(connections.status, 'pending'), isNull(connections.revokedAt)))
 }

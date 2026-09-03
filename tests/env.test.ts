@@ -37,6 +37,16 @@ describe('env schema', () => {
     expect(blanked.TELEGRAM_API_HASH).toBe('')
   })
 
+  it('carries the host operations as optional strings, blank meaning unset', () => {
+    const bare = envSchema.parse({ DATA_DIR: '/tmp/x', STENO_RESET: '', STENO_MINT_KEY: '' })
+    expect(bare.STENO_RESET).toBeUndefined()
+    expect(bare.STENO_MINT_KEY).toBeUndefined()
+    expect(envSchema.parse({ DATA_DIR: '/tmp/x' }).STENO_RESET).toBeUndefined()
+    const set = envSchema.parse({ DATA_DIR: '/tmp/x', STENO_RESET: 'now', STENO_MINT_KEY: 'laptop' })
+    expect(set.STENO_RESET).toBe('now')
+    expect(set.STENO_MINT_KEY).toBe('laptop')
+  })
+
   it('accepts an owner-supplied Telegram pair', () => {
     const e = envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '12345', TELEGRAM_API_HASH: 'abc' })
     expect(e.TELEGRAM_API_ID).toBe(12345)

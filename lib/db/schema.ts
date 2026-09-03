@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 
 const now = () => new Date()
@@ -30,13 +31,19 @@ export const sessions = sqliteTable('sessions', {
 }, t => [index('sessions_key_idx').on(t.keyId)])
 
 // One row per connection attempt on one channel. A row is LIVE while
-// revoked_at IS NULL; the partial unique index in 0001_channels.sql allows
-// exactly one live row per channel, which is what "one person, one account
-// per channel" means with no users table. Revoked rows are kept: the archive
-// they produced outlives the session that produced it.
+// revoked_at IS NULL; the partial unique index below allows exactly one live
+// row per (channel, purpose), which is what "one person, one account per
+// channel" means with no users table. Revoked rows are kept: the archive they
+// produced outlives the session that produced it.
+//
+// purpose: 'archive' is the connection that reads the account; 'recovery' is a
+// pair-again attempt that only proves the owner still holds the same account
+// (lib/services/recovery.ts). A recovery row never becomes active, never
+// stores a session, and never owns a chat; it ends revoked with an outcome.
 export const connections = sqliteTable('connections', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  purpose: text('purpose', { enum: ['archive', 'recovery'] }).notNull().default('archive'),
   status: text('status', { enum: ['pending', 'active', 'revoked', 'error'] }).notNull().default('pending'),
   externalAccountId: text('external_account_id'),
   displayName: text('display_name'),
@@ -49,10 +56,17 @@ export const connections = sqliteTable('connections', {
   loginSecretCiphertext: text('login_secret_ciphertext'),
   loginSecretAt: integer('login_secret_at', { mode: 'timestamp_ms' }),
   lastError: text('last_error'),
+  // Recovery rows only. The key is minted by the worker at match time and
+  // claimed exactly once by the browser that started the attempt, which nulls
+  // recovery_key_id so it cannot be handed out twice.
+  recoveryOutcome: text('recovery_outcome', { enum: ['matched', 'mismatched'] }),
+  recoveryKeyId: text('recovery_key_id').references(() => accessKeys.id, { onDelete: 'set null' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
-})
+}, t => [
+  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL`),
+])
 
 export const chats = sqliteTable('chats', {
   id: text('id').primaryKey().$defaultFn(randomUUID),

@@ -7,6 +7,7 @@ import { connections, chats, messages } from '@/lib/db/schema'
 // revoke the first. That is the product rule, not a fixture limitation.
 export async function makeConnection(opts: {
   channel?: 'telegram' | 'whatsapp'
+  purpose?: 'archive' | 'recovery'
   status?: 'pending' | 'active' | 'revoked' | 'error'
   externalAccountId?: string
   sessionCiphertext?: string
@@ -14,6 +15,7 @@ export async function makeConnection(opts: {
   const status = opts.status ?? 'active'
   const [row] = await db.insert(connections).values({
     channel: opts.channel ?? 'telegram',
+    purpose: opts.purpose ?? 'archive',
     status,
     externalAccountId: opts.externalAccountId ?? randomUUID(),
     sessionCiphertext: opts.sessionCiphertext,

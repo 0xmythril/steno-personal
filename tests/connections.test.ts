@@ -38,6 +38,18 @@ describe('connections service', () => {
     expect(await hasActiveConnection()).toBe(true)
   })
 
+  it('a live recovery row neither blocks nor is touched by a new archive connection', async () => {
+    const rec = await makeConnection({ channel: 'telegram', purpose: 'recovery', status: 'pending' })
+    const res = await createConnection('telegram')
+    expect(res.ok).toBe(true)
+    const recovery = await rowOf(rec.id)
+    expect(recovery.status).toBe('pending')
+    expect(recovery.revokedAt).toBeNull()
+    const status = await getConnection(rec.id)
+    expect(status!.purpose).toBe('recovery')
+    if (res.ok) expect((await getConnection(res.id))!.purpose).toBe('archive')
+  })
+
   it('clears an abandoned pending row so the single live slot can be reused', async () => {
     const first = await createConnection('telegram')
     const second = await createConnection('telegram')

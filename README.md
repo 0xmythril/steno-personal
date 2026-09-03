@@ -51,27 +51,23 @@ cd steno-personal
 docker compose up
 ```
 
-The first boot creates the volume, applies migrations, and prints your first
-access key:
+The first boot creates the volume and applies migrations. Nothing is printed
+to the log; the first visit sets the instance up:
 
-```
-==========================================================
-  steno-personal: your first access key
-  sp_9f2c8a1e4b7d0356af91c2e8d4b607135e0ac6d2f8
-  Paste it at /login, then mint a named key in Settings
-  and revoke this one.
-==========================================================
-```
-
-Then:
-
-1. Open <http://localhost:3000> and paste that key.
-2. Go to **Settings**, create a key with a name (one per device or agent), and
-   **revoke the printed one** — it is sitting in your shell history and your
-   container log.
-3. Go to **Connections** and connect Telegram, WhatsApp, or both. Each shows a
-   consent screen, then a QR code you scan with the phone.
+1. Open <http://localhost:3000>. A fresh instance lands on **Setup**.
+2. Connect Telegram or WhatsApp. Each shows a consent screen, then a QR code
+   you scan with the phone. The account you pair is what the archive reads,
+   and it is also how you prove the archive is yours if you ever lose your key.
+3. Press **Create my access key**. Your first key is shown exactly once, with a
+   Copy button; save it before you continue. It logs you in here and is what
+   your agents use.
 4. Wait. Backfill runs in the background; the Chats page fills in as it lands.
+   Connect the other channel from **Connections** whenever you like, and make
+   more keys under **Settings** — one per device or agent.
+
+Lost the key? **Pair your phone again** on the login page: the same account
+gets you a new key. Everything else — no phone, start over — is in
+[Lost access](docs/self-hosting.md#lost-access).
 
 To stop: `docker compose down`. Your data stays in the `data` volume. To throw
 everything away: `docker compose down -v`.
@@ -81,13 +77,14 @@ everything away: `docker compose down -v`.
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
 
 One click gives you a service built from this repo's `Dockerfile`, a 5 GB
-volume mounted at `/data`, and a generated `SECRET_KEY`. Watch the deploy log:
-your bootstrap access key is printed there exactly as above. Open the generated
-`*.up.railway.app` URL, log in with it, and mint your own key.
+volume mounted at `/data`, and a generated `SECRET_KEY`. Open the generated
+`*.up.railway.app` URL as soon as the deploy is green: it walks you through
+pairing a channel and hands you your first access key.
 
-Two things to know before you click. First, a Railway deploy has a public URL,
-and the only thing standing between the internet and your archive is an access
-key — so revoke the bootstrap key as soon as you have minted your own, and read
+Two things to know before you click. First, a Railway deploy has a public URL.
+Until you have paired a channel, **Setup** is open to whoever reaches that URL
+first, and afterwards the only thing standing between the internet and your
+archive is an access key — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
 A laptop, a Mac mini, or a Raspberry Pi at home is the safer place to run this.
@@ -198,6 +195,8 @@ means unset.
 | `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
 | `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
 | `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
+| `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](docs/self-hosting.md#lost-access). |
+| `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 
 **The one optional third party.** Image text extraction and voice-note
 transcription are off until you save an OpenRouter key in **Settings**. Once you
