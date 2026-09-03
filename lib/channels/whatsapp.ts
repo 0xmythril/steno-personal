@@ -611,6 +611,25 @@ export class BaileysWhatsAppPort implements ChannelPort {
     // contacts.upsert/update); listContacts() below just reads it, so this port
     // makes no new call to WhatsApp for it (people design decision 2).
     const contacts = new Map<string, string>()
+    // Saved names for contacts WhatsApp has so far only named by their LID.
+    // The address book files people under the phone JID, and a LID carries no
+    // number, so these wait here — keyed by the stripped LID — until the
+    // mapping arrives. It usually does, moments later, in its own event.
+    const pendingLidContacts = new Map<string, string>()
+
+    // The one place a LID→PN mapping is learned, whichever event taught it:
+    // a contact pairing, a lidPnMappings batch, or a resolver lookup. Filing
+    // the pending contact here is what makes the deferral retroactive — the
+    // mapping and the name almost never arrive in the same event.
+    const rememberLid = (lid: string, pnJid: string): void => {
+      lidToPn.set(lid, pnJid)
+      const stripped = stripDevice(lid)
+      const name = pendingLidContacts.get(lid) ?? pendingLidContacts.get(stripped)
+      if (name === undefined) return
+      pendingLidContacts.delete(lid)
+      pendingLidContacts.delete(stripped)
+      contacts.set(pnJid, name)
+    }
 
     // Every event handler runs through one chain, so two batches can never
     // interleave and a thrown handler cannot take the socket down. A batch
@@ -694,7 +713,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       }
       if (!pn) return jid
       const canonical = stripDevice(pn)
-      lidToPn.set(jid, canonical)
+      rememberLid(jid, canonical)
       return canonical
     }
 
@@ -775,19 +794,21 @@ export class BaileysWhatsAppPort implements ChannelPort {
           titles.set(c.id, name)
           if (c.lid) titles.set(c.lid, name)
         }
-        if (c.lid && c.id.endsWith('@s.whatsapp.net')) lidToPn.set(c.lid, stripDevice(c.id))
+        if (c.lid && c.id.endsWith('@s.whatsapp.net')) rememberLid(c.lid, stripDevice(c.id))
         if (!name) continue
-        // Filed under the phone JID only. A contact that arrives as a LID is
-        // filed once its PN is known (from this very pairing, an earlier one,
-        // or a lidPnMappings batch) and skipped until then — a LID key would
-        // be an identity the address book cannot match a phone number to.
+        // Filed under the phone JID only — a LID key would be an identity the
+        // address book cannot match a phone number to. A contact that arrives
+        // as a LID with no mapping yet is HELD, not dropped: WhatsApp sends
+        // contacts and lidPnMappings as separate events and the mapping often
+        // arrives second, so rememberLid files it the moment it turns up.
         const id = stripDevice(c.id)
-        const pnJid = id.endsWith('@s.whatsapp.net') ? id : lidToPn.get(c.id) ?? null
+        const pnJid = id.endsWith('@s.whatsapp.net') ? id : lidToPn.get(id) ?? lidToPn.get(c.id) ?? null
         if (pnJid) contacts.set(pnJid, name)
+        else if (id.endsWith('@lid')) pendingLidContacts.set(id, name)
       }
     }
     const rememberLidMappings = (mappings: Array<{ lid?: string; pn?: string }> | undefined): void => {
-      for (const m of mappings ?? []) if (m?.lid && m?.pn) lidToPn.set(m.lid, stripDevice(m.pn))
+      for (const m of mappings ?? []) if (m?.lid && m?.pn) rememberLid(m.lid, stripDevice(m.pn))
     }
 
     let settleOpen: ((err?: unknown) => void) | null = null

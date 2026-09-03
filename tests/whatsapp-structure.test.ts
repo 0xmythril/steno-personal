@@ -35,7 +35,15 @@ describe('only lib/channels/whatsapp.ts may reach for Baileys', () => {
 // Spec invariant 3: invisible. Nothing user-visible is ever sent.
 describe('the WhatsApp port sends nothing', () => {
   const src = () => readFileSync(PORT_FILE, 'utf8')
-  const BANNED = ['sendMessage(', 'sendPresenceUpdate(', 'readMessages(', 'sendReceipt(', 'sendReceipts(', 'chatModify(', 'updateProfile']
+  // The first seven are sends. The last three are READS that would still be
+  // new traffic to WhatsApp on the owner's behalf: listContacts() answers out
+  // of the map the phone already pushes, and "no new WhatsApp call" is a
+  // promise of this branch, not a convention.
+  const BANNED = [
+    'sendMessage(', 'sendPresenceUpdate(', 'readMessages(', 'sendReceipt(', 'sendReceipts(',
+    'chatModify(', 'updateProfile',
+    'onWhatsApp(', 'fetchStatus(', 'getBusinessProfile(',
+  ]
 
   for (const call of BANNED) {
     it(`never calls ${call}`, () => {

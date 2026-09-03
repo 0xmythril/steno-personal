@@ -345,7 +345,30 @@ describe('listContacts', () => {
     await c.close()
   })
 
-  it('skips a contact with no name and one whose LID has no mapping yet', async () => {
+  // The same deferral across two events, which is how WhatsApp actually sends
+  // it: contacts.upsert names a LID, and the mapping that turns it into a
+  // number arrives in its own event later. Holding the name until then is the
+  // difference between a contact and a contact silently dropped.
+  it('files a LID-only contact when its mapping arrives in a later event', async () => {
+    const c = await connect('contacts-lid-later')
+    c.socket.emit('contacts.upsert', [{ id: DM_LID, name: 'Bo Saved' }])
+    await flush(20)
+    // Nothing to show yet: a LID is an identity with no number behind it.
+    expect(await c.listContacts()).toEqual([])
+
+    c.socket.emit('messaging-history.set', {
+      chats: [], messages: [], progress: 100,
+      contacts: [],
+      lidPnMappings: [{ lid: DM_LID, pn: DM_PN }],
+    })
+    await flush(20)
+    expect(await c.listContacts()).toEqual([
+      { externalId: DM_PN, displayName: 'Bo Saved', phone: '+15551230000' },
+    ])
+    await c.close()
+  })
+
+  it('lists neither a nameless contact nor a LID whose mapping never arrives', async () => {
     // Both would be an identity the address book could show nothing for: a
     // nameless row, or a LID it cannot match a phone number to.
     const c = await connect('contacts-skipped')
