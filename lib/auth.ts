@@ -51,11 +51,12 @@ export async function endSession(): Promise<void> {
   jar.delete({ name: SESSION_COOKIE, path: '/' })
 }
 
-// Every API route accepts either the portal's session cookie or an access key
-// as a bearer token, so the same routes serve the browser and (from M3) an
-// agent. A bearer header that is present but bad is a REJECTION, never a
-// fall-through to the cookie: an agent sending a stale key must be told so,
-// not silently answered with whatever the browser happens to be logged in as.
+// READ routes accept either the portal's session cookie or an access key as a
+// bearer token, so the same routes serve the browser and (from M3) an agent.
+// Mutating routes are cookie-only — see requireCookieAuth below. A bearer
+// header that is present but bad is a REJECTION, never a fall-through to the
+// cookie: an agent sending a stale key must be told so, not silently answered
+// with whatever the browser happens to be logged in as.
 export async function authenticateRequest(req: Request): Promise<{ via: 'cookie' | 'bearer'; keyId: string } | null> {
   const header = req.headers.get('authorization')
   if (header?.startsWith('Bearer ')) {
@@ -64,4 +65,20 @@ export async function authenticateRequest(req: Request): Promise<{ via: 'cookie'
   }
   const session = await currentSession()
   return session ? { via: 'cookie', keyId: session.keyId } : null
+}
+
+// The guard for routes that CHANGE a connection (create, disconnect, delete
+// everything, submit a 2FA password): the browser's own session cookie, never
+// a bearer access key. From M3 an access key is what the owner pastes into
+// agents, and those agents read archived chat text — the spec's named primary
+// threat (§3.8). A key that could also delete the whole archive would give a
+// prompt-injected agent a strictly larger blast radius than the read access it
+// was handed. Reads stay cookie-or-bearer.
+//
+// Returns the response to send, or null when the caller may proceed.
+export async function requireCookieAuth(req: Request): Promise<Response | null> {
+  const auth = await authenticateRequest(req)
+  if (!auth) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  if (auth.via !== 'cookie') return Response.json({ error: 'cookie_session_required' }, { status: 403 })
+  return null
 }

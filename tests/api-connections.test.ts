@@ -39,6 +39,18 @@ async function key(label = 'agent') {
 const bearer = (raw: string, init: RequestInit = {}) =>
   new Request('http://local/api/connections', { ...init, headers: { authorization: `Bearer ${raw}`, ...(init.headers ?? {}) } })
 
+// No authorization header: authenticateRequest falls through to the cookie
+// branch, which the jar mock above answers from whatever startSession() set.
+const cookie = (init: RequestInit = {}) => new Request('http://local/api/connections', init)
+
+// Mints a key and opens a portal session with it — the browser's credential,
+// as opposed to the same key used as a bearer token.
+async function signedIn() {
+  const k = await key()
+  await startSession(k.id)
+  return k
+}
+
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
 
 describe('authenticateRequest', () => {
@@ -84,21 +96,45 @@ describe('connections API', () => {
     expect((await passwordRoute.POST(anon(), params(conn.id))).status).toBe(401)
   })
 
-  it('creates a connection, then reports 409 while one is active', async () => {
+  it('refuses a bearer key on every route that changes a connection', async () => {
+    // An access key is the credential the owner pastes into agents (M3), and
+    // those agents read attacker-controlled chat text. It may read a
+    // connection's status; it may not create, disconnect, delete, or answer a
+    // 2FA prompt. 403, not 401: the credential is valid, the route is not.
     const k = await key()
-    const res = await createRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ channel: 'telegram' }) }))
+    const conn = await makeConnection({ status: 'active' })
+    const forbidden = [
+      await createRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ channel: 'telegram' }) })),
+      await idRoute.DELETE(bearer(k.rawKey, { method: 'DELETE' }), params(conn.id)),
+      await revokeRoute.POST(bearer(k.rawKey, { method: 'POST' }), params(conn.id)),
+      await passwordRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ password: 'hunter2' }) }), params(conn.id)),
+    ]
+    expect(forbidden.map(r => r.status)).toEqual([403, 403, 403, 403])
+    for (const r of forbidden) expect(await r.json()).toEqual({ error: 'cookie_session_required' })
+    // Nothing was created, revoked, deleted, or stored.
+    const [row] = await db.select().from(connections).where(eq(connections.id, conn.id))
+    expect(row.status).toBe('active')
+    expect(row.loginSecretCiphertext).toBeNull()
+    expect(await db.select().from(connections)).toHaveLength(1)
+    // …and the read route still answers a bearer key.
+    expect((await idRoute.GET(bearer(k.rawKey), params(conn.id))).status).toBe(200)
+  })
+
+  it('creates a connection, then reports 409 while one is active', async () => {
+    await signedIn()
+    const res = await createRoute.POST(cookie({ method: 'POST', body: JSON.stringify({ channel: 'telegram' }) }))
     expect(res.status).toBe(201)
     const { id } = await res.json()
     await db.update(connections).set({ status: 'active' }).where(eq(connections.id, id))
-    const again = await createRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ channel: 'telegram' }) }))
+    const again = await createRoute.POST(cookie({ method: 'POST', body: JSON.stringify({ channel: 'telegram' }) }))
     expect(again.status).toBe(409)
   })
 
   it('rejects a body that is not a known channel', async () => {
-    const k = await key()
-    const res = await createRoute.POST(bearer(k.rawKey, { method: 'POST', body: JSON.stringify({ channel: 'signal' }) }))
+    await signedIn()
+    const res = await createRoute.POST(cookie({ method: 'POST', body: JSON.stringify({ channel: 'signal' }) }))
     expect(res.status).toBe(400)
-    const noBody = await createRoute.POST(bearer(k.rawKey, { method: 'POST' }))
+    const noBody = await createRoute.POST(cookie({ method: 'POST' }))
     expect(noBody.status).toBe(400)
   })
 
@@ -118,32 +154,32 @@ describe('connections API', () => {
   })
 
   it('revokes, and refuses to revoke twice', async () => {
-    const k = await key()
+    await signedIn()
     const conn = await makeConnection({ status: 'active' })
-    expect((await revokeRoute.POST(bearer(k.rawKey, { method: 'POST' }), params(conn.id))).status).toBe(200)
+    expect((await revokeRoute.POST(cookie({ method: 'POST' }), params(conn.id))).status).toBe(200)
     const [row] = await db.select().from(connections).where(eq(connections.id, conn.id))
     expect(row.status).toBe('revoked')
-    expect((await revokeRoute.POST(bearer(k.rawKey, { method: 'POST' }), params(conn.id))).status).toBe(404)
+    expect((await revokeRoute.POST(cookie({ method: 'POST' }), params(conn.id))).status).toBe(404)
   })
 
   it('deletes a connection and everything it archived', async () => {
-    const k = await key()
+    await signedIn()
     const conn = await makeConnection({ status: 'active' })
-    expect((await idRoute.DELETE(bearer(k.rawKey, { method: 'DELETE' }), params(conn.id))).status).toBe(200)
+    expect((await idRoute.DELETE(cookie({ method: 'DELETE' }), params(conn.id))).status).toBe(200)
     expect(await db.select().from(connections)).toEqual([])
   })
 
   it('stores a 2FA password, and 409s once the row is no longer pending', async () => {
-    const k = await key()
+    await signedIn()
     const conn = await makeConnection({ status: 'pending' })
     await db.update(connections).set({ lastError: PASSWORD_REJECTED, loginNeedsPassword: true }).where(eq(connections.id, conn.id))
     const body = JSON.stringify({ password: 'hunter2' })
-    expect((await passwordRoute.POST(bearer(k.rawKey, { method: 'POST', body }), params(conn.id))).status).toBe(200)
+    expect((await passwordRoute.POST(cookie({ method: 'POST', body }), params(conn.id))).status).toBe(200)
     const [row] = await db.select().from(connections).where(eq(connections.id, conn.id))
     expect(decryptSecret(row.loginSecretCiphertext!)).toBe('hunter2')
 
     await db.update(connections).set({ status: 'active' }).where(eq(connections.id, conn.id))
-    expect((await passwordRoute.POST(bearer(k.rawKey, { method: 'POST', body }), params(conn.id))).status).toBe(409)
-    expect((await passwordRoute.POST(bearer(k.rawKey, { method: 'POST', body: '{}' }), params(conn.id))).status).toBe(400)
+    expect((await passwordRoute.POST(cookie({ method: 'POST', body }), params(conn.id))).status).toBe(409)
+    expect((await passwordRoute.POST(cookie({ method: 'POST', body: '{}' }), params(conn.id))).status).toBe(400)
   })
 })

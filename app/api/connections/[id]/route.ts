@@ -1,4 +1,4 @@
-import { authenticateRequest } from '@/lib/auth'
+import { authenticateRequest, requireCookieAuth } from '@/lib/auth'
 import { getConnection, deleteConnection } from '@/lib/services/connections'
 
 // The portal's connect panel polls this every two seconds while a login is in
@@ -15,7 +15,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // Delete everything: the connection row and, by cascade, every chat and
 // message it archived.
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (!(await authenticateRequest(req))) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const denied = await requireCookieAuth(req)
+  if (denied) return denied
   const { id } = await params
   const ok = await deleteConnection(id)
   if (!ok) return Response.json({ error: 'not_found' }, { status: 404 })
