@@ -34,3 +34,5 @@ export function formatRelativeTime(d: Date | null, now: Date = new Date()): stri
   if (delta < 7 * DAY) return plural(Math.floor(delta / DAY), 'day')
   return formatDateHeading(d)
 }
+
+export const CHANNEL_LABELS = { telegram: 'Telegram', whatsapp: 'WhatsApp' } as const
