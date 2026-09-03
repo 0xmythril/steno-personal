@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
 - Settings gains "Let the agent set itself up": a copy-paste block for any agent that can edit its own MCP config.
 - The WhatsApp pending screen no longer shows Telegram-only copy.
 
+### Fixed
+- `npm run build` on a fresh clone (no `./data` yet) no longer fails with `SqliteError: database is locked`: the chat list's message-count subquery touched the database at import time, so Next's parallel page-data workers each created and WAL-switched a brand-new `data/steno.db` at once. Importing the app now opens nothing; only the first query does, and a build no longer leaves a `data/` directory behind.
+
 ## [0.1.0] — 2026-09-03
 
 First public release. Everything below is new.
