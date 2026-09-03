@@ -18,12 +18,14 @@ printed one so nothing usable stays in your log history.
 
 ## The WhatsApp risk, in one paragraph
 
-WhatsApp connects as a linked device on your own number through an
-unofficial client library. WhatsApp can restrict or ban numbers that use
-unofficial clients, and recent phone builds show an "unofficial client"
-notice under Linked devices. The risk is higher when this runs on a cloud
-host than on a machine at home. You accept that risk on the consent screen
-before pairing; nothing here can remove it.
+WhatsApp does not permit unofficial clients. steno-personal connects as a
+linked device using Baileys, exactly the way WhatsApp Web does, but it is not
+WhatsApp's own client: your number can be restricted or banned, and your phone
+will show an unofficial-client notice under Linked devices. The risk is higher
+when this runs on a cloud host than on a machine at home. steno-personal never
+sends anything, never marks a chat read, and never shows you as online — but
+that is a design guarantee, not a promise from WhatsApp. Connect a number you
+can afford to lose access to, or do not connect one at all.
 
 ## Connecting Telegram
 

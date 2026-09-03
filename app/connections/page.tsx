@@ -5,6 +5,7 @@ import { renderQrSvg } from '@/lib/qrcode'
 import { formatRelativeTime } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { Consent } from './consent'
+import { WhatsAppConsent } from './whatsapp-consent'
 import { ConnectPanel } from './connect-panel'
 import { ConnectButton } from './connect-button'
 import { disconnectAction, deleteEverythingAction } from './actions'
@@ -42,7 +43,7 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
     return (
       <section className="card">
         <h2>{CHANNEL_LABELS[channel]}</h2>
-        <Consent channel={channel} />
+        {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
         <ConnectPanel
           connectionId={live.id}
           initial={{
@@ -62,14 +63,10 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
     <section className="card">
       <h2>{CHANNEL_LABELS[channel]}</h2>
       {live && errorText(live) && <p className="danger" role="alert">{errorText(live)}</p>}
-      {channel === 'whatsapp' ? (
-        <p className="muted">Connecting a personal WhatsApp account is not available yet.</p>
-      ) : (
-        <>
-          <Consent channel={channel} />
-          <ConnectButton channel={channel} />
-        </>
-      )}
+      <>
+        {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
+        <ConnectButton channel={channel} />
+      </>
     </section>
   )
 }
