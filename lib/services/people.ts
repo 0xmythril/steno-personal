@@ -454,8 +454,12 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
 
 export type Suggestion = { telegram: IdentityCandidate; whatsapp: IdentityCandidate; reason: 'phone' | 'name' }
 
+// A plain, printable separator. It was a literal NUL byte, which made `grep`
+// treat this whole file as binary and skip it — a file that ordinary tooling
+// cannot read is a worse trade than a separator an external id could in
+// principle contain. '|' appears in no Telegram user id and in no WhatsApp JID.
 const pairKey = (telegramExternalId: string, whatsappExternalId: string) =>
-  `${telegramExternalId} ${whatsappExternalId}`
+  `${telegramExternalId}|${whatsappExternalId}`
 
 const nameKey = (name: string | null): string | null => {
   const n = name?.trim().toLowerCase()
@@ -651,26 +655,37 @@ export async function resetName(id: string): Promise<boolean> {
 //
 // Nothing can collide: unique(channel, external_id) is on the identity, not on
 // the pair, so re-pointing a person's identities never meets a duplicate.
+//
+// All four statements — the alive check included — run inside ONE transaction,
+// and the web and the worker are two processes writing the same file. Without
+// it, a portal merge and the worker's mergeByPhone can interleave on the same
+// two rows: one re-points identities onto a person the other is about to
+// delete, and `person_identities.person_id` is ON DELETE CASCADE, so the
+// cascade would silently destroy the owner's links rather than just muddle a
+// name. better-sqlite3 is synchronous, so this callback must not await and
+// every statement in it ends in .all()/.run() instead.
 export async function mergePeople(fromId: string, intoId: string): Promise<boolean> {
   if (!fromId || !intoId || fromId === intoId) return false
-  const rows = await db.select().from(people)
-    .where(and(inArray(people.id, [fromId, intoId]), isNull(people.archivedAt)))
-  const from = rows.find(r => r.id === fromId)
-  const into = rows.find(r => r.id === intoId)
-  if (!from || !into) return false
+  return db.transaction(tx => {
+    const rows = tx.select().from(people)
+      .where(and(inArray(people.id, [fromId, intoId]), isNull(people.archivedAt))).all()
+    const from = rows.find(r => r.id === fromId)
+    const into = rows.find(r => r.id === intoId)
+    if (!from || !into) return false
 
-  await db.update(personIdentities).set({ personId: intoId })
-    .where(eq(personIdentities.personId, fromId))
+    tx.update(personIdentities).set({ personId: intoId })
+      .where(eq(personIdentities.personId, fromId)).run()
 
-  const values: Partial<typeof people.$inferInsert> = { updatedAt: new Date() }
-  if (into.nameSource === 'channel' && from.nameSource === 'owner') {
-    values.name = from.name
-    values.nameSource = 'owner'
-  }
-  if (!into.notes && from.notes) values.notes = from.notes
-  await db.update(people).set(values).where(eq(people.id, intoId))
-  await db.delete(people).where(eq(people.id, fromId))
-  return true
+    const values: Partial<typeof people.$inferInsert> = { updatedAt: new Date() }
+    if (into.nameSource === 'channel' && from.nameSource === 'owner') {
+      values.name = from.name
+      values.nameSource = 'owner'
+    }
+    if (!into.notes && from.notes) values.notes = from.notes
+    tx.update(people).set(values).where(eq(people.id, intoId)).run()
+    tx.delete(people).where(eq(people.id, fromId)).run()
+    return true
+  })
 }
 
 // An identity's own copy of the name and the number goes stale the moment the

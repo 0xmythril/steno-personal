@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { channelContacts, chats, connections, messages, people, personIdentities } from '@/lib/db/schema'
@@ -459,14 +460,33 @@ describe('the self-populating address book', () => {
     expect(await mergePeople(into.id, into.id)).toBe(false)
   })
 
-  it('refuses to merge a hidden person in either direction', async () => {
+  it('refuses to merge a hidden person in either direction, and moves nothing', async () => {
     const hidden = await createPerson({ name: 'Hidden' })
     await linkIdentity(hidden.id, { channel: 'telegram', externalId: '42' })
     const live = await createPerson({ name: 'Live' })
+    await linkIdentity(live.id, { channel: 'whatsapp', externalId: ADA_JID })
     await archivePerson(hidden.id)
 
     expect(await mergePeople(hidden.id, live.id)).toBe(false)
     expect(await mergePeople(live.id, hidden.id)).toBe(false)
-    expect((await listArchivedPeople())[0].identities).toHaveLength(1)
+    // The alive check and the three writes are one transaction, so a refusal
+    // leaves both sides exactly as they were: no identity changed owner.
+    expect((await listArchivedPeople())[0].identities.map(i => i.externalId)).toEqual(['42'])
+    expect((await getPerson(live.id))!.identities.map(i => i.externalId)).toEqual([ADA_JID])
+  })
+
+  // Structural, because the hazard is a race two processes have to lose: the
+  // web and the worker both write this file, person_identities.person_id is ON
+  // DELETE CASCADE, and an interleaved merge would take the owner's links with
+  // it. The behavioural tests above prove what one caller sees; this proves the
+  // four statements cannot be pulled apart.
+  it('does every merge write inside one transaction', () => {
+    const src = readFileSync('lib/services/people.ts', 'utf8')
+    const body = src.split('export async function mergePeople')[1].split('\n}')[0]
+    expect(body).toMatch(/db\.transaction\(tx =>/)
+    // The alive check is re-read INSIDE it, not carried in from before.
+    expect(body).toMatch(/tx\.select\(\)\.from\(people\)/)
+    expect(body).not.toMatch(/\bawait\b/)
+    expect(body).not.toMatch(/\bdb\.(select|update|delete|insert)\b/)
   })
 })
