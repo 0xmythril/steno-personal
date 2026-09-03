@@ -107,7 +107,8 @@ describe('people pages', () => {
 
   it('is reachable from the nav', () => {
     const src = readFileSync('app/nav.tsx', 'utf8')
-    expect(src).toMatch(/href="\/people"/)
+    // The nav renders its links from a table, so the entry reads `href: '/people'`.
+    expect(src).toMatch(/href[:=]\s*['"]\/people['"]/)
   })
 })
 

@@ -1,6 +1,6 @@
 # Threat model
 
-This expands spec section 6. It is written for someone deciding whether to run
+It is written for someone deciding whether to run
 this, and for someone auditing it. It is deliberately specific about what is
 *not* protected — a threat model that only lists wins is marketing.
 

@@ -38,8 +38,9 @@ export default async function PersonPage({ params, searchParams }: {
   const theirChats = chats.filter(c => c.person?.id === person.id)
 
   return (
-    <main>
-      <Nav label={session.label} />
+    <>
+      <Nav label={session.label} current="people" />
+      <main>
       <p className="muted"><Link href="/people">&larr; All people</Link></p>
       <h1>{person.name}</h1>
       {person.notes && <p>{person.notes}</p>}
@@ -144,6 +145,7 @@ export default async function PersonPage({ params, searchParams }: {
           <button type="submit" className="danger">Delete this person</button>
         </form>
       </section>
-    </main>
+      </main>
+    </>
   )
 }

@@ -1,11 +1,11 @@
 import type { IncomingMessage } from '@/lib/services/ingest'
 
-// Ported from the private Steno cloud repo (origin/main), lib/services/ingest.ts
-// (unwrapContent, textOf, parseProtocolEvent, parseWaMessage,
-// resolveContactIdentity), then generalised from "groups only" to any
-// remoteJid.
+// Pure parsing of the message shapes Baileys hands over — unwrapping,
+// text extraction, protocol events, contact identity — for any remoteJid:
+// direct chats, groups, and channels alike.
 //
-// NOTHING IN THIS FILE MAY IMPORT THE BAILEYS LIBRARY (spec invariant 2 —
+// NOTHING IN THIS FILE MAY IMPORT THE BAILEYS LIBRARY (ground rule 2 in
+// CONTRIBUTING.md —
 // lib/channels/whatsapp.ts is the one module allowed to name the package, and
 // tests/whatsapp-structure.test.ts scans raw source text, comments included).
 // Every input is a plain object handed over by lib/channels/whatsapp.ts, which
@@ -99,11 +99,11 @@ export type WaIdentityCandidates = {
   participantAlt?: string
 }
 
-// Product decision carried over from Steno cloud (spec 4.3, "one contact is
-// one chat"): the phone-number JID is the canonical identity. `jid` is the PN
-// JID whenever one appears among the candidates, whichever field it arrived
-// on, and falls back to a @lid only when no PN is known at all. `lidJid` is
-// captured independently so it stays available as a secondary key.
+// Product decision ("one contact is one chat"): the phone-number JID is the
+// canonical identity. `jid` is the PN JID whenever one appears among the
+// candidates, whichever field it arrived on, and falls back to a @lid only
+// when no PN is known at all. `lidJid` is captured independently so it stays
+// available as a secondary key.
 export function resolveContactIdentity(c: WaIdentityCandidates): WaIdentity | null {
   const ordered = [c.participantAlt, c.participant, c.phoneNumber, c.id, c.lid].filter((v): v is string => !!v)
   if (ordered.length === 0) return null

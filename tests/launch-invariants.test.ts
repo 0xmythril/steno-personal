@@ -73,9 +73,10 @@ describe('licence', () => {
 })
 
 describe('the WhatsApp warning is on the front page', () => {
-  // The exact three sentences from the consent screen (shared-interfaces,
-  // "Consent copy"). The README must say what the user is told before
-  // pairing, word for word, so nobody discovers it only after the QR.
+  // The exact three sentences from the consent screen
+  // (app/connections/whatsapp-consent.tsx). The README must say what the user
+  // is told before pairing, word for word, so nobody discovers it only after
+  // the QR.
   const SENTENCES = [
     'WhatsApp does not permit unofficial clients.',
     'Your number can be restricted or banned, and your phone will show an unofficial-client notice under Linked devices.',
@@ -172,7 +173,7 @@ describe('launch documents', () => {
     })
   }
 
-  it('the Railway template URL is the only placeholder in the repo docs', () => {
+  it('no placeholder marker survives in the repo docs, and the Railway button is real', () => {
     const docs = ['README.md', 'PRIVACY.md', 'SECURITY.md', 'CHANGELOG.md',
       'docs/architecture.md', 'docs/self-hosting.md', 'docs/threat-model.md']
     const offenders: string[] = []
@@ -183,8 +184,10 @@ describe('launch documents', () => {
       }
     }
     expect(offenders).toEqual([])
-    // The one sanctioned placeholder, and only in the README.
-    expect(readFileSync('README.md', 'utf8')).toContain('<RAILWAY_TEMPLATE_URL>')
+    // The Deploy button must point at a real template, never at a placeholder.
+    const readme = readFileSync('README.md', 'utf8')
+    expect(readme).toContain('https://railway.com/new/template/')
+    expect(readme).not.toContain('RAILWAY_TEMPLATE_URL')
   })
 
   it('SECURITY.md points at GitHub private reporting and offers no email', () => {

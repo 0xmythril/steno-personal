@@ -18,8 +18,9 @@ export default async function PeoplePage({ searchParams }: {
   const [people, suggestions] = await Promise.all([listPeople(), listSuggestions()])
 
   return (
-    <main>
-      <Nav label={session.label} />
+    <>
+      <Nav label={session.label} current="people" />
+      <main>
       <h1>People</h1>
       <p className="muted">
         One person, both apps. Everything here is your own annotation over the archive: nothing is
@@ -93,6 +94,7 @@ export default async function PeoplePage({ searchParams }: {
           </table>
         )}
       </section>
-    </main>
+      </main>
+    </>
   )
 }

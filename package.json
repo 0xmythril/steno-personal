@@ -2,6 +2,25 @@
   "name": "steno-personal",
   "version": "0.1.0",
   "private": true,
+  "description": "Your own Telegram and WhatsApp chats, archived read-only into one SQLite file on a machine you control, readable by your agents over MCP.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xmythril/steno-personal.git"
+  },
+  "homepage": "https://github.com/0xmythril/steno-personal#readme",
+  "bugs": {
+    "url": "https://github.com/0xmythril/steno-personal/issues"
+  },
+  "keywords": [
+    "telegram",
+    "whatsapp",
+    "chat-archive",
+    "sqlite",
+    "mcp",
+    "self-hosted",
+    "read-only",
+    "agents"
+  ],
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=24"
