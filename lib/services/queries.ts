@@ -70,7 +70,7 @@ const chatSelection = {
 const senderChannel = sql`(select ${chats.channel} from ${chats} where ${chats.id} = ${messages.chatId})`
 const senderLabel = sql<string | null>`coalesce(${messages.senderName},
   case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
-    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`
+    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`.as('senderName')
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,

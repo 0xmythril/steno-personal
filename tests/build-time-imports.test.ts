@@ -41,5 +41,8 @@ describe('nothing opens the database at import time', () => {
 
     expect(readdirSync(dir)).toEqual([])
     expect(existsSync(path.join(dir, 'steno.db'))).toBe(false)
-  })
+  // Pulls in the whole app, WhatsApp and Telegram client libraries included,
+  // alongside 50-odd other test forks: well under a second alone, but a loaded
+  // machine or a CI runner needs far more than vitest's 5s default.
+  }, 60_000)
 })
