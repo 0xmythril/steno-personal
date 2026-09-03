@@ -4,7 +4,7 @@ Your own Telegram and WhatsApp chats, archived read-only into one SQLite
 file, readable by your agents over MCP. Self-hosted: one container, one
 volume, no accounts.
 
-**Status:** M2 (Telegram and WhatsApp live). Agent access over MCP in M3.
+**Status:** M4 (media and enrichment). Launch docs and the Railway template land in M5.
 
 ## Quick start
 
@@ -54,6 +54,21 @@ On Railway, attach a volume mounted at `/data` before the first deploy.
 Without one, every redeploy discards the database and the secret key, so
 every key you minted stops working and a new bootstrap key is printed in the
 deploy log.
+
+## Media and enrichment
+
+Attachments are downloaded to `$DATA_DIR/media` and served from `/media/<id>`
+behind your access key — an image appears inline in a transcript, a voice note
+gets a player, anything else is a download link.
+
+Enrichment is **off** until you save an OpenRouter key in Settings. With one
+saved and a toggle on, images are read for the text in them and voice notes are
+transcribed, and both become searchable alongside the message text. That upload
+is the only thing that ever leaves your machine; the model picker names the
+provider that receives it. Each analysed row records what it cost in
+micro-dollars. `ANALYSIS_DAILY_LIMIT` (default 500) caps billed analyses per
+rolling day and `ANALYSIS_BACKFILL_BATCH` (default 20) paces the backfill of
+media you already have.
 
 ## Licence
 
