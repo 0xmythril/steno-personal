@@ -14,11 +14,15 @@ describe('the connect-agent panel', () => {
     expect(css).toMatch(/\.two-up > \*\s*\{[^}]*min-width:\s*0/)
   })
 
-  it('every snippet is collapsed behind a summary that carries its copy button', () => {
-    const pres = src.match(/<pre>/g) ?? []
+  it('offers two ways in, not one per vendor: the agent prompt, open, and the standard config', () => {
+    // The paste-in prompt already carries the Claude Code command and the
+    // Cursor path, so per-client blocks only repeat it. What it cannot cover
+    // is a client that cannot edit its own config (Claude Desktop), which
+    // gets the one standard mcpServers JSON block.
     const details = src.match(/<details/g) ?? []
-    expect(pres.length).toBeGreaterThanOrEqual(4)
-    expect(details.length).toBe(pres.length)
+    expect(details.length).toBe(2)
+    expect(src).toMatch(/<details className="snippet" open>[\s\S]*?<pre>\{prompt\}/)
+    expect(src).toMatch(/<details className="snippet">[\s\S]*?<pre>\{json\}[\s\S]*?<pre>\{command\}/)
     expect(src).toMatch(/<summary[\s\S]*?<CopyButton/)
   })
 

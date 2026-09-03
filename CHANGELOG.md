@@ -41,7 +41,7 @@ All notable changes to this project are documented here. The format follows
 - The WhatsApp pending screen no longer shows Telegram-only copy.
 
 ### Fixed
-- Settings: the "Connect your agent" card no longer runs off the right edge (a grid column could not shrink below the longest snippet line, which also pushed the Fill in button out of view). Choosing a key now fills the snippets in straight away. The four snippets are collapsed behind a heading that carries their Copy button.
+- Settings: the "Connect your agent" card no longer runs off the right edge (a grid column could not shrink below the longest snippet line, which also pushed the Fill in button out of view). Choosing a key now fills the snippets in straight away. The per-client snippets are replaced by two blocks: the paste-in instruction for any agent that can edit its own MCP config, open by default, and the standard `mcpServers` JSON for clients that cannot, each behind a heading that carries its Copy button.
 - Buttons have a fill on both palettes so Reveal, Copy, Fill in and Log out read as controls rather than text.
 - A `node_modules` symlink committed by mistake in c31f398 is removed; the ignore rule now covers a symlink as well as a directory. It broke `next build` in every other worktree and clone.
 - The Docker image builds on Railway: the Dockerfile no longer declares a `VOLUME`, which Railway's builder rejects. Compose and the Railway template mount `/data` themselves, so nothing changes for Docker at home.

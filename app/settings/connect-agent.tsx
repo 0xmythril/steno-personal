@@ -56,35 +56,24 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error }: {
         ? <p className="help">The snippets below carry the selected key. They are filled in for a few minutes only; use Clear to blank them sooner.</p>
         : <p className="help">Create a key above, or choose one, and these snippets come back with it already in place. Until then, replace <code>{KEY_PLACEHOLDER}</code> yourself.</p>}
 
-      <details className="snippet">
+      <details className="snippet" open>
         <summary><span className="sum">Let the agent set itself up</span><span className="hint">{hint}</span><CopyButton value={prompt} label="Copy instructions" /></summary>
         <div className="snippet-body">
-          <p className="muted">Paste this into any agent that can edit its own MCP config. It names the server, gives it the URL and key, and tells it how to verify.</p>
+          <p className="muted">Paste this into any agent that can edit its own MCP config: Claude Code, Cursor, and most others. It names the server, gives it the URL and key, and tells it how to verify.</p>
           <pre>{prompt}</pre>
         </div>
       </details>
 
       <details className="snippet">
-        <summary><span className="sum">Claude Code</span><span className="hint">{hint}</span><CopyButton value={command} label="Copy command" /></summary>
+        <summary><span className="sum">Or paste the config yourself</span><span className="hint">{hint}</span><CopyButton value={json} label="Copy config" /></summary>
         <div className="snippet-body">
-          <p className="muted">One command, run in a terminal.</p>
+          <p className="muted">
+            Standard MCP <code>mcpServers</code> JSON, for any client that reads one. Claude Desktop: add it to <code>claude_desktop_config.json</code> and restart the app. Cursor: <code>~/.cursor/mcp.json</code>, or <code>.cursor/mcp.json</code> in a project.
+          </p>
+          <pre>{json}</pre>
+          <p className="muted">Claude Code, from a terminal:</p>
           <pre>{command}</pre>
-        </div>
-      </details>
-
-      <details className="snippet">
-        <summary><span className="sum">Claude Desktop</span><span className="hint">{hint}</span><CopyButton value={json} label="Copy config" /></summary>
-        <div className="snippet-body">
-          <p className="muted">Add this to <code>claude_desktop_config.json</code> and restart the app.</p>
-          <pre>{json}</pre>
-        </div>
-      </details>
-
-      <details className="snippet">
-        <summary><span className="sum">Cursor</span><span className="hint">{hint}</span><CopyButton value={json} label="Copy config" /></summary>
-        <div className="snippet-body">
-          <p className="muted">The same block goes in <code>~/.cursor/mcp.json</code> (or <code>.cursor/mcp.json</code> in a project).</p>
-          <pre>{json}</pre>
+          <div className="actions"><CopyButton value={command} label="Copy command" /></div>
         </div>
       </details>
 
