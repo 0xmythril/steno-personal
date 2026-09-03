@@ -52,12 +52,14 @@ The latest release. This project has one maintained line; fixes go on top of
 Security here is mostly a matter of removing capabilities rather than guarding
 them, and the removals are checked automatically on every change.
 
-**Only one credential exists.** There is no password and no account. Access keys
-are 32 random bytes, labelled, minted and revoked individually, and shown once.
-They are the login for the web portal and the bearer token for the agent
-endpoint. Revoking a key immediately ends every browser session that was created
-with it. Each key's last-used time is on the Settings page, so an unexpected
-one is visible.
+**Two credentials, neither a password.** There is no password and no account.
+Access keys are 32 random bytes, labelled, minted and revoked individually, and
+shown once; they are the login for the web portal and the bearer token for the
+agent endpoint. Passkeys (WebAuthn) log into the portal only and are never
+accepted as a bearer token, so an agent's credential can never be a passkey and
+a passkey can never be pasted anywhere. Revoking either immediately ends every
+browser session that was created with it. Each credential's last-used time is
+on the Settings page, so an unexpected one is visible.
 
 **Secrets stay inside the process.** The Telegram session, the OpenRouter key,
 and the re-readable copy of each access key are encrypted at rest with a key
@@ -96,6 +98,8 @@ test enforces that.
   paired, `/setup` is open to whoever reaches the URL first.
 - Mint one key per device or agent, and revoke any key that was ever printed
   to a log once you have replaced it.
+- Register a passkey on the browsers you use, and keep keys for agents. A
+  passkey cannot be phished onto another site or copied out of a config file.
 - Do not expose the port to the internet if you only use it at home; the
   supplied compose file binds to `127.0.0.1` on purpose.
 - Encrypt the disk. Encryption at rest here covers the secrets that have to be

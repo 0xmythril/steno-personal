@@ -141,6 +141,12 @@ one through unchanged lets a client claim `https` for a plain HTTP hop. Railway
 sets it correctly for you. On your own proxy, set it yourself and strip
 client-supplied values.
 
+The same two headers, `Host` (or `X-Forwarded-Host`) and `X-Forwarded-Proto`,
+decide the passkey relying party. A wrong host makes every passkey prompt fail
+with "not accepted", and on a plain-http LAN address such as
+`http://192.168.1.20:3000` the browser offers no passkey at all: put a hostname
+and TLS in front, and the button appears.
+
 nginx:
 
 ```nginx
@@ -250,6 +256,12 @@ Three situations, three answers. None of them run through the web portal, on
 purpose: nothing reachable from the network can hand out a key or wipe an
 instance. The first is self-service; the other two are for whoever runs the
 host, because the host is what proves you are allowed to do them.
+
+A passkey is bound to the hostname it was registered on. Move the instance to
+a new domain, or restore a backup somewhere else, and existing passkeys stop
+matching: log in with a key and register again from Settings. A security key
+needs a PIN set, because user verification is required. A passkey never
+substitutes for a key in what follows — recovery and the host mint keys.
 
 **Lost the key, still have the account.** Open `/login` and choose **Pair your
 phone again**. Pairing the same Telegram account or WhatsApp number this archive

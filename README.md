@@ -60,7 +60,9 @@ to the log; the first visit sets the instance up:
    and it is also how you prove the archive is yours if you ever lose your key.
 3. Press **Create my access key**. Your first key is shown exactly once, with a
    Copy button; save it before you continue. It logs you in here and is what
-   your agents use.
+   your agents use. Under it, optionally register a **passkey** for the browser
+   you are in: from then on that browser logs in with Touch ID, Windows Hello,
+   or your phone, and the key is for agents and other devices.
 4. Wait. Backfill runs in the background; the Chats page fills in as it lands.
    Connect the other channel from **Connections** whenever you like, and make
    more keys under **Settings** — one per device or agent.
@@ -84,7 +86,7 @@ pairing a channel and hands you your first access key.
 Two things to know before you click. First, a Railway deploy has a public URL.
 Until you have paired a channel, **Setup** is open to whoever reaches that URL
 first, and afterwards the only thing standing between the internet and your
-archive is an access key — so claim the deploy promptly, and read
+archive is an access key or a passkey — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
 A laptop, a Mac mini, or a Raspberry Pi at home is the safer place to run this.

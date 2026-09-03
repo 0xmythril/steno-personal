@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Passkeys.** Log into the portal with Touch ID, Windows Hello, or your phone. Register one on `/welcome` right after your first key, or from a new Passkeys section in Settings, where each can be removed. Passkeys log into the portal only — agents keep using access keys, and a key still works on the login page everywhere. Needs HTTPS or localhost; on a plain-http LAN address the button does not appear.
 - **People**: an address book that groups a Telegram identity and a WhatsApp identity into one person, so chats and transcripts name them the same way on both channels. Manual at the core; suggestions from a matching phone number or an identical display name are offered on the page and never act on their own, and a dismissed pair is not offered again.
 - The channel port gains one read, `listContacts()`, and the worker refreshes the contact cache after a backfill and every six hours. Nothing is written back to Telegram or WhatsApp.
 - Chats and messages carry a `person` field — `{ id, name } | null` — wherever the sender or the other side of a direct chat is someone you have linked; the direct-chat title prefers the name you chose.
