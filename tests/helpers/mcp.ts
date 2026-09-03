@@ -5,7 +5,7 @@ import { POST } from '@/app/mcp/route'
 // types. Both facts live here so no test has to know them.
 export type ToolInfo = { name: string; description?: string }
 type RpcMessage = {
-  result?: { content?: Array<{ type: string; text?: string }>; tools?: ToolInfo[] }
+  result?: { content?: Array<{ type: string; text?: string }>; tools?: ToolInfo[]; isError?: boolean }
   error?: { code: number; message: string }
 }
 

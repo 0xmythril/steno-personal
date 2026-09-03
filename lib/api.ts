@@ -1,3 +1,5 @@
+import { errorShape, log } from '@/lib/log'
+
 // Shared by every JSON route. Deliberately free of imports from lib/auth.ts
 // so a test can mock that module without also mocking this one.
 export function unauthorized(): Response {
@@ -13,6 +15,26 @@ export function badRequest(error: string): Response {
 
 export function notFound(): Response {
   return Response.json({ error: 'not_found' }, { status: 404 })
+}
+
+// Every JSON route is wrapped in this. An uncaught throw would otherwise
+// escape the handler: the caller would get Next's default HTML 500 instead of
+// the documented JSON error shape, and the raw message would reach the log —
+// and drizzle builds that message as `Failed query: ${query}\nparams:
+// ${params}`, so the bound values ride along in it. The caller learns only
+// that something went wrong; lib/log.ts#errorShape keeps the useful half and
+// drops everything from `params:` on.
+export function withErrorBoundary<A extends unknown[]>(
+  handler: (...args: A) => Promise<Response>,
+): (...args: A) => Promise<Response> {
+  return async (...args: A) => {
+    try {
+      return await handler(...args)
+    } catch (err) {
+      log.error({ err: errorShape(err) }, 'api route failed')
+      return Response.json({ error: 'internal' }, { status: 500 })
+    }
+  }
 }
 
 export const MAX_LIMIT = 200

@@ -1,11 +1,11 @@
 import { authenticateRequest } from '@/lib/auth'
-import { badRequest, notFound, parseDate, parseLimit, unauthorized } from '@/lib/api'
+import { badRequest, notFound, parseDate, parseLimit, unauthorized, withErrorBoundary } from '@/lib/api'
 import { getMessages } from '@/lib/services/queries'
 
-export async function GET(
+export const GET = withErrorBoundary(async (
   request: Request,
   { params }: { params: Promise<{ id: string }> },
-): Promise<Response> {
+): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
 
   const { searchParams } = new URL(request.url)
@@ -24,4 +24,4 @@ export async function GET(
     after: after.value,
   })
   return out ? Response.json(out) : notFound()
-}
+})

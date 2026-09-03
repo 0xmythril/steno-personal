@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
-import { callTool, listTools, mcpRequest } from './helpers/mcp'
+import { callTool, listTools, mcpRequest, rpc } from './helpers/mcp'
+import * as queries from '@/lib/services/queries'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { POST } from '@/app/mcp/route'
 
@@ -127,6 +128,30 @@ describe('content tools with an archive', () => {
 
     const scoped = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', chat_id: mum })) as Array<{ chatId: string }>
     expect(scoped.map(r => r.chatId)).toEqual([mum])
+  })
+
+  it('answers a failed query with a fixed sentence, never the query or its parameters', async () => {
+    // The MCP SDK returns a thrown handler's error.message to the client
+    // verbatim, and drizzle builds that message out of the SQL and the bound
+    // values. The guard in the route is the only thing standing between the
+    // two, so this drives a real failure through it.
+    const conn = await seedConnection()
+    await seedChat(conn, { title: 'Mum' })
+    const spy = vi.spyOn(queries, 'listChats').mockRejectedValue(
+      new Error('Failed query: select "title" from "chats"\nparams: ["SECRET"]'),
+    )
+    try {
+      const { message } = await rpc(await agentKey(), {
+        jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_chats', arguments: {} },
+      })
+      expect(message?.error).toBeUndefined()
+      expect(message?.result?.isError).toBe(true)
+      expect((message?.result?.content ?? []).map(c => c.text).join('')).toBe('Internal error.')
+      expect(JSON.stringify(message)).not.toContain('SECRET')
+      expect(JSON.stringify(message)).not.toContain('Failed query')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('never serves a deleted message, through either tool', async () => {

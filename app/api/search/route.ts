@@ -1,8 +1,8 @@
 import { authenticateRequest } from '@/lib/auth'
-import { badRequest, parseLimit, unauthorized } from '@/lib/api'
+import { badRequest, parseLimit, unauthorized, withErrorBoundary } from '@/lib/api'
 import { searchMessages } from '@/lib/services/queries'
 
-export async function GET(request: Request): Promise<Response> {
+export const GET = withErrorBoundary(async (request: Request): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
 
   const { searchParams } = new URL(request.url)
@@ -14,4 +14,4 @@ export async function GET(request: Request): Promise<Response> {
   return Response.json({
     results: await searchMessages(q, searchParams.get('chat_id') ?? undefined, limit.value),
   })
-}
+})

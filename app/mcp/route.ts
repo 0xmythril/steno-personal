@@ -1,16 +1,51 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
-import { CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, NO_CONNECTION } from '@/lib/mcp/copy'
+import { errorShape, log } from '@/lib/log'
+import { CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, NO_CONNECTION } from '@/lib/mcp/copy'
 import { verifyAccessKey } from '@/lib/services/access-keys'
 import { hasActiveConnection, listConnections } from '@/lib/services/connections'
 import { getMessages, listChats, searchMessages } from '@/lib/services/queries'
 
-const text = (value: unknown) => ({
+type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
+
+const text = (value: unknown): ToolResult => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
 })
 
+// Anything a tool handler throws is returned to the client verbatim as
+// `{ isError: true, content: [{ text: error.message }] }`, and drizzle builds
+// that message as `Failed query: ${query}\nparams: ${params}` — the SQL and
+// its bound values, straight into the agent's context. So no handler may
+// throw: each one is wrapped here, the error goes to the log through
+// errorShape, and the agent is told only that something went wrong.
+function guarded<A extends unknown[]>(
+  tool: string,
+  fn: (...args: A) => Promise<ToolResult>,
+): (...args: A) => Promise<ToolResult> {
+  return async (...args: A) => {
+    try {
+      return await fn(...args)
+    } catch (e) {
+      log.error({ err: errorShape(e), tool }, 'mcp tool failed')
+      return { content: [{ type: 'text' as const, text: INTERNAL_ERROR }], isError: true }
+    }
+  }
+}
+
 const timestamp = z.iso.datetime({ offset: true })
 const toDate = (iso: string | undefined): Date | undefined => (iso ? new Date(iso) : undefined)
+
+const getMessagesInput = z.object({
+  chat_id: z.string(),
+  cursor: z.string().optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  before: timestamp.optional(),
+  after: timestamp.optional(),
+})
+const searchInput = z.object({
+  query: z.string(),
+  chat_id: z.string().optional(),
+})
 
 const handler = createMcpHandler(server => {
   server.registerTool(
@@ -20,10 +55,10 @@ const handler = createMcpHandler(server => {
         'List every chat archived on this instance, most recently active first, with its channel, kind, title and message count. ' +
         DATA_NOT_INSTRUCTIONS,
     },
-    async () => {
+    guarded('list_chats', async () => {
       if (!(await hasActiveConnection())) return text(NO_CONNECTION)
       return text(await listChats())
-    },
+    }),
   )
 
   server.registerTool(
@@ -33,15 +68,9 @@ const handler = createMcpHandler(server => {
         'Read one chat, newest message first. Pass the nextCursor from a previous call to page further back, ' +
         'or before/after as ISO-8601 timestamps to bound the range. ' +
         DATA_NOT_INSTRUCTIONS,
-      inputSchema: z.object({
-        chat_id: z.string(),
-        cursor: z.string().optional(),
-        limit: z.number().int().positive().max(200).optional(),
-        before: timestamp.optional(),
-        after: timestamp.optional(),
-      }),
+      inputSchema: getMessagesInput,
     },
-    async args => {
+    guarded('get_messages', async (args: z.infer<typeof getMessagesInput>) => {
       if (!(await hasActiveConnection())) return text(NO_CONNECTION)
       const out = await getMessages(args.chat_id, {
         cursor: args.cursor,
@@ -50,7 +79,7 @@ const handler = createMcpHandler(server => {
         after: toDate(args.after),
       })
       return text(out ?? CHAT_NOT_FOUND)
-    },
+    }),
   )
 
   server.registerTool(
@@ -59,15 +88,12 @@ const handler = createMcpHandler(server => {
       description:
         'Full-text search across the archive, or within one chat when chat_id is given. Matches are returned newest first. ' +
         DATA_NOT_INSTRUCTIONS,
-      inputSchema: z.object({
-        query: z.string(),
-        chat_id: z.string().optional(),
-      }),
+      inputSchema: searchInput,
     },
-    async args => {
+    guarded('search_messages', async (args: z.infer<typeof searchInput>) => {
       if (!(await hasActiveConnection())) return text(NO_CONNECTION)
       return text(await searchMessages(args.query, args.chat_id))
-    },
+    }),
   )
 
   server.registerTool(
@@ -77,14 +103,14 @@ const handler = createMcpHandler(server => {
         'The channel accounts connected to this instance: channel, display name and status. Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
     },
-    async () => {
+    guarded('whoami', async () => {
       const connections = (await listConnections()).map(c => ({
         channel: c.channel,
         displayName: c.displayName,
         status: c.status,
       }))
       return text({ connections })
-    },
+    }),
   )
 }, {
   serverInfo: { name: 'steno-personal', version: '0.1.0' },

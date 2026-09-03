@@ -21,6 +21,7 @@ vi.mock('next/navigation', () => ({
 
 import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
+import * as queries from '@/lib/services/queries'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { startSession } from '@/lib/auth'
 import { GET as getChats } from '@/app/api/chats/route'
@@ -184,6 +185,26 @@ describe('REST routes serve the same data as the MCP tools', () => {
 
     const blank = await getSearch(bearer('/api/search?q=%20%20', k.rawKey))
     expect(blank.status).toBe(400)
+  })
+
+  it('answers a failed query with 500 { error: internal }, never the query or its parameters', async () => {
+    // An uncaught throw would escape the handler: Next's HTML 500 instead of
+    // the JSON error shape, with drizzle's `Failed query: … params: …`
+    // message — the SQL and its bound values — in the log unfiltered.
+    const k = await key()
+    const spy = vi.spyOn(queries, 'listChats').mockRejectedValue(
+      new Error('Failed query: select "title" from "chats"\nparams: ["SECRET"]'),
+    )
+    try {
+      const res = await getChats(bearer('/api/chats', k.rawKey))
+      expect(res.status).toBe(500)
+      const body = await res.text()
+      expect(JSON.parse(body)).toEqual({ error: 'internal' })
+      expect(body).not.toContain('SECRET')
+      expect(body).not.toContain('Failed query')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('GET /api/search 400s a malformed limit', async () => {
