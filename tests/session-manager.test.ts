@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
+import { env } from '@/lib/env'
 import { log } from '@/lib/log'
 import { connections, messages } from '@/lib/db/schema'
 import { encryptSecret } from '@/lib/services/crypto'
@@ -289,6 +292,59 @@ describe('session manager', () => {
     await revokeConnection(conn.id, 'disconnected')
     await mgr.tick()
     expect(port.loggedOut).toBe(true)
+    await mgr.stopAll()
+  })
+
+  // PRIVACY.md's Disconnect paragraph rests on this: the database credential
+  // goes at the moment of the click, but WhatsApp's real credential is the
+  // Baileys auth directory on the volume, and only the worker can reach it.
+  it('removes a revoked WhatsApp connection auth directory after closing its session', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    await db.update(connections).set({ sessionCiphertext: encryptSecret(`wa-${conn.id}`) })
+      .where(eq(connections.id, conn.id))
+    const dir = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 'creds.json'), '{}')
+
+    const port = new FakePort('whatsapp')
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()      // opens the session
+    expect(existsSync(dir)).toBe(true)          // still linked: nothing is touched
+
+    await revokeConnection(conn.id, 'You disconnected this channel.')
+    await mgr.tick()
+    expect(port.loggedOut).toBe(true)
+    expect(existsSync(dir)).toBe(false)
+    await mgr.tick()                            // idempotent: a second sweep does not throw
+    await mgr.stopAll()
+  })
+
+  // The case the wording has to cover: the owner disconnected while the worker
+  // was down, so there was never a session to close. The next run cleans up.
+  it('removes the auth directory of a WhatsApp row revoked while the worker was down', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    await revokeConnection(conn.id, 'You disconnected this channel.')
+    const dir = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, 'creds.json'), '{}')
+
+    const mgr = new SessionManager(portsOf(new FakePort('whatsapp')))
+    await mgr.tick()
+    expect(existsSync(dir)).toBe(false)
+    await mgr.stopAll()
+  })
+
+  it('leaves an active WhatsApp connection auth directory alone', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    await db.update(connections).set({ sessionCiphertext: encryptSecret(`wa-${conn.id}`) })
+      .where(eq(connections.id, conn.id))
+    const dir = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    mkdirSync(dir, { recursive: true })
+
+    const mgr = new SessionManager(portsOf(new FakePort('whatsapp')))
+    await mgr.tick(); await mgr.whenIdle()
+    await mgr.tick()
+    expect(existsSync(dir)).toBe(true)
     await mgr.stopAll()
   })
 

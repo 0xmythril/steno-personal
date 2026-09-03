@@ -4,7 +4,7 @@ import {
   claimPendingLogins, activeConnections, publishQr, requestPassword,
   takeLoginSecret, recordPasswordRejected, completeLogin, failLogin, recordSync,
 } from '@/lib/services/login'
-import { revokeConnection } from '@/lib/services/connections'
+import { removeWhatsappAuthDirs, revokedWhatsappConnectionIds, revokeConnection } from '@/lib/services/connections'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
 import { enqueueMedia, type Downloader } from '@/lib/services/media'
 import { ChannelError, type Channel, type ChannelPort, type ChannelSession, type IncomingMessage } from '@/lib/channels/port'
@@ -91,6 +91,10 @@ export class SessionManager {
   private backfillsInFlight = new Map<string, Promise<void>>()
   private ticking = false
   private stopping = false
+  // Revoked WhatsApp rows whose auth directory this process has already tried
+  // to remove. rm is idempotent, so the memo is not for correctness — it keeps
+  // a permanently unremovable directory from re-logging its failure every 3 s.
+  private sweptWhatsappAuth = new Set<string>()
 
   constructor(private ports: Map<Channel, ChannelPort>) {}
 
@@ -105,6 +109,10 @@ export class SessionManager {
     try {
       await this.startPendingLogins()
       await this.reconcileActive()
+      // AFTER reconcileActive, so a connection revoked since the last tick has
+      // had its session closed (and, where the channel answered, logged out)
+      // before its signal keys go.
+      await this.sweepRevokedWhatsappAuth()
     } finally {
       this.ticking = false
     }
@@ -296,6 +304,28 @@ export class SessionManager {
         // One connection's failure must never starve the others in this pass.
         log.error({ err: errorShape(e), connectionId: conn.id }, 'connection failed this tick')
       }
+    }
+  }
+
+  // revokeConnection nulls the database credential, but WhatsApp's real
+  // credential is the Baileys multi-file auth state on the volume, and nothing
+  // in the portal can touch it: a Disconnect is a database write, and the
+  // owner may well have performed it with the worker down. So the worker owns
+  // the removal — for a session it has just closed above, and for any revoked
+  // row whose directory outlived a worker that was not running at the time.
+  // Never throws: the whole point is that a stubborn directory cannot stop the
+  // tick loop.
+  private async sweepRevokedWhatsappAuth(): Promise<void> {
+    try {
+      for (const id of await revokedWhatsappConnectionIds()) {
+        if (this.sweptWhatsappAuth.has(id)) continue
+        this.sweptWhatsappAuth.add(id)
+        // sessionCiphertext is already null on a revoked row; the directory
+        // name is derived from the connection id.
+        await removeWhatsappAuthDirs(id, null)
+      }
+    } catch (e) {
+      log.error({ err: errorShape(e) }, 'revoked WhatsApp auth sweep failed')
     }
   }
 
