@@ -60,7 +60,13 @@ export async function enqueueMediaAnalysis(medium: Medium, opts: { batch?: numbe
   return inserted.length
 }
 
-export type DrainSummary = { done: number; failed: number; skipped: number; retried: number }
+// `errors` holds the faults that could not even be recorded on their own row —
+// a terminal write that itself threw. The row keeps whatever state it had and
+// the next pass picks it up again; the pass still REPORTS the fault rather
+// than swallowing it or abandoning the rows behind it.
+export type DrainSummary = {
+  done: number; failed: number; skipped: number; retried: number; errors: ErrorShape[]
+}
 
 export type AnalysisJob =
   | { medium: 'image'; analyzer: VisionAnalyzer; entry: Pick<VisionCatalogEntry, 'id' | 'inPerMTok' | 'outPerMTok'> }
@@ -73,10 +79,11 @@ export async function processPendingAnalyses(
 ): Promise<DrainSummary> {
   const batch = opts.batch ?? 20
   const maxAttempts = opts.maxAttempts ?? 3
-  const summary: DrainSummary = { done: 0, failed: 0, skipped: 0, retried: 0 }
+  const summary: DrainSummary = { done: 0, failed: 0, skipped: 0, retried: 0, errors: [] }
   const rows = await db.select({
     id: mediaAnalysis.id,
     attempts: mediaAnalysis.attempts,
+    messageId: messages.id,
     storagePath: media.storagePath,
     mimeType: media.mimeType,
     sizeBytes: media.sizeBytes,
@@ -93,14 +100,28 @@ export async function processPendingAnalyses(
 
   for (const row of rows) {
     try {
-      // A message tombstoned while the row sat in the queue must never be sent
+      // The free gates first, so a row that can never be analyzed costs
+      // nothing to reject.
+      //
+      // A message tombstoned before the batch was fetched must never be sent
       // to a provider (invariant 4).
       if (row.deletedAt) throw new AnalysisSkip('message deleted')
       if (!row.storagePath || !row.mimeType) throw new AnalysisSkip('media incomplete')
       // Checked BEFORE the read: media is capped at 100 MiB and an oversize
       // row must not be loaded into the worker's heap just to be thrown away.
+      // FAILS CLOSED — an unknown size is not a licence to hand a provider an
+      // unbounded payload, so null skips exactly as an oversize row does.
       const maxBytes = job.medium === 'image' ? MAX_ANALYSIS_BYTES : MAX_TRANSCRIPTION_BYTES
-      if (row.sizeBytes !== null && row.sizeBytes > maxBytes) throw new AnalysisSkip('oversize')
+      if (row.sizeBytes === null || row.sizeBytes > maxBytes) {
+        throw new AnalysisSkip('size unknown or over cap')
+      }
+      // The snapshot above was taken when the whole batch was fetched, and the
+      // rows ahead of this one each took a provider call's worth of wall
+      // clock. One cheap re-read immediately before the spend closes that
+      // window: a message deleted mid-drain never reaches a provider.
+      const [live] = await db.select({ deletedAt: messages.deletedAt })
+        .from(messages).where(eq(messages.id, row.messageId)).limit(1)
+      if (!live || live.deletedAt) throw new AnalysisSkip('message deleted')
       const bytes = readFileSync(mediaFilePath(row.storagePath))
       const fields = job.medium === 'image'
         ? await runImage(job, row.mimeType, bytes)
@@ -109,24 +130,32 @@ export async function processPendingAnalyses(
         .where(eq(mediaAnalysis.id, row.id))
       summary.done++
     } catch (err) {
-      if (err instanceof AnalysisSkip) {
-        await db.update(mediaAnalysis)
-          .set({ status: 'skipped', completedAt: new Date(), error: err.message, ...billedFields(job, err.usage) })
-          .where(eq(mediaAnalysis.id, row.id))
-        summary.skipped++
-      } else {
-        const attempts = row.attempts + 1
-        const failed = attempts >= maxAttempts
-        await db.update(mediaAnalysis)
-          .set({
-            attempts, status: failed ? 'failed' : 'pending',
-            // Provider diagnostics, capped. Stored, never logged.
-            error: errorShape(err).message.slice(0, 300),
-            completedAt: failed ? new Date() : null,
-          })
-          .where(eq(mediaAnalysis.id, row.id))
-        if (failed) summary.failed++
-        else summary.retried++
+      // The terminal write is itself a database call and can fail — a locked
+      // file, a closed handle. If it does, this row keeps its current state
+      // (the next pass re-reads it) and the remaining rows still get their
+      // turn; one unwritable row must not abandon the rest of the batch.
+      try {
+        if (err instanceof AnalysisSkip) {
+          await db.update(mediaAnalysis)
+            .set({ status: 'skipped', completedAt: new Date(), error: err.message, ...billedFields(job, err.usage) })
+            .where(eq(mediaAnalysis.id, row.id))
+          summary.skipped++
+        } else {
+          const attempts = row.attempts + 1
+          const failed = attempts >= maxAttempts
+          await db.update(mediaAnalysis)
+            .set({
+              attempts, status: failed ? 'failed' : 'pending',
+              // Provider diagnostics, capped. Stored, never logged.
+              error: errorShape(err).message.slice(0, 300),
+              completedAt: failed ? new Date() : null,
+            })
+            .where(eq(mediaAnalysis.id, row.id))
+          if (failed) summary.failed++
+          else summary.retried++
+        }
+      } catch (writeErr) {
+        summary.errors.push(errorShape(writeErr))
       }
     }
   }
@@ -177,7 +206,9 @@ async function runAudio(
 
 // Backstop against runaway spend: BILLED analyses in the trailing 24 h — every
 // row with a cost, i.e. done rows plus skips decided after a paid call.
-// Counting only 'done' would let a run of silent notes spend without tripping.
+// Counting only 'done' would let a run of silent notes spend without tripping;
+// counting 'failed' rows, which never reached a billable response, would stop
+// the drain over calls nobody paid for.
 export async function countRecentAnalyses(): Promise<number> {
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const [row] = await db.select({ n: sql<number>`count(*)` }).from(mediaAnalysis)
@@ -202,11 +233,27 @@ export type MediumResult =
   | { ran: false; reason: 'error'; error: ErrorShape }
   | ({ ran: true; enqueued: number } & DrainSummary)
 
-// The whole drain as the worker calls it: resolve the gates, enqueue, process.
-// NEVER throws — the worker runs it out of a timer and the container dies if
-// anything escapes one.
+// The whole drain as the worker calls it. NEVER throws, under any fault: the
+// worker runs it out of a timer, and an escaped rejection there takes the
+// container down. The gate reads are inside the guard too — a settings read
+// or a count against a locked database is exactly the kind of fault that
+// would otherwise escape before the per-medium isolation below begins.
 export async function runMediaAnalysis(
   opts: { batch?: number } = {},
+): Promise<{ ran: boolean; image: MediumResult; audio: MediumResult }> {
+  try {
+    return await gatedMediaAnalysis(opts)
+  } catch (err) {
+    const failure = (): MediumResult => ({ ran: false, reason: 'error', error: errorShape(err) })
+    return { ran: false, image: failure(), audio: failure() }
+  }
+}
+
+// Resolve the gates, enqueue, process. The key and both toggles are re-read on
+// every pass, so revoking a key or turning a medium off takes effect at the
+// next tick rather than at the next restart.
+async function gatedMediaAnalysis(
+  opts: { batch?: number },
 ): Promise<{ ran: boolean; image: MediumResult; audio: MediumResult }> {
   const both = (reason: 'no_key' | 'daily_limit') =>
     ({ ran: false, image: { ran: false, reason } as MediumResult, audio: { ran: false, reason } as MediumResult })

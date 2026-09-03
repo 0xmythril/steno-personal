@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
@@ -13,6 +13,40 @@ import { MAX_ANALYSIS_BYTES } from '@/lib/services/analyzers/vision'
 import {
   countRecentAnalyses, enqueueMediaAnalysis, processPendingAnalyses, runMediaAnalysis,
 } from '@/lib/services/media-analysis'
+
+// Both modules below are passed through untouched unless a test arms a fault.
+// Vite's SSR namespaces are not writable and `db` is a lazy Proxy with only a
+// get trap, so neither can be spied on — a module mock is the way to make a
+// dependency fail on demand.
+const gate = vi.hoisted(() => ({ settingsFault: null as Error | null, updateFaults: 0 }))
+
+vi.mock('@/lib/services/settings', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/services/settings')>()
+  return {
+    ...actual,
+    getSettings: async () => {
+      if (gate.settingsFault) throw gate.settingsFault
+      return actual.getSettings()
+    },
+  }
+})
+
+vi.mock('@/lib/db/client', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/db/client')>()
+  return {
+    ...actual,
+    db: new Proxy(actual.db, {
+      get(target, prop) {
+        // Arms the next N writes to fail the way a locked database does.
+        if (prop === 'update' && gate.updateFaults > 0) {
+          gate.updateFaults--
+          return () => { throw new Error('database is locked') }
+        }
+        return (target as unknown as Record<PropertyKey, unknown>)[prop as PropertyKey]
+      },
+    }),
+  }
+})
 
 const IMAGE_ENTRY = { id: 'qwen3-vl-32b', inPerMTok: 1, outPerMTok: 5 }
 const AUDIO_ENTRY = { id: 'qwen3-asr-1.7b', perSecondMicroUsd: 8 }
@@ -37,7 +71,7 @@ function stubTranscriber(impl: () => Promise<TranscriptionResult>): Transcriber 
 
 // A downloaded attachment with real bytes on disk under DATA_DIR/media.
 async function downloaded(opts: {
-  type?: 'image' | 'audio'; mimeType?: string; sizeBytes?: number
+  type?: 'image' | 'audio'; mimeType?: string; sizeBytes?: number | null
   isVoiceNote?: boolean | null; durationSeconds?: number | null
 } = {}) {
   const type = opts.type ?? 'image'
@@ -45,7 +79,8 @@ async function downloaded(opts: {
     type,
     mimeType: opts.mimeType ?? (type === 'image' ? 'image/jpeg' : 'audio/ogg; codecs=opus'),
     status: 'done',
-    sizeBytes: opts.sizeBytes ?? 15,
+    // Explicit null is "size unknown" and must survive the default.
+    sizeBytes: opts.sizeBytes === undefined ? 15 : opts.sizeBytes,
     isVoiceNote: opts.isVoiceNote === undefined ? (type === 'audio') : opts.isVoiceNote,
     durationSeconds: opts.durationSeconds === undefined ? (type === 'audio' ? 45 : null) : opts.durationSeconds,
   })
@@ -118,7 +153,7 @@ describe('analysis drain', () => {
     await enqueueMediaAnalysis('image')
     const analyzer = stubAnalyzer(async () => okImage)
     const summary = await processPendingAnalyses({ medium: 'image', analyzer, entry: IMAGE_ENTRY })
-    expect(summary).toEqual({ done: 1, failed: 0, skipped: 0, retried: 0 })
+    expect(summary).toEqual({ done: 1, failed: 0, skipped: 0, retried: 0, errors: [] })
     expect(analyzer.calls).toBe(1)
 
     const [row] = await db.select().from(mediaAnalysis)
@@ -212,12 +247,100 @@ describe('analysis drain', () => {
     expect(analyzer.calls).toBe(0)
   })
 
+  it('skips a message deleted mid-drain, after the batch was already fetched', async () => {
+    // Two queued rows. The first row's provider call tombstones every message,
+    // so the second row's deletion happens strictly AFTER the batch snapshot
+    // was taken — only a re-read immediately before the spend can catch it.
+    await downloaded()
+    await downloaded()
+    expect(await enqueueMediaAnalysis('image')).toBe(2)
+    const analyzer = stubAnalyzer(async () => {
+      await db.update(messages).set({ deletedAt: new Date() })
+      return okImage
+    })
+    const summary = await processPendingAnalyses({ medium: 'image', analyzer, entry: IMAGE_ENTRY })
+    expect(summary).toMatchObject({ done: 1, skipped: 1, failed: 0, retried: 0 })
+    // The second row cost nothing: one call for the first row and no more.
+    expect(analyzer.calls).toBe(1)
+    const [skipped] = await db.select().from(mediaAnalysis).where(eq(mediaAnalysis.status, 'skipped'))
+    expect(skipped.error).toBe('message deleted')
+    expect(skipped.costMicroUsd).toBeNull()
+  })
+
+  it('skips a row whose size is unknown rather than sending it blind', async () => {
+    // Fails closed: a null size is not a licence to hand a provider whatever
+    // happens to be on disk.
+    await downloaded({ sizeBytes: null })
+    await enqueueMediaAnalysis('image')
+    const analyzer = stubAnalyzer(async () => okImage)
+    expect(await processPendingAnalyses({ medium: 'image', analyzer, entry: IMAGE_ENTRY }))
+      .toMatchObject({ skipped: 1 })
+    expect(analyzer.calls).toBe(0)
+    const [row] = await db.select().from(mediaAnalysis)
+    expect(row.status).toBe('skipped')
+    expect(row.error).toBe('size unknown or over cap')
+    expect(row.costMicroUsd).toBeNull()
+  })
+
+  it('reports a terminal write that itself failed, and drains the rest anyway', async () => {
+    // Both rows skip on the free size gate, so neither reaches a provider; the
+    // FIRST row's terminal write is the thing that fails.
+    await downloaded({ sizeBytes: null })
+    await downloaded({ sizeBytes: null })
+    expect(await enqueueMediaAnalysis('image')).toBe(2)
+    gate.updateFaults = 1
+    try {
+      const summary = await processPendingAnalyses({
+        medium: 'image', analyzer: stubAnalyzer(async () => okImage), entry: IMAGE_ENTRY,
+      })
+      // The unwritable row is reported, not swallowed — and the row behind it
+      // still got its turn instead of being abandoned mid-batch.
+      expect(summary.errors).toEqual([{ name: 'Error', code: null, message: 'database is locked' }])
+      expect(summary.skipped).toBe(1)
+    } finally {
+      gate.updateFaults = 0
+    }
+    // The row whose write threw is untouched, so the next pass retries it.
+    const pending = await db.select().from(mediaAnalysis).where(eq(mediaAnalysis.status, 'pending'))
+    expect(pending).toHaveLength(1)
+  })
+
   it('counts only billed rows from the trailing 24 hours', async () => {
     await downloaded()
     await enqueueMediaAnalysis('image')
     await processPendingAnalyses({ medium: 'image', analyzer: stubAnalyzer(async () => okImage), entry: IMAGE_ENTRY })
     expect(await countRecentAnalyses()).toBe(1)
     await db.update(mediaAnalysis).set({ completedAt: new Date(Date.now() - 25 * 3600_000) })
+    expect(await countRecentAnalyses()).toBe(0)
+  })
+
+  it('counts a skip that was billed, because the money left all the same', async () => {
+    await downloaded({ type: 'audio' })
+    await enqueueMediaAnalysis('audio')
+    await processPendingAnalyses({
+      medium: 'audio', entry: AUDIO_ENTRY,
+      transcriber: stubTranscriber(async () => { throw new AnalysisSkip('empty transcript', { seconds: 3 }) }),
+    })
+    const [row] = await db.select().from(mediaAnalysis)
+    expect(row.status).toBe('skipped')
+    expect(row.costMicroUsd).toBe(24)
+    // A run of silent voice notes spends real money without producing a single
+    // 'done' row; the cap has to see it.
+    expect(await countRecentAnalyses()).toBe(1)
+  })
+
+  it('never counts a failed row, which reached no billable response', async () => {
+    await downloaded()
+    await enqueueMediaAnalysis('image')
+    await processPendingAnalyses({
+      medium: 'image', entry: IMAGE_ENTRY,
+      analyzer: stubAnalyzer(async () => { throw new Error('rate limited') }),
+    }, { maxAttempts: 1 })
+    const [row] = await db.select().from(mediaAnalysis)
+    expect(row.status).toBe('failed')
+    // Terminal and timestamped, but unbilled — so it must not consume the cap.
+    expect(row.completedAt).toBeInstanceOf(Date)
+    expect(row.costMicroUsd).toBeNull()
     expect(await countRecentAnalyses()).toBe(0)
   })
 })
@@ -258,6 +381,23 @@ describe('runMediaAnalysis', () => {
     } finally {
       delete process.env.ANALYSIS_DAILY_LIMIT
       _resetEnvCacheForTests()
+    }
+  })
+
+  it('never throws when a gate itself fails, and says which fault it was', async () => {
+    // The worker calls this out of a timer: an escaped rejection takes the
+    // container down, so even the settings read is inside the guard.
+    await updateSettings({ openrouterKey: 'sk-or-x', analyzeImages: true, analyzeAudio: true })
+    gate.settingsFault = new Error('database is locked')
+    try {
+      const res = await runMediaAnalysis()
+      expect(res.ran).toBe(false)
+      expect(res.image).toEqual({
+        ran: false, reason: 'error', error: { name: 'Error', code: null, message: 'database is locked' },
+      })
+      expect(res.audio).toEqual(res.image)
+    } finally {
+      gate.settingsFault = null
     }
   })
 
