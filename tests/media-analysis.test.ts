@@ -7,7 +7,7 @@ import { resetDb } from './helpers/db'
 import { makeAttachment } from './helpers/media-fixtures'
 import { mediaDir } from '@/lib/services/media'
 import { updateSettings } from '@/lib/services/settings'
-import { AnalysisSkip } from '@/lib/services/analyzers/types'
+import { AnalysisSkip, BilledError } from '@/lib/services/analyzers/types'
 import type { AnalysisResult, Transcriber, TranscriptionResult, VisionAnalyzer } from '@/lib/services/analyzers/types'
 import { MAX_ANALYSIS_BYTES } from '@/lib/services/analyzers/vision'
 import {
@@ -326,6 +326,57 @@ describe('analysis drain', () => {
     expect(row.costMicroUsd).toBe(24)
     // A run of silent voice notes spends real money without producing a single
     // 'done' row; the cap has to see it.
+    expect(await countRecentAnalyses()).toBe(1)
+  })
+
+  it('counts a billed call whose body was unusable, and records its cost on the retry path', async () => {
+    // I1: a budget model that ignores response_format answers 200 (billed) and
+    // then fails to parse. The attempt burns and the row is retried, but the
+    // spend must be on the row and visible to the cap from the FIRST attempt —
+    // otherwise a systematically malformed model bills three times per row,
+    // every pass, and the cap never trips.
+    await downloaded()
+    await enqueueMediaAnalysis('image')
+    const summary = await processPendingAnalyses({
+      medium: 'image', entry: IMAGE_ENTRY,
+      analyzer: stubAnalyzer(async () => {
+        throw new BilledError('vision response unusable: invalid json', {
+          inputTokens: 1000, outputTokens: 100, providerCostMicroUsd: null,
+        })
+      }),
+    }, { maxAttempts: 3 })
+    expect(summary).toMatchObject({ done: 0, failed: 0, retried: 1 })
+    const [row] = await db.select().from(mediaAnalysis)
+    // Still retryable...
+    expect(row.status).toBe('pending')
+    expect(row.attempts).toBe(1)
+    // ...but billed, stamped, and therefore inside the cap's window.
+    // 1000 in @ 1 + 100 out @ 5 = 1500 micro-USD, the catalog estimate.
+    expect(row.costMicroUsd).toBe(1500)
+    expect(row.model).toBe(IMAGE_ENTRY.id)
+    expect(row.completedAt).toBeInstanceOf(Date)
+    expect(await countRecentAnalyses()).toBe(1)
+  })
+
+  it('does not let a later unbilled failure hide an earlier billed attempt', async () => {
+    await downloaded()
+    await enqueueMediaAnalysis('image')
+    const job = { medium: 'image' as const, entry: IMAGE_ENTRY }
+    await processPendingAnalyses({
+      ...job,
+      analyzer: stubAnalyzer(async () => {
+        throw new BilledError('vision response unusable', { inputTokens: 1000, outputTokens: 100 })
+      }),
+    }, { maxAttempts: 3 })
+    // Second pass: the network is down this time, so nothing is billed. The
+    // stamp from the paid attempt must survive, or the cap loses sight of it.
+    await processPendingAnalyses({
+      ...job, analyzer: stubAnalyzer(async () => { throw new Error('ECONNRESET') }),
+    }, { maxAttempts: 3 })
+    const [row] = await db.select().from(mediaAnalysis)
+    expect(row.attempts).toBe(2)
+    expect(row.status).toBe('pending')
+    expect(row.completedAt).toBeInstanceOf(Date)
     expect(await countRecentAnalyses()).toBe(1)
   })
 

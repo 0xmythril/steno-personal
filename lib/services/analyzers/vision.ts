@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MEDIA_KINDS, extractJson, usdToMicroUsd, type AnalysisResult, type VisionAnalyzer } from './types'
+import { BilledError, MEDIA_KINDS, extractJson, usdToMicroUsd, type AnalysisResult, type VisionAnalyzer } from './types'
 import { OPENROUTER_BASE_URL, type VisionCatalogEntry } from '../analysis-catalog'
 
 // Real photos, flyers, and screenshots only. messages.type = 'image' at
@@ -64,15 +64,28 @@ export function openRouterVisionAnalyzer(entry: VisionCatalogEntry, apiKey: stri
         choices?: { message?: { content?: string } }[]
         usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number }
       }
-      const parsed = resultSchema.parse(extractJson(body.choices?.[0]?.message?.content ?? ''))
+      // Read the usage BEFORE parsing: this response was billed whether or not
+      // its content turns out to be usable, and a budget model that ignores
+      // response_format is exactly the case the daily cap must still see.
+      const usage = {
+        inputTokens: body.usage?.prompt_tokens ?? 0,
+        outputTokens: body.usage?.completion_tokens ?? 0,
+        providerCostMicroUsd: usdToMicroUsd(body.usage?.cost),
+      }
+      let parsed: z.infer<typeof resultSchema>
+      try {
+        parsed = resultSchema.parse(extractJson(body.choices?.[0]?.message?.content ?? ''))
+      } catch (e) {
+        // The message is the parse fault, never the model's output: that output
+        // is derived from chat content and is stored, not logged (invariant 6).
+        throw new BilledError(`vision response unusable: ${(e as Error).message}`, usage)
+      }
       return {
         ocrText: parsed.ocr_text,
         description: parsed.description,
         kind: parsed.kind,
         confidence: parsed.confidence,
-        inputTokens: body.usage?.prompt_tokens ?? 0,
-        outputTokens: body.usage?.completion_tokens ?? 0,
-        providerCostMicroUsd: usdToMicroUsd(body.usage?.cost),
+        ...usage,
       }
     },
   }

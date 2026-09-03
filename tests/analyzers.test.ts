@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { AnalysisSkip, extractJson, usdToMicroUsd } from '@/lib/services/analyzers/types'
+import { AnalysisSkip, BilledError, extractJson, usdToMicroUsd } from '@/lib/services/analyzers/types'
 import { openRouterVisionAnalyzer, ANALYZABLE_MIMES } from '@/lib/services/analyzers/vision'
 import { openRouterTranscriber, sttFormatFor } from '@/lib/services/analyzers/transcription'
 import { OPENROUTER_BASE_URL, SUMMARY_MODEL } from '@/lib/services/analysis-catalog'
@@ -96,6 +96,29 @@ describe('openRouterVisionAnalyzer', () => {
       .rejects.toThrow(/vision provider responded 429/)
   })
 
+  it.each([
+    ['a truncated object', '{"ocr_text":"half'],
+    ['a refusal', 'I am sorry, I cannot help with that.'],
+    ['a wrong-shaped object', '{"kind":"nonsense"}'],
+  ])('carries the usage of a billed call whose body is unusable (%s)', async (_label, content) => {
+    // The response was 200, so it is on the bill. It must not be an
+    // AnalysisSkip (the fault may be transient and the row should retry), and
+    // it must not be a bare Error (the drain would then record no cost and the
+    // daily cap would never see the spend).
+    stubFetch([{
+      body: { choices: [{ message: { content } }], usage: { prompt_tokens: 900, completion_tokens: 12, cost: 0.00042 } },
+    }])
+    const err = await openRouterVisionAnalyzer(VISION_ENTRY, 'k')
+      .analyze(Buffer.from('x'), 'image/jpeg').catch(e => e)
+    expect(err).toBeInstanceOf(BilledError)
+    expect(err).not.toBeInstanceOf(AnalysisSkip)
+    expect((err as BilledError).usage).toEqual({
+      inputTokens: 900, outputTokens: 12, providerCostMicroUsd: 420,
+    })
+    // The model's own output is chat-derived and must not ride along.
+    expect((err as Error).message).not.toContain(content)
+  })
+
   it('only claims mime types a chat-completion can carry', () => {
     expect(ANALYZABLE_MIMES).toEqual(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
   })
@@ -173,12 +196,20 @@ describe('openRouterTranscriber', () => {
     expect(calls).toHaveLength(1)
   })
 
-  it('retries a response with no text field at all', async () => {
+  it('retries a response with no text field at all, carrying what the ASR call cost', async () => {
+    stubFetch([{ body: { unexpected: true, usage: { seconds: 9, cost: 0.000072 } } }])
+    const err = await openRouterTranscriber(AUDIO_ENTRY, 'k')
+      .transcribe(Buffer.from('a'), 'ogg', 3).catch(e => e)
+    expect(err).toBeInstanceOf(BilledError)
+    expect(err).not.toBeInstanceOf(AnalysisSkip)
+    expect((err as BilledError).usage).toEqual({ seconds: 9, providerCostMicroUsd: 72 })
+  })
+
+  it('falls back to the declared duration when a shape-mismatched response reports no seconds', async () => {
     stubFetch([{ body: { unexpected: true } }])
     const err = await openRouterTranscriber(AUDIO_ENTRY, 'k')
       .transcribe(Buffer.from('a'), 'ogg', 3).catch(e => e)
-    expect(err).toBeInstanceOf(Error)
-    expect(err).not.toBeInstanceOf(AnalysisSkip)
+    expect((err as BilledError).usage).toEqual({ seconds: 3, providerCostMicroUsd: null })
   })
 
   it('throws a retryable error on a non-ok transcription response', async () => {

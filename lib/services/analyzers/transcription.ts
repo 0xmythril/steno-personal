@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { AnalysisSkip, extractJson, usdToMicroUsd, type Transcriber, type TranscriptionResult } from './types'
+import {
+  AnalysisSkip, BilledError, extractJson, usdToMicroUsd, type Transcriber, type TranscriptionResult,
+} from './types'
 import { OPENROUTER_BASE_URL, SUMMARY_MODEL, type TranscriptionCatalogEntry } from '../analysis-catalog'
 
 // The container formats OpenRouter's /audio/transcriptions accepts. A voice
@@ -56,18 +58,27 @@ export function openRouterTranscriber(entry: TranscriptionCatalogEntry, apiKey: 
         throw new Error(`transcription provider responded ${sttRes.status}: ${(await sttRes.text()).slice(0, 300)}`)
       }
       const stt = await sttRes.json() as { text?: string; usage?: { seconds?: number; cost?: number } }
-      // No `text` field at all is a wire-format mismatch — the provider changed
-      // shape, or something upstream answered instead. Retryable, and it must
-      // never be conflated with the speaker having said nothing (a permanent
-      // skip below): thrown BEFORE the empty check, as a plain Error.
-      if (typeof stt.text !== 'string') throw new Error('unexpected transcription response shape: missing text field')
-      const text = stt.text.trim()
+      // Usage is read before anything can throw: this ASR call is billed the
+      // moment the endpoint answers 200, so every exit below carries it.
+      //
       // Absent or non-numeric usage.seconds must not degrade to 0: that
       // collapses cost_microusd to nothing while real spend continues. Fall
       // back to the sender-declared duration, already capped by the gate.
       const rawSeconds = Number(stt.usage?.seconds)
       const seconds = Number.isFinite(rawSeconds) && rawSeconds > 0 ? rawSeconds : (declaredDurationSeconds ?? 0)
       const sttCost = usdToMicroUsd(stt.usage?.cost)
+      // No `text` field at all is a wire-format mismatch — the provider changed
+      // shape, or something upstream answered instead. Retryable, and it must
+      // never be conflated with the speaker having said nothing (a permanent
+      // skip below): thrown BEFORE the empty check, as a BilledError so the
+      // attempt still burns while the spend is still recorded.
+      if (typeof stt.text !== 'string') {
+        throw new BilledError(
+          'unexpected transcription response shape: missing text field',
+          { seconds, providerCostMicroUsd: sttCost },
+        )
+      }
+      const text = stt.text.trim()
       // Silence, a pocket recording, pure background noise: a fact about the
       // audio, not a transient error. Skipped before the summary call, so
       // noise never costs two requests — but the ASR call was already billed,

@@ -3,7 +3,9 @@ import { media, mediaAnalysis, messages } from '@/lib/db/schema'
 import { env } from '@/lib/env'
 import { mediaFilePath } from '@/lib/services/media'
 import { getOpenrouterKey, getSettings } from '@/lib/services/settings'
-import { AnalysisSkip, type SkipUsage, type Transcriber, type VisionAnalyzer } from '@/lib/services/analyzers/types'
+import {
+  AnalysisSkip, BilledError, type SkipUsage, type Transcriber, type VisionAnalyzer,
+} from '@/lib/services/analyzers/types'
 import { ANALYZABLE_MIMES, MAX_ANALYSIS_BYTES, openRouterVisionAnalyzer } from '@/lib/services/analyzers/vision'
 import {
   MAX_TRANSCRIPTION_BYTES, MAX_TRANSCRIPTION_SECONDS, openRouterTranscriber, sttFormatFor,
@@ -17,7 +19,7 @@ import { readFileSync } from 'node:fs'
 
 // One import site for the pipeline's vocabulary, even though the
 // implementations live beside the adapters.
-export { AnalysisSkip }
+export { AnalysisSkip, BilledError }
 export type { VisionAnalyzer, Transcriber }
 
 export type Medium = 'image' | 'audio'
@@ -83,6 +85,9 @@ export async function processPendingAnalyses(
   const rows = await db.select({
     id: mediaAnalysis.id,
     attempts: mediaAnalysis.attempts,
+    // Read so a later UNBILLED failure cannot erase the completed_at stamp of
+    // an earlier billed attempt and hide that spend from the daily cap.
+    costMicroUsd: mediaAnalysis.costMicroUsd,
     messageId: messages.id,
     storagePath: media.storagePath,
     mimeType: media.mimeType,
@@ -143,12 +148,22 @@ export async function processPendingAnalyses(
         } else {
           const attempts = row.attempts + 1
           const failed = attempts >= maxAttempts
+          // A BilledError is a call the provider accepted and charged for whose
+          // body was unusable. It still burns an attempt — the fault may be
+          // transient — but the money is spent, so the cost is written now
+          // rather than at the third attempt. countRecentAnalyses filters on
+          // completed_at, so a billed attempt is timestamped even while it
+          // remains 'pending'; and a row that already carries a cost keeps its
+          // stamp, so a later unbilled failure cannot hide earlier spend.
+          const billed = err instanceof BilledError
+          const stamped = failed || billed || row.costMicroUsd !== null
           await db.update(mediaAnalysis)
             .set({
               attempts, status: failed ? 'failed' : 'pending',
               // Provider diagnostics, capped. Stored, never logged.
               error: errorShape(err).message.slice(0, 300),
-              completedAt: failed ? new Date() : null,
+              completedAt: stamped ? new Date() : null,
+              ...(billed ? billedFields(job, err.usage) : {}),
             })
             .where(eq(mediaAnalysis.id, row.id))
           if (failed) summary.failed++

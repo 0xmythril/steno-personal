@@ -76,3 +76,17 @@ export class AnalysisSkip extends Error {
     this.name = 'AnalysisSkip'
   }
 }
+
+// A call the provider ACCEPTED and billed, whose body could not be used — a
+// truncated or fenced JSON object, a refusal, a changed wire format. Not an
+// AnalysisSkip: the fault may well be transient, so the row still burns an
+// attempt and is retried. But the money is already spent, so the usage rides
+// along and the drain records it on the row — otherwise the daily cap, which
+// counts rows with a recorded cost, cannot see spend from a model that
+// systematically answers with something unparseable.
+export class BilledError extends Error {
+  constructor(message: string, public readonly usage: SkipUsage) {
+    super(message)
+    this.name = 'BilledError'
+  }
+}
