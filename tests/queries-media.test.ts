@@ -47,6 +47,17 @@ describe('MessageView.media', () => {
     expect(page!.messages[0].media).toMatchObject({ extractedText: 'WEB3 SUMMIT Nov 12' })
   })
 
+  it('ignores text on an analysis row that is not done', async () => {
+    // M7: the join now states the status rather than trusting that
+    // extracted_text is only ever written on a done row.
+    const fixture = await analysed('WEB3 SUMMIT Nov 12')
+    await db.update(mediaAnalysis).set({ status: 'failed' })
+      .where(eq(mediaAnalysis.mediaId, fixture.media.id))
+    const page = await getMessages(fixture.chat.id)
+    // The attachment itself still comes back — only its text is withheld.
+    expect(page!.messages[0].media).toMatchObject({ id: fixture.media.id, extractedText: null })
+  })
+
   it('fills media on search hits too', async () => {
     const fixture = await analysed('WEB3 SUMMIT Nov 12')
     const hits = await searchMessages('SUMMIT')

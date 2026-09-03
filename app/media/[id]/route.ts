@@ -36,8 +36,11 @@ export const GET = withErrorBoundary(async (req: Request, { params }: { params: 
       'Content-Disposition': inline ? 'inline' : `attachment; filename="${id}.${extForMime(mime)}"`,
       'Content-Length': String(bytes.length),
       'X-Content-Type-Options': 'nosniff',
-      // Private: this is one person's archive behind one person's key.
-      'Cache-Control': 'private, max-age=3600',
+      // Private, and not stored: once a message is tombstoned this route 404s,
+      // and a cached copy in the browser would outlive that by up to the
+      // max-age. These are single-user, same-session fetches, so re-fetching
+      // costs nothing worth trading invariant 4 for.
+      'Cache-Control': 'private, no-store',
     },
   })
 })

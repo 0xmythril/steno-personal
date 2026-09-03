@@ -89,6 +89,9 @@ describe('GET /media/[id]', () => {
     expect(res.headers.get('content-type')).toBe('image/jpeg')
     expect(res.headers.get('content-disposition')).toBe('inline')
     expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    // A tombstoned message must stop being readable immediately; a cached copy
+    // in the browser would outlive the 404 (M3).
+    expect(res.headers.get('cache-control')).toBe('private, no-store')
     expect(await res.text()).toBe('jpeg-bytes')
   })
 

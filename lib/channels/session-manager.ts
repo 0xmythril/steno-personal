@@ -311,7 +311,8 @@ export class SessionManager {
   }
 
   // The one place a message becomes a row, so the media hook has exactly one
-  // call site. enqueueMedia is a no-op until M4 replaces the module.
+  // call site. enqueueMedia queues the attachment for the download drain; it
+  // is idempotent by message, so a history replay never queues one twice.
   private async ingest(connId: string, channel: Channel, m: IncomingMessage): Promise<void> {
     const res = await recordMessage(connId, channel, m)
     if (res.inserted && m.media) await enqueueMedia(res.messageId, connId, m.media)

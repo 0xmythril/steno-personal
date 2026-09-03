@@ -46,6 +46,13 @@ describe('M4 structure', () => {
     }
   })
 
+  it('the OpenRouter key input is masked as it is typed', () => {
+    const src = readFileSync('app/settings/enrichment.tsx', 'utf8')
+    const input = src.match(/<input[^>]*name="openrouterKey"[^>]*>/s)
+    expect(input, 'the key input').not.toBeNull()
+    expect(input![0]).toMatch(/type="password"/)
+  })
+
   it('no service surfaces the OpenRouter key', () => {
     const settings = readFileSync('lib/services/settings.ts', 'utf8')
     // getSettings must report a boolean, never the value.

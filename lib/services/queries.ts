@@ -184,7 +184,11 @@ export async function mediaForMessages(
     extractedText: mediaAnalysis.extractedText,
   })
     .from(media)
-    .leftJoin(mediaAnalysis, eq(mediaAnalysis.mediaId, media.id))
+    // The status is part of the JOIN, not a WHERE clause: a media row with a
+    // pending, failed or skipped analysis must still come back, just without
+    // extracted text. Stating it here means this query no longer depends on
+    // "extracted_text is only ever written on a done row" holding elsewhere.
+    .leftJoin(mediaAnalysis, and(eq(mediaAnalysis.mediaId, media.id), eq(mediaAnalysis.status, 'done')))
     .where(and(inArray(media.messageId, messageIds), eq(media.status, 'done')))
   for (const r of rows) {
     out.set(r.messageId, {

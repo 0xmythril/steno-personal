@@ -28,7 +28,10 @@ export async function EnrichmentSection() {
         <form action={saveOpenrouterKeyAction}>
           <label>
             OpenRouter key{' '}
-            <input name="openrouterKey" autoComplete="off" spellCheck={false} placeholder="sk-or-…" required />
+            <input
+              type="password" name="openrouterKey" autoComplete="off" spellCheck={false}
+              placeholder="sk-or-…" required
+            />
           </label>{' '}
           <button type="submit">Save key</button>
           <p className="muted">Stored encrypted on this volume. It is never shown again.</p>
