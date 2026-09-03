@@ -11,7 +11,7 @@ export function ConnectButton({ channel }: { channel: 'telegram' | 'whatsapp' })
   return (
     <form action={formAction}>
       <input type="hidden" name="channel" value={channel} />
-      <button type="submit" disabled={pending}>{pending ? 'Connecting…' : 'Connect'}</button>
+      <button type="submit" className="primary" disabled={pending}>{pending ? 'Connecting…' : `Connect ${channel === 'telegram' ? 'Telegram' : 'WhatsApp'}`}</button>
       {state?.ok === false && <p className="danger" role="alert">{state.message}</p>}
     </form>
   )

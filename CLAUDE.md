@@ -13,6 +13,9 @@ not negotiable. Summary for an agent:
   guards is what you broke — change the code, not the test, unless the
   change is deliberate and explained.
 - New env var: `lib/env.ts` + `.env.example` + README table, together.
+- UI: read `DESIGN.md` before touching anything under `app/`. Tokens live in
+  `app/globals.css` and `tests/design-tokens.test.ts` guards them; no colour
+  literal outside the token blocks, no font `<link>`, no pills.
 - Schema change: a new `drizzle/NNNN_*.sql` via `npm run db:generate`.
 - Commit as `type(scope): summary`; note user-visible changes under
   Unreleased in `CHANGELOG.md`.

@@ -34,81 +34,90 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   if (chosen && !keys.some(k => k.id === chosen!.id)) chosen = null
 
   return (
-    <main>
-      <Nav label={session.label} />
-      <h1>Settings</h1>
+    <>
+      <Nav label={session.label} current="settings" />
+      <main>
+        <div className="page-head"><div><p className="eyebrow">This instance</p><h1>Settings</h1></div></div>
 
-      <section className="card">
-        <h2>Access keys</h2>
-        <p className="muted">
-          A key logs you into this portal and lets an agent read your archive over MCP. Make one per device or agent so you can revoke them one at a time.
-        </p>
+        <section className="card">
+          <h2>Access keys</h2>
+          <p className="muted">
+            A key logs you into this portal and lets an agent read your archive over MCP. Make one per device or agent so you can revoke them one at a time.
+          </p>
 
-        {minted && (
-          <div className="card">
-            <strong>New key created.</strong> Copy it now; you can reveal it again later from this page.
-            <p><code>{minted.rawKey}</code> <CopyButton value={minted.rawKey} /></p>
-            <form action={dismissMintedKeyAction}><button type="submit">Done</button></form>
-          </div>
-        )}
+          {minted && (
+            <div className="banner">
+              <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
+                <span><strong>New key created.</strong> Copy it now; you can reveal it again later from this page.</span>
+                <span className="token"><code>{minted.rawKey}</code> <CopyButton value={minted.rawKey} /></span>
+                <form action={dismissMintedKeyAction}><button type="submit" className="small">Done</button></form>
+              </div>
+            </div>
+          )}
 
-        <form action={mintKeyAction}>
-          <label>
-            Label <input name="label" maxLength={MAX_LABEL_LENGTH} placeholder="e.g. Claude Code on laptop" />
-          </label>{' '}
-          <button type="submit">Create key</button>
-          {mintError === 'label_too_long' && <p className="danger">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
-        </form>
+          <form action={mintKeyAction} className="row">
+            <label className="field">
+              <span>Label</span>
+              <input name="label" maxLength={MAX_LABEL_LENGTH} placeholder="e.g. Claude Code on laptop" />
+            </label>
+            <button type="submit" className="primary">Create key</button>
+            {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
+          </form>
 
-        <table>
-          <thead><tr><th>Label</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
-          <tbody>
-            {keys.map(k => (
-              <tr key={k.id}>
-                <td>{k.label}{k.id === session.keyId && <span className="muted"> (this session)</span>}</td>
-                <td>
-                  {revealed?.id === k.id ? (
-                    <>
-                      <code>{revealed.rawKey}</code> <CopyButton value={revealed.rawKey} />
-                      <form action={hideRevealedKeyAction} className="inline"><button type="submit">Hide</button></form>
-                    </>
-                  ) : (
-                    <>
-                      <code>{KEY_PREFIX}{k.prefix}…</code>
-                      <form action={revealKeyAction} className="inline">
+          <div className="tbl"><div className="scroll">
+            <table>
+              <thead><tr><th>Label</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+              <tbody>
+                {keys.map(k => (
+                  <tr key={k.id}>
+                    <td className="name">{k.label}{k.id === session.keyId && <> <span className="chip">this session</span></>}</td>
+                    <td>
+                      {revealed?.id === k.id ? (
+                        <span className="token">
+                          <code>{revealed.rawKey}</code> <CopyButton value={revealed.rawKey} />
+                          <form action={hideRevealedKeyAction} className="inline"><button type="submit">Hide</button></form>
+                        </span>
+                      ) : (
+                        <span className="actions">
+                          <code>{KEY_PREFIX}{k.prefix}…</code>
+                          <form action={revealKeyAction} className="inline">
+                            <input type="hidden" name="keyId" value={k.id} />
+                            <button type="submit">Reveal</button>
+                          </form>
+                          {revealError === k.id && <span className="danger">Cannot decrypt: SECRET_KEY changed since this key was made.</span>}
+                        </span>
+                      )}
+                    </td>
+                    <td className="mono muted">{fmt(k.createdAt)}</td>
+                    <td className="mono muted">{fmt(k.lastUsedAt)}</td>
+                    <td className="end">
+                      <form action={revokeKeyAction} className="inline">
                         <input type="hidden" name="keyId" value={k.id} />
-                        <button type="submit">Reveal</button>
+                        <button type="submit" className="danger">Revoke</button>
                       </form>
-                      {revealError === k.id && <span className="danger"> Cannot decrypt: SECRET_KEY changed since this key was made.</span>}
-                    </>
-                  )}
-                </td>
-                <td>{fmt(k.createdAt)}</td>
-                <td>{fmt(k.lastUsedAt)}</td>
-                <td>
-                  <form action={revokeKeyAction} className="inline">
-                    <input type="hidden" name="keyId" value={k.id} />
-                    <button type="submit" className="danger">Revoke</button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div></div>
 
-        <form action={revokeAllKeysAction} style={{ marginTop: '1rem' }}>
-          <button type="submit" className="danger">Revoke all keys and log out</button>
-        </form>
-      </section>
+          <form action={revokeAllKeysAction} className="actions">
+            <button type="submit" className="danger small">Revoke all keys and log out</button>
+          </form>
+        </section>
 
-      <ConnectAgent
-        rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
-        selectedId={chosen?.id ?? minted?.id ?? null}
-        keys={keys.map(k => ({ id: k.id, label: k.label }))}
-        error={instructionsError}
-      />
+        <div className="two-up">
+          <ConnectAgent
+            rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
+            selectedId={chosen?.id ?? minted?.id ?? null}
+            keys={keys.map(k => ({ id: k.id, label: k.label }))}
+            error={instructionsError}
+          />
 
-      <EnrichmentSection />
-    </main>
+          <EnrichmentSection />
+        </div>
+      </main>
+    </>
   )
 }
