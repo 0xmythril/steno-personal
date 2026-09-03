@@ -5,7 +5,8 @@ import type { MessageView } from '@/lib/services/queries'
 
 const msg = (over: Partial<MessageView> & { id: string }): MessageView => ({
   externalMessageId: over.id, sentAt: new Date('2026-08-01T10:00:00Z'),
-  type: 'text', text: 'hi', senderName: 'Alice', fromOwner: false, editedAt: null, media: null,
+  type: 'text', text: 'hi', senderName: 'Alice', fromOwner: false, editedAt: null,
+  person: null, media: null,
   ...over,
 })
 
