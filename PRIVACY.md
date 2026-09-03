@@ -31,6 +31,31 @@ gaps would be worse than none.
 Attachments are downloaded to your disk so a picture in a chat is still there
 when you look next year.
 
+## Your address book
+
+One person can be reached on both apps, so there is a **People** page that lets
+you say so. To make that possible the connection reads your contact list — on
+Telegram, the contacts you have saved, with the phone numbers Telegram is
+willing to show you; on WhatsApp, the saved names it already sends for the
+numbers you talk to — and stores them in the same local SQLite file as
+everything else. It is a read, like reading a message. Nothing is written back,
+and no contact of yours is created, changed or deleted anywhere.
+
+Those phone numbers stay on this machine. They are shown to you on the People
+page, because you need to see which number you are linking; they never reach an
+agent, an API response, or a log. `whoami` still never returns one, and neither
+does `list_people` or `GET /api/people`: an agent is told a person's name, which
+channels are linked, and how many chats they appear in, under an id this
+instance minted for its own use — never the Telegram id or the WhatsApp number
+behind it.
+
+The links are yours, not the channels'. Nothing is linked automatically: a
+suggested match sits on the page until you confirm it, and dismissing one is
+remembered. Deleting a person deletes your links and nothing else — the chats,
+the messages and the attachments are untouched, and every name goes back to
+whatever the channel calls it. Deleting a connection clears the contacts read
+from that account and leaves your people alone.
+
 ## What it can never do
 
 **It cannot send anything.** The part of the code that talks to Telegram and
@@ -110,8 +135,8 @@ and it is why you mint a key per agent and revoke it when you are done.
 display name and status, never a phone number. On an instance with nothing
 connected that list is simply empty; it is not gated.
 
-The three content tools — `list_chats`, `get_messages`, `search_messages` —
-answer with exactly one sentence, *"No personal account is connected."*, when
+The four content tools — `list_chats`, `get_messages`, `search_messages`,
+`list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
 there is nothing at all to serve: no active connection **and** an empty
 archive. They will not describe chats you do not have, invent an empty state,
 or hint at what they could do once you connect something.

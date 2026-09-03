@@ -102,7 +102,8 @@ matters, which is what makes "back up = copy this directory" true.
 ```
 $DATA_DIR/
 ├── steno.db            the archive: connections, chats, messages, media rows,
-│                       access keys, sessions, settings, and the FTS5 index
+│                       the address book, access keys, sessions, settings, and
+│                       the FTS5 index
 ├── steno.db-wal        SQLite write-ahead log  ─┐ transient, but copy them
 ├── steno.db-shm        SQLite shared memory    ─┘ with the database
 ├── secret.key          the generated SECRET_KEY, mode 0600, only when the
@@ -154,6 +155,20 @@ connection.
   group by message id.
 - There is no `users` table. The single user is implicit and no service takes a
   user id. Do not add one — it is the assumption the whole personal side rests on.
+- The address book is four tables, all of them annotations over the archive
+  rather than part of it. `people` is the owner's own row: a name and optional
+  notes. `person_identities` links one channel identity — a Telegram user id or
+  a WhatsApp phone JID — to a person, `unique(channel, external_id)` so an
+  identity belongs to at most one, with a `source` column recording whether the
+  link was made by hand or confirmed from a phone or name match.
+  `channel_contacts` is the cache of what `listContacts()` last returned, keyed
+  `unique(connection_id, external_id)` and cascaded away with its connection.
+  `dismissed_suggestions` remembers a pair the owner said no to, by the two
+  external ids. Suggestions themselves are computed on every read, never
+  stored. Deleting a person cascades to its identity rows only: `chats` and
+  `messages` have no foreign key into any of this, and the lookups that put a
+  person on a chat or a message are correlated subqueries on
+  `(channel, external_id)` that answer null when nobody is linked.
 
 ## Routes
 
@@ -163,11 +178,13 @@ connection.
 | `/` | cookie | Chats list. |
 | `/chats/[id]` | cookie | Transcript. No form, textarea, or submit control — enforced by a test. |
 | `/connections` | cookie | One card per channel: consent, QR, disconnect, delete everything. |
+| `/people`, `/people/[id]` | cookie | The address book: people, their linked identities, and suggested matches. Server actions only — no bearer key can write here. |
 | `/settings` | cookie | Access keys and enrichment. |
 | `/api/health` | none | `{ "ok": true }`. Railway's healthcheck path. |
 | `/api/login` | none | `POST {"key": "sp_…"}` → `204` and a session cookie. The scriptable twin of `/login`; used by `scripts/smoke.sh`. |
 | `/api/connections`, `/api/connections/[id]`, `…/revoke`, `…/password` | cookie | Portal plumbing, including reads — a bearer key handed to an agent must never be able to pair or unpair a device. |
 | `/api/chats`, `/api/chats/[id]/messages`, `/api/search` | cookie **or** bearer | Same data the portal shows. |
+| `/api/people` | cookie **or** bearer | The address book through `publicPeople()` — the same mapping `list_people` uses, so neither serves a phone number or a channel identifier. |
 | `/media/[id]` | cookie **or** bearer | Streams one attachment, whole file into memory (bounded by `MAX_MEDIA_BYTES`), no `Range` support. |
 | `/mcp` | bearer | The MCP endpoint. POST only — `mcp-handler` answers `GET`/`DELETE` with `405` itself, and streamable HTTP does not need them here. |
 

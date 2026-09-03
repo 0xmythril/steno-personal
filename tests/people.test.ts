@@ -7,7 +7,7 @@ import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
   confirmSuggestion, createPerson, deletePerson, dismissSuggestion, getPerson,
   linkIdentity, listIdentityCandidates, listPeople, listSuggestions, personForIdentity,
-  syncContacts, unlinkIdentity, updatePerson,
+  publicPeople, syncContacts, unlinkIdentity, updatePerson,
 } from '@/lib/services/people'
 
 const ADA_JID = '447700900123@s.whatsapp.net'
@@ -255,5 +255,57 @@ describe('people', () => {
     const rows = await db.select().from(messages)
     expect(rows).toHaveLength(1)
     expect(rows[0].text).toBe('still here')
+  })
+})
+
+describe('publicPeople — the one mapping both agent surfaces use', () => {
+  beforeEach(resetDb)
+
+  it('carries the id, name, notes, channels and chat count, and nothing else', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
+    await addMessage(dm, { senderExternalId: '42', text: 'hello' })
+
+    const { id } = await createPerson({ name: 'Ada', notes: 'from the archive' })
+    await linkIdentity(id, {
+      channel: 'telegram', externalId: '42', displayName: 'Ada', phone: '+44 7700 900123',
+    })
+    await linkIdentity(id, { channel: 'whatsapp', externalId: ADA_JID, displayName: 'Ada' })
+
+    const [person] = await publicPeople()
+    expect(person).toEqual({
+      id, name: 'Ada', notes: 'from the archive',
+      channels: ['telegram', 'whatsapp'], chatCount: 1,
+    })
+    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'id', 'name', 'notes'])
+  })
+
+  it('never serves a phone number or a channel identifier, however the person was linked', async () => {
+    // The whole point of the mapping: PersonView carries `phone`, `externalId`
+    // and each identity's channel display name, and an agent gets none of the
+    // three (people design decision 6). A WhatsApp JID *is* a phone number, so
+    // leaking the identity would leak the number even with `phone` dropped.
+    const { id } = await createPerson({ name: 'Ada' })
+    await linkIdentity(id, { channel: 'telegram', externalId: '42', phone: '+447700900123' })
+    await linkIdentity(id, { channel: 'whatsapp', externalId: ADA_JID })
+    const grace = await createPerson({ name: 'Grace' })
+    await linkIdentity(grace.id, { channel: 'whatsapp', externalId: GRACE_JID })
+
+    const json = JSON.stringify(await publicPeople())
+    expect(json).not.toMatch(/\+\d/)
+    expect(json).not.toContain('@s.whatsapp.net')
+    expect(json).not.toContain('447700900123')
+    expect(json).not.toContain('447700900999')
+    expect(json).not.toContain('externalId')
+    expect(json).not.toContain('phone')
+  })
+
+  it('lists each channel once, sorted, and an unlinked person as an empty list', async () => {
+    const { id } = await createPerson({ name: 'Ada' })
+    await linkIdentity(id, { channel: 'telegram', externalId: '42' })
+    await linkIdentity(id, { channel: 'telegram', externalId: '43' })
+    await createPerson({ name: 'Bob' })
+
+    expect((await publicPeople()).map(p => p.channels)).toEqual([['telegram'], []])
   })
 })

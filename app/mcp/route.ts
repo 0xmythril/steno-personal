@@ -2,11 +2,12 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
 import {
-  CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, MEDIA_URL_NOTE, NO_CONNECTION,
+  CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, MEDIA_URL_NOTE, NO_CONNECTION, PERSON_NOTE,
 } from '@/lib/mcp/copy'
 import { archiveIsEmpty } from '@/lib/mcp/gate'
 import { verifyAccessKey } from '@/lib/services/access-keys'
 import { hasActiveConnection, listConnections } from '@/lib/services/connections'
+import { publicPeople } from '@/lib/services/people'
 import { getMessages, listChats, searchMessages } from '@/lib/services/queries'
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
@@ -63,6 +64,7 @@ const handler = createMcpHandler(server => {
     {
       description:
         'List every chat archived on this instance, most recently active first, with its channel, kind, title and message count. ' +
+        PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('list_chats', async () => {
@@ -78,6 +80,7 @@ const handler = createMcpHandler(server => {
         'Read one chat, newest message first. Pass the nextCursor from a previous call to page further back, ' +
         'or before/after as ISO-8601 timestamps to bound the range. ' +
         MEDIA_URL_NOTE + ' ' +
+        PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: getMessagesInput,
     },
@@ -99,12 +102,31 @@ const handler = createMcpHandler(server => {
       description:
         'Full-text search across the archive, or within one chat when chat_id is given. Matches are returned newest first. ' +
         MEDIA_URL_NOTE + ' ' +
+        PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: searchInput,
     },
     guarded('search_messages', async (args: z.infer<typeof searchInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
       return text(await searchMessages(args.query, args.chat_id))
+    }),
+  )
+
+  // The address book, gated exactly like the content tools: an empty instance
+  // must look the same whichever tool a stranger reaches for. publicPeople()
+  // is the mapping — no phone number, no channel identifier — and it is shared
+  // with GET /api/people so the two cannot drift.
+  server.registerTool(
+    'list_people',
+    {
+      description:
+        "The people in this instance's address book: id, name, notes, which channels are linked, and how many "
+        + 'chats they appear in. Never a phone number. ' +
+        DATA_NOT_INSTRUCTIONS,
+    },
+    guarded('list_people', async () => {
+      if (await nothingToServe()) return text(NO_CONNECTION)
+      return text(await publicPeople())
     }),
   )
 

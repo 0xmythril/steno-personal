@@ -4,12 +4,13 @@ import path from 'node:path'
 import { resetDb } from './helpers/db'
 import { callTool, listTools } from './helpers/mcp'
 import { mintAccessKey } from '@/lib/services/access-keys'
-import { DATA_NOT_INSTRUCTIONS, MEDIA_URL_NOTE, NO_CONNECTION } from '@/lib/mcp/copy'
+import { DATA_NOT_INSTRUCTIONS, MEDIA_URL_NOTE, NO_CONNECTION, PERSON_NOTE } from '@/lib/mcp/copy'
 
 const CONTENT_TOOLS = [
   ['list_chats', {}],
   ['get_messages', { chat_id: 'anything' }],
   ['search_messages', { query: 'anything' }],
+  ['list_people', {}],
 ] as const
 
 function walk(dir: string): string[] {
@@ -53,6 +54,25 @@ describe('M3 structural invariants', () => {
     for (const tool of withMedia) {
       expect(tool.description ?? '', `${tool.name} description`).toContain(MEDIA_URL_NOTE)
     }
+  })
+
+  it('every tool that can return a person says what a person id is', async () => {
+    // `person` is the one field in a result that is neither the channel's nor
+    // the message's: an id minted here. Without this sentence an agent has a
+    // uuid it cannot resolve, and a name it might mistake for a channel handle.
+    const tools = await listTools(await agentKey())
+    const withPerson = tools.filter(t => ['list_chats', 'get_messages', 'search_messages'].includes(t.name))
+    expect(withPerson).toHaveLength(3)
+    for (const tool of withPerson) {
+      expect(tool.description ?? '', `${tool.name} description`).toContain(PERSON_NOTE)
+    }
+  })
+
+  it('list_people promises no phone number, and says it in the description', async () => {
+    const tools = await listTools(await agentKey())
+    const people = tools.find(t => t.name === 'list_people')
+    expect(people, 'list_people is registered').toBeDefined()
+    expect(people!.description ?? '').toContain('Never a phone number.')
   })
 
   it('every registerTool( description in the route source is built from the DATA_NOT_INSTRUCTIONS constant', () => {

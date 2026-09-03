@@ -21,6 +21,15 @@ export const MEDIA_URL_NOTE =
   'When a message has an attachment, media.url is a path on this same server — the origin this MCP endpoint '
   + 'is served from — and is fetched with the same bearer key.'
 
+// Chats and messages can carry a `person`, and an agent that has only ever
+// seen channel ids needs to be told what that field is before it starts
+// guessing: an id from this instance's own address book, not a Telegram user
+// id and not a phone JID, and useful with exactly one tool. Said once, here,
+// and appended to every tool whose result can contain the field.
+export const PERSON_NOTE =
+  'Chats and messages carry a person field — { id, name } — when the sender or counterparty is in the '
+  + "address book; the id is this instance's own, usable only with list_people."
+
 export const CHAT_NOT_FOUND = 'Chat not found.'
 
 // What a tool answers when something inside it throws. Never the thrown

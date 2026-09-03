@@ -160,6 +160,34 @@ export async function listPeople(): Promise<PersonView[]> {
   return toViews(rows)
 }
 
+// What an agent is allowed to know about a person, and the only shape that
+// leaves this machine: this instance's own id, the name the owner chose, their
+// notes, which channels are linked, and how many chats they appear in.
+//
+// A PersonView carries more — each identity's channel id, its display name on
+// that channel, and its phone number — and none of it is an agent's business
+// (people design decision 6). A WhatsApp identity IS a phone number, so
+// dropping the `phone` field alone would not be enough: the externalId goes
+// too. Both agent surfaces, the `list_people` MCP tool and GET /api/people,
+// call this one function, so neither can quietly start serving a PersonView.
+export type PublicPerson = {
+  id: string
+  name: string
+  notes: string | null
+  channels: Channel[]
+  chatCount: number
+}
+
+export async function publicPeople(): Promise<PublicPerson[]> {
+  return (await listPeople()).map(p => ({
+    id: p.id,
+    name: p.name,
+    notes: p.notes,
+    channels: [...new Set(p.identities.map(i => i.channel))].sort(),
+    chatCount: p.chatCount,
+  }))
+}
+
 export async function getPerson(id: string): Promise<PersonView | null> {
   const rows = await db.select().from(people).where(eq(people.id, id)).limit(1)
   if (rows.length === 0) return null

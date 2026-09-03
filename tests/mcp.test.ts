@@ -3,6 +3,7 @@ import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
 import { callTool, listTools, mcpRequest, rpc } from './helpers/mcp'
 import * as queries from '@/lib/services/queries'
+import { createPerson, linkIdentity } from '@/lib/services/people'
 import { mintAccessKey, revokeAccessKey } from '@/lib/services/access-keys'
 import { POST } from '@/app/mcp/route'
 
@@ -34,10 +35,10 @@ describe('MCP bearer auth', () => {
     expect((await POST(mcpRequest(minted.rawKey, body))).status).toBe(401)
   })
 
-  it('lists exactly the four read tools for a valid key', async () => {
+  it('lists exactly the five read tools for a valid key', async () => {
     const key = await agentKey()
     expect((await listTools(key)).map(t => t.name).sort())
-      .toEqual(['get_messages', 'list_chats', 'search_messages', 'whoami'])
+      .toEqual(['get_messages', 'list_chats', 'list_people', 'search_messages', 'whoami'])
   })
 })
 
@@ -71,6 +72,7 @@ describe('content tools with nothing to serve', () => {
       ['list_chats', {}],
       ['get_messages', { chat_id: 'anything' }],
       ['search_messages', { query: 'anything' }],
+      ['list_people', {}],
     ] as const) {
       expect(await callTool(key, name, args)).toBe('No personal account is connected.')
     }
@@ -197,5 +199,50 @@ describe('content tools with an archive', () => {
     expect(transcript).not.toContain('retracted')
     expect(transcript).not.toContain('deletedAt')
     expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('[]')
+  })
+})
+
+describe('list_people', () => {
+  beforeEach(resetDb)
+
+  it('answers with the address book — and never a phone number or a channel id', async () => {
+    // The tool exists so an agent can resolve the `person` on a chat or a
+    // message. It must not become a way to read the address book's raw
+    // material: a Telegram user id, a WhatsApp JID (which IS a number), or the
+    // phone column behind them (people design decision 6).
+    const conn = await seedConnection({ channel: 'telegram' })
+    const chat = await seedChat(conn, { title: 'Ada', kind: 'dm', externalChatId: '42' })
+    await seedMessage(chat, { text: 'hello' })
+
+    const { id } = await createPerson({ name: 'Ada', notes: 'from the archive' })
+    await linkIdentity(id, {
+      channel: 'telegram', externalId: '42', displayName: 'Ada', phone: '+447700900123',
+    })
+    await linkIdentity(id, { channel: 'whatsapp', externalId: '447700900123@s.whatsapp.net' })
+
+    const out = await callTool(await agentKey(), 'list_people')
+    expect(JSON.parse(out)).toEqual([{
+      id, name: 'Ada', notes: 'from the archive',
+      channels: ['telegram', 'whatsapp'], chatCount: 1,
+    }])
+    expect(out).not.toContain('+447700900123')
+    expect(out).not.toContain('@s.whatsapp.net')
+    expect(out).not.toContain('externalId')
+  })
+
+  it('is gated like the content tools, so an empty instance says nothing else', async () => {
+    // An address book with people in it but nothing connected and nothing
+    // archived would otherwise answer where list_chats refuses to.
+    await createPerson({ name: 'Ada' })
+    expect(await callTool(await agentKey(), 'list_people')).toBe('No personal account is connected.')
+  })
+
+  it('serves the address book of a revoked connection, exactly as the portal does', async () => {
+    const conn = await seedConnection({ channel: 'telegram', status: 'revoked' })
+    const chat = await seedChat(conn, { title: 'Ada', kind: 'dm', externalChatId: '42' })
+    await seedMessage(chat, { text: 'hello' })
+    await createPerson({ name: 'Ada' })
+    const out = JSON.parse(await callTool(await agentKey(), 'list_people')) as Array<{ name: string }>
+    expect(out.map(p => p.name)).toEqual(['Ada'])
   })
 })
