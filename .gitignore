@@ -10,3 +10,6 @@ data/
 .DS_Store
 tsconfig.tsbuildinfo
 .superpowers/
+
+# Design/plan working documents stay local (they reference private material)
+docs/superpowers/
