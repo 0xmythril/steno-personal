@@ -26,6 +26,7 @@ All notable changes to this project are documented here. The format follows
 - The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
+- The Welcome page's Continue button now waits for the "I have saved this key" tick; copying the key alone no longer opens it.
 - The WhatsApp consent wording is now two sentences: it is an unofficial client, use it at your own risk; a note under Connect WhatsApp points at Steno Cloud for anyone who would rather not link their own number. The Telegram terms-of-service bullet about model training is gone from the consent screen.
 - Transcript pages show 50 messages per page (was 100), and http(s) links in messages are clickable (opening in a new tab; no other scheme is ever linked).
 - The worker re-reads a channel's contacts every five minutes for the first hour after a session opens, so WhatsApp push names reach the archive minutes after pairing rather than six hours later.

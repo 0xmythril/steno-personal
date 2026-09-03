@@ -34,7 +34,9 @@ describe('welcome page', () => {
   })
   it('gates Continue on the key having been copied or written down', () => {
     const gate = readFileSync('app/welcome/save-key-gate.tsx', 'utf8')
-    expect(gate).toMatch(/disabled=\{!copied && !written\}/)
+    // Copying alone does not open the gate; the tick is the confirmation.
+    expect(gate).toMatch(/disabled=\{!written\}/)
+    expect(gate).not.toMatch(/disabled=\{!copied/)
     expect(gate).toContain('clipboard.writeText(rawKey)')
   })
   it('the first-key flash is httpOnly, path-scoped, and minutes long', () => {
