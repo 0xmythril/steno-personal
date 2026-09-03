@@ -4,6 +4,7 @@ import { Nav } from '@/app/nav'
 import { listChats, CHAT_CHANNELS, type ChatChannel } from '@/lib/services/queries'
 import { hasActiveConnection } from '@/lib/services/connections'
 import { formatRelativeTime, CHANNEL_LABELS } from '@/lib/format'
+import { ChannelName } from '@/app/channel-name'
 
 const KIND_LABELS = { dm: 'Direct', group: 'Group', channel: 'Channel' } as const
 
@@ -36,7 +37,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
         {CHAT_CHANNELS.map(ch => (
           <span key={ch}>
             {' · '}
-            {channel === ch ? <strong>{CHANNEL_LABELS[ch]}</strong> : <Link href={`/?channel=${ch}`}>{CHANNEL_LABELS[ch]}</Link>}
+            {channel === ch ? <strong><ChannelName channel={ch} /></strong> : <Link href={`/?channel=${ch}`}><ChannelName channel={ch} /></Link>}
           </span>
         ))}
       </p>
@@ -50,7 +51,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
             {chats.map(c => (
               <tr key={c.id}>
                 <td><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                <td className="muted">{CHANNEL_LABELS[c.channel]}</td>
+                <td><ChannelName channel={c.channel} /></td>
                 <td className="muted">{KIND_LABELS[c.kind]}</td>
                 <td className="muted">{c.messageCount}</td>
                 <td className="muted">{formatRelativeTime(c.lastMessageAt)}</td>
