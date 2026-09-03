@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { requireSession, endSession, isHttps } from '@/lib/auth'
 import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flash'
+import { updateSettings } from '@/lib/services/settings'
 
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
@@ -72,4 +73,36 @@ export async function revokeAllKeysAction() {
   jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
   await endSession()
   redirect('/login')
+}
+
+// Enrichment (M4). Every one of these re-runs the guard, and none of them
+// touches a flash cookie: the OpenRouter key is write-only from the portal's
+// side — it goes in, and after that only "key saved" ever comes back out.
+
+export async function saveOpenrouterKeyAction(formData: FormData) {
+  await requireSession()
+  const key = String(formData.get('openrouterKey') ?? '').trim()
+  if (key) await updateSettings({ openrouterKey: key })
+  redirect('/settings')
+}
+
+export async function clearOpenrouterKeyAction() {
+  await requireSession()
+  // Clearing the key turns enrichment off with it: leaving the toggles on
+  // would show an enabled feature that silently cannot run.
+  await updateSettings({ openrouterKey: null, analyzeImages: false, analyzeAudio: false })
+  redirect('/settings')
+}
+
+export async function updateEnrichmentAction(formData: FormData) {
+  await requireSession()
+  await updateSettings({
+    // An unchecked box submits nothing at all, which is exactly `false`.
+    analyzeImages: formData.get('analyzeImages') === 'on',
+    analyzeAudio: formData.get('analyzeAudio') === 'on',
+    // A value outside the catalog is ignored by updateSettings.
+    visionModel: String(formData.get('visionModel') ?? ''),
+    transcriptionModel: String(formData.get('transcriptionModel') ?? ''),
+  })
+  redirect('/settings')
 }

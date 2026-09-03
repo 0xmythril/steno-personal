@@ -5,6 +5,7 @@ import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flas
 import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
 import { ConnectAgent } from './connect-agent'
+import { EnrichmentSection } from './enrichment'
 import { mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -98,6 +99,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </section>
 
       <ConnectAgent rawKey={minted?.rawKey ?? null} />
+
+      <EnrichmentSection />
     </main>
   )
 }
