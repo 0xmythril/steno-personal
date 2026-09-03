@@ -52,6 +52,9 @@ export class FakePort implements ChannelPort {
   emitEdit(m: IncomingMessage) { this.requireSession().emitEdit(m) }
   emitDelete(ref: { externalChatId?: string; externalMessageId: string }) { this.requireSession().emitDelete(ref) }
 
+  // How many liveness probes the manager has actually made — the manager
+  // throttles them, so a test needs to count them, not just observe an error.
+  get pingCount(): number { return this.session?.pings ?? 0 }
   get loggedOut(): boolean { return this.session?.loggedOut ?? false }
   get sessionClosed(): boolean { return this.session?.closed ?? false }
 
@@ -88,6 +91,7 @@ class FakeSession implements ChannelSession {
   private delCbs: Array<(ref: { externalChatId?: string; externalMessageId: string }) => void> = []
   closed = false
   loggedOut = false
+  pings = 0
 
   constructor(
     private backfillMessages: IncomingMessage[],
@@ -126,6 +130,7 @@ class FakeSession implements ChannelSession {
   }
 
   async ping(): Promise<void> {
+    this.pings++
     const err = this.getPingError()
     if (err) throw err
   }

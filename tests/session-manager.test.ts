@@ -322,6 +322,36 @@ describe('session manager', () => {
     await mgr.stopAll()
   })
 
+  it('probes liveness once a minute, not once a tick', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()   // opens and backfills; no probe yet
+    expect(port.pingCount).toBe(0)
+
+    await mgr.tick()                          // first tick after open probes immediately
+    expect(port.pingCount).toBe(1)
+    const firstSync = (await rowOf(conn.id)).lastSyncAt
+
+    await mgr.tick(); await mgr.tick()        // inside the window: no RPC, no UPDATE
+    expect(port.pingCount).toBe(1)
+    expect((await rowOf(conn.id)).lastSyncAt).toEqual(firstSync)
+
+    try {
+      // Fake ONLY Date, exactly as the backfill-backoff test does: the real
+      // DB I/O keeps working and only the reading the throttle compares
+      // against jumps past the window.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(Date.now() + 61_000)
+      await mgr.tick()
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(port.pingCount).toBe(2)
+    expect((await rowOf(conn.id)).lastSyncAt).not.toEqual(firstSync)
+    await mgr.stopAll()
+  })
+
   it('one broken connection does not starve the others in the same tick', async () => {
     await makeConnection({ channel: 'whatsapp', status: 'active', sessionCiphertext: 'not-decryptable' })
     await makeConnection({ channel: 'telegram', status: 'active', sessionCiphertext: encryptSecret('S') })

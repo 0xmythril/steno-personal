@@ -34,7 +34,7 @@ stores it encrypted just long enough for the worker to use it once.
 
 The connection is read-only: it never marks anything read, never shows you as
 online, and never sends. It appears in Telegram's own device list as
-**steno-personal**, and removing it there revokes it here within a few seconds.
+**steno-personal**, and removing it there revokes it here within a minute.
 Disconnect does the same from this side and keeps everything already archived.
 
 The worker needs Telegram API credentials. Until this project ships its own

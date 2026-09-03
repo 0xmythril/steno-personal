@@ -21,6 +21,14 @@ const BACKFILL_RETRY_BACKOFF_MS = 60_000
 // The port bounds its own RPCs too; this is the belt-and-braces bound that
 // does not depend on a port getting that right.
 const LOGOUT_TIMEOUT_MS = 20_000
+// The liveness probe is a real account.updateStatus RPC plus a real UPDATE.
+// At the worker's 3 s tick that is ~28,800 of each per connection per day,
+// forever, for a probe whose only job is to notice a phone-side revocation —
+// and Telegram rate-limits that call, so a real account would earn a
+// FLOOD_WAIT (classified 'other', hence retried next tick: log spam every 3 s
+// and a frozen last_sync_at). Once a minute is ample: a revoke surfacing in a
+// minute instead of three seconds is not a product regression.
+const PING_EVERY_MS = 60_000
 
 // Bounds a promise that must never hold the tick loop. The loser of the race
 // is not cancellable — it keeps running in the background — but Promise.race
@@ -55,6 +63,7 @@ type Running = {
   // controls any more.
   stopped: boolean
   lastBackfillAttempt: number // epoch ms; 0 means never attempted
+  lastPingAt: number          // epoch ms; 0 means never probed, so the first tick probes
   backfillSinceDays: number   // fixed at open time; retries reuse it
 }
 
@@ -190,11 +199,19 @@ export class SessionManager {
             // advancing last_sync_at for a dead session forever. ping() BEFORE
             // recordSync, so a dead session is caught and revoked instead of
             // being recorded healthy.
-            try {
-              await existing.session.ping()
-              await recordSync(conn.id)
-            } catch (e) {
-              await this.handleSessionError(conn.id, e)
+            //
+            // Throttled to PING_EVERY_MS, decoupling the probe cadence from
+            // the tick cadence. lastPingAt is stamped BEFORE the await, so a
+            // probe that fails (FLOOD_WAIT, a transient fault) also waits out
+            // the window instead of re-firing — and re-logging — every tick.
+            if (Date.now() - existing.lastPingAt >= PING_EVERY_MS) {
+              existing.lastPingAt = Date.now()
+              try {
+                await existing.session.ping()
+                await recordSync(conn.id)
+              } catch (e) {
+                await this.handleSessionError(conn.id, e)
+              }
             }
           }
           continue
@@ -212,7 +229,7 @@ export class SessionManager {
           // stopAll can close — never an untracked, leaked session.
           const running: Running = {
             channel: conn.channel, session, backfilled: false, stopped: false,
-            lastBackfillAttempt: 0, backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
+            lastBackfillAttempt: 0, lastPingAt: 0, backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
           }
           this.running.set(conn.id, running)
           this.wireHandlers(conn.id, conn.channel, session)
