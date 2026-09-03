@@ -1,6 +1,7 @@
 import { db } from '@/lib/db/client'
 import { connections, chats, messages, media } from '@/lib/db/schema'
 import { encryptSecret } from '@/lib/services/crypto'
+import { and, eq, isNull } from 'drizzle-orm'
 
 // Row builders shared by every M4 suite. Deliberately thin: they insert the
 // minimum a media test needs and return the row, so a test that cares about a
@@ -10,10 +11,18 @@ import { encryptSecret } from '@/lib/services/crypto'
 // (M1's reconcileActive treats a missing session as corrupt and leaves it
 // alone), so the default matches what M1's tests/helpers/fixtures.ts produces:
 // a decryptable placeholder. Pass null for the corrupt-row case.
+//
+// connections_live_channel allows only one live (revoked_at IS NULL) row per
+// channel, so a second default-channel call would otherwise collide whenever
+// a test needs two independent connections/attachments. Revoking any prior
+// live row on that channel first mirrors what a real reconnect does, and
+// keeps every existing single-call test unaffected.
 export async function makeConnection(
   channel: 'telegram' | 'whatsapp' = 'telegram',
   sessionCiphertext: string | null = encryptSecret('S'),
 ) {
+  await db.update(connections).set({ revokedAt: new Date() })
+    .where(and(eq(connections.channel, channel), isNull(connections.revokedAt)))
   const [row] = await db.insert(connections).values({
     channel, status: 'active', externalAccountId: `acct-${channel}`, displayName: 'Owner',
     sessionCiphertext,
