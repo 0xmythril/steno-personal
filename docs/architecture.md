@@ -103,7 +103,8 @@ $DATA_DIR/
 ├── steno.db-shm        SQLite shared memory    ─┘ with the database
 ├── secret.key          the generated SECRET_KEY, mode 0600, only when the
 │                       environment variable is unset
-├── media/              downloaded attachments, one file per media row
+├── media/              downloaded attachments, one file per media row, named
+│                       <mediaId>.<ext>
 └── whatsapp/
     └── wa-<connectionId>/   Baileys multi-file auth state (signal keys), one
                              directory per WhatsApp connection
@@ -119,10 +120,24 @@ the directory under a different name — belt and braces, not the common case.)
 
 Deleting a connection cascades through chats, messages, media rows and analysis
 rows, and the service also unlinks the media files and the auth directory.
-Revoking (disconnecting) a connection does not touch any of that — it only
-ends the session and marks the row revoked, so a revoked connection's
-already-downloaded media, and any media rows still pending download, sit
-untouched on the volume until you delete the connection.
+Revoking (disconnecting) a connection is a database write: `revokeConnection`
+marks the row revoked and nulls its credential ciphertext, immediately and
+whatever else is running. Everything beyond the database is the worker's, and
+therefore best effort. On the tick after a revoke it closes the session it was
+running for that connection and asks the channel to log out — bounded by a
+20 s timeout, falling back to `close()` — which is possible only while that
+process is the one holding the session open; a Disconnect performed with the
+worker stopped can never be logged out remotely, because the credential needed
+to reopen the session is already gone. (Hence PRIVACY.md telling the owner to
+check the phone's device list too.)
+
+WhatsApp's auth directory is the one file-level thing a revoke does reach: the
+worker removes `whatsapp/wa-<connectionId>/` on the tick that closes the
+session, and sweeps any revoked WhatsApp row's directory on its next run, so a
+Disconnect made while it was down is cleaned up when it comes back. Nothing
+else on the volume moves: a revoked connection's already-downloaded media, and
+any media rows still pending download, sit untouched until you delete the
+connection.
 
 ## Storage notes
 
