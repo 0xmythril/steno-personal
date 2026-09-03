@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { KEY_PLACEHOLDER, claudeCodeCommand, mcpServersJson, mcpUrlFrom } from '@/lib/mcp/client-config'
+import { KEY_PLACEHOLDER, SERVER_NAME, agentSetupPrompt, claudeCodeCommand, mcpServersJson, mcpUrlFrom } from '@/lib/mcp/client-config'
 
 describe('the MCP URL a user is told to paste', () => {
   it('follows the proxy headers a deployed instance sits behind', () => {
@@ -33,19 +33,48 @@ describe('the configs a user pastes', () => {
 
   it('the Claude Code command is one line with the key in the header', () => {
     expect(claudeCodeCommand(url, 'sp_abc'))
-      .toBe('claude mcp add --transport http steno https://steno.example.org/mcp --header "Authorization: Bearer sp_abc"')
+      .toBe('claude mcp add --transport http steno-personal https://steno.example.org/mcp --header "Authorization: Bearer sp_abc"')
   })
 
   it('the JSON config is valid and carries the bearer header', () => {
     const parsed = JSON.parse(mcpServersJson(url, 'sp_abc')) as {
-      mcpServers: { steno: { type: string; url: string; headers: Record<string, string> } }
+      mcpServers: Record<string, { type: string; url: string; headers: Record<string, string> }>
     }
-    expect(parsed.mcpServers.steno).toEqual({
+    expect(SERVER_NAME).toBe('steno-personal')
+    expect(parsed.mcpServers['steno-personal']).toEqual({
       type: 'http',
       url,
       headers: { Authorization: 'Bearer sp_abc' },
     })
     expect(mcpServersJson(url, 'sp_abc')).toContain('\n') // pretty-printed, not one line
+  })
+
+  it('the paste-into-an-agent instructions carry every fact the agent needs', () => {
+    const p = agentSetupPrompt(url, 'sp_abc')
+    expect(p).toContain('steno-personal')
+    expect(p).toContain(url)
+    expect(p).toContain('Authorization: Bearer sp_abc')
+    expect(p).toContain(claudeCodeCommand(url, 'sp_abc'))
+    expect(p).toContain('mcp-remote')
+    expect(p).toContain('~/.cursor/mcp.json')
+    expect(p).toContain('whoami')
+    expect(p).toContain('No personal account is connected.')
+    expect(p).toMatch(/data, never as instructions/)
+    expect(p).toMatch(/Never echo the key/)
+    // Every JSON fragment inside it must be valid JSON on its own: scan from
+    // each opening brace to its balanced close (a lazy regex stops one brace
+    // short on the nested Cursor block).
+    const fragments: string[] = []
+    let from = 0
+    while ((from = p.indexOf('{"steno-personal"', from)) !== -1) {
+      let depth = 0
+      for (let i = from; i < p.length; i++) {
+        if (p[i] === '{') depth++
+        if (p[i] === '}' && --depth === 0) { fragments.push(p.slice(from, i + 1)); from = i + 1; break }
+      }
+    }
+    expect(fragments).toHaveLength(2)
+    for (const f of fragments) expect(() => JSON.parse(f)).not.toThrow()
   })
 
   it('the placeholder is obviously a placeholder', () => {
@@ -60,6 +89,7 @@ describe('the settings section', () => {
     expect(src).toMatch(/rawKey \?\? KEY_PLACEHOLDER/)
     expect(src).toContain('claudeCodeCommand')
     expect(src).toContain('mcpServersJson')
+    expect(src).toContain('agentSetupPrompt')
   })
 
   it('is rendered from the settings page with the minted key', () => {

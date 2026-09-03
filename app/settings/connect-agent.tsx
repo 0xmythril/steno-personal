@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { CopyButton } from '@/app/copy-button'
-import { KEY_PLACEHOLDER, claudeCodeCommand, mcpServersJson, mcpUrlFrom } from '@/lib/mcp/client-config'
+import { KEY_PLACEHOLDER, agentSetupPrompt, claudeCodeCommand, mcpServersJson, mcpUrlFrom } from '@/lib/mcp/client-config'
 
 // `rawKey` is the key that was just minted, carried here by the httpOnly
 // flash cookie the settings page already reads. It is not fetched, revealed,
@@ -16,6 +16,7 @@ export async function ConnectAgent({ rawKey }: { rawKey: string | null }) {
   const key = rawKey ?? KEY_PLACEHOLDER
   const command = claudeCodeCommand(mcpUrl, key)
   const json = mcpServersJson(mcpUrl, key)
+  const prompt = agentSetupPrompt(mcpUrl, key)
 
   return (
     <section className="card">
@@ -30,6 +31,13 @@ export async function ConnectAgent({ rawKey }: { rawKey: string | null }) {
       {rawKey
         ? <p className="muted">The key you just created is filled in below. It is shown on this page only once.</p>
         : <p className="muted">Create a key above and these snippets will come back with it already filled in. Until then, replace <code>{KEY_PLACEHOLDER}</code> yourself.</p>}
+
+      <h3>Let the agent set itself up</h3>
+      <p className="muted">
+        Paste this into any agent that can edit its own MCP config. It names the server, gives it the URL and key, and tells it how to verify.
+      </p>
+      <pre>{prompt}</pre>
+      <CopyButton value={prompt} label="Copy instructions" />
 
       <h3>Claude Code</h3>
       <pre>{command}</pre>
