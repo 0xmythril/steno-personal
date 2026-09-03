@@ -22,20 +22,35 @@ type Status = {
 const TERMINAL = ['active', 'revoked', 'error']
 const POLL_MS = 2000
 
-export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
+// The same panel drives three handshakes that differ only in who may drive
+// them: the owner's Connections page (session cookie), the fresh-instance
+// setup page, and lost-key recovery (recovery cookie). Each passes the status
+// route and the actions that carry its own guard; the defaults are the
+// Connections page's.
+type PanelActions = {
+  submitPassword: (prev: PasswordResult | null, formData: FormData) => Promise<PasswordResult>
+  cancel: (formData: FormData) => Promise<void>
+}
+
+export function ConnectPanel({ connectionId, channel, initial, qrSvg, statusUrl, actions }: {
   connectionId: string
   channel: 'telegram' | 'whatsapp'
   initial: Status
   qrSvg: string | null
+  statusUrl?: string
+  actions?: PanelActions
 }) {
+  const pollUrl = statusUrl ?? `/api/connections/${connectionId}`
+  const submitAction = actions?.submitPassword ?? submitPasswordAction
+  const cancelAction = actions?.cancel ?? cancelConnectionAction
   const [status, setStatus] = useState<Status>(initial)
-  const [pwState, submitPassword] = useActionState<PasswordResult | null, FormData>(submitPasswordAction, null)
+  const [pwState, submitPassword] = useActionState<PasswordResult | null, FormData>(submitAction, null)
 
   useEffect(() => {
     if (TERMINAL.includes(status.status)) return
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`/api/connections/${connectionId}`)
+        const res = await fetch(pollUrl)
         if (!res.ok) return
         const body = await res.json()
         // Narrow to exactly the fields this panel may hold — in particular,
@@ -55,7 +70,7 @@ export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
       }
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [connectionId, status])
+  }, [pollUrl, status])
 
   if (status.needsPassword) {
     // A successful submit does not itself clear needsPassword: the worker
@@ -115,7 +130,7 @@ export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
           ? 'Waiting for a login code. This needs the worker to be running; if it is not, no code will appear.'
           : 'Waiting for a login code. This needs the worker to be running with Telegram API credentials set; if it is not, no code will appear.'}
       </p>
-      <form action={cancelConnectionAction}>
+      <form action={cancelAction}>
         <input type="hidden" name="connectionId" value={connectionId} />
         <button type="submit">Cancel</button>
       </form>

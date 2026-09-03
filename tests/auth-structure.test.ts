@@ -18,9 +18,10 @@ import path from 'node:path'
 // The file list is walked, not enumerated, so an actions.ts added by a later
 // milestone is covered the day it lands instead of passing CI unnoticed.
 const EXEMPT = new Set(['loginAction'])
-const FILE_GUARDS: Record<string, string> = {
-  [path.join('app', 'setup', 'actions.ts')]: 'requireFreshInstance()',
-  [path.join('app', 'login', 'recover', 'actions.ts')]: 'requireRecoveryAttempt()',
+const FILE_GUARDS: Record<string, string[]> = {
+  [path.join('app', 'setup', 'actions.ts')]: ['requireFreshInstance()'],
+  // Start has no attempt yet, so it carries the open-check alone.
+  [path.join('app', 'login', 'recover', 'actions.ts')]: ['requireRecoveryAttempt()', 'requireRecoveryOpen()'],
 }
 
 function actionFiles(dir: string): string[] {
@@ -51,8 +52,11 @@ const files = actionFiles('app')
 
 describe('server actions re-run the guard', () => {
   it('finds every actions file', () => {
-    expect(files.length).toBeGreaterThanOrEqual(3) // login, settings, connections
+    expect(files.length).toBeGreaterThanOrEqual(6) // login, recover, settings, connections, setup, welcome
     expect(files).toContain(path.join('app', 'login', 'actions.ts'))
+    expect(files).toContain(path.join('app', 'login', 'recover', 'actions.ts'))
+    expect(files).toContain(path.join('app', 'setup', 'actions.ts'))
+    expect(files).toContain(path.join('app', 'welcome', 'actions.ts'))
     expect(files).toContain(path.join('app', 'settings', 'actions.ts'))
     expect(files).toContain(path.join('app', 'connections', 'actions.ts'))
   })
@@ -60,11 +64,11 @@ describe('server actions re-run the guard', () => {
   for (const file of files) {
     it(`${file}`, () => {
       const src = readFileSync(file, 'utf8')
-      const guard = FILE_GUARDS[file] ?? 'requireSession()'
+      const guards = FILE_GUARDS[file] ?? ['requireSession()']
       const actions = [...src.matchAll(/export async function (\w+)/g)]
       expect(actions.length).toBeGreaterThan(0)
       const unguarded = actions
-        .filter(m => !EXEMPT.has(m[1]) && !functionBody(src, m.index).includes(guard))
+        .filter(m => !EXEMPT.has(m[1]) && !guards.some(g => functionBody(src, m.index).includes(g)))
         .map(m => m[1])
       expect(unguarded).toEqual([])
     })

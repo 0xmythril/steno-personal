@@ -6,3 +6,6 @@ export const MINTED_KEY_COOKIE = 'sp_minted_key'
 export const REVEALED_KEY_COOKIE = 'sp_revealed_key'
 // The key the user chose to fill into the "Connect your agent" snippets.
 export const INSTRUCTIONS_KEY_COOKIE = 'sp_instructions_key'
+// The first key an instance hands out — after the setup pairing, or a
+// recovery — rides to /welcome the same way, path-scoped to that page.
+export const FIRST_KEY_COOKIE = 'sp_first_key'
