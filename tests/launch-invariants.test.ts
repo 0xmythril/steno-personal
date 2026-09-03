@@ -73,17 +73,16 @@ describe('licence', () => {
 })
 
 describe('the WhatsApp warning is on the front page', () => {
-  // The exact three sentences from the consent screen
+  // The exact sentences from the consent screen
   // (app/connections/whatsapp-consent.tsx). The README must say what the user
   // is told before pairing, word for word, so nobody discovers it only after
   // the QR.
   const SENTENCES = [
-    'WhatsApp does not permit unofficial clients.',
-    'Your number can be restricted or banned, and your phone will show an unofficial-client notice under Linked devices.',
-    'The risk is higher when this runs on a cloud host than on a machine at home.',
+    'This connects through an unofficial WhatsApp client.',
+    'Use it at your own risk.',
   ]
 
-  it('README contains all three sentences verbatim', () => {
+  it('README contains the consent sentences verbatim', () => {
     const readme = readFileSync('README.md', 'utf8')
     for (const s of SENTENCES) expect(readme).toContain(s)
   })

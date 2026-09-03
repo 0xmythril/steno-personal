@@ -9,6 +9,7 @@ import { Consent } from './consent'
 import { WhatsAppConsent } from './whatsapp-consent'
 import { ConnectPanel } from './connect-panel'
 import { ConnectButton } from './connect-button'
+import { HOSTED_URL } from '@/app/links'
 import { disconnectAction, deleteEverythingAction } from './actions'
 
 
@@ -78,6 +79,11 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
       <>
         {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
         <ConnectButton channel={channel} />
+        {channel === 'whatsapp' && (
+          <p className="muted">
+            Rather not link your own number? <a href={HOSTED_URL}>Steno Cloud</a> records with a number it provides.
+          </p>
+        )}
       </>
     </section>
   )

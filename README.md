@@ -32,9 +32,8 @@ group chats through its own number, so nothing of yours is linked.
 WhatsApp connects here as a linked device on your own number, through an
 unofficial client library, because WhatsApp publishes no personal-archive API.
 
-**WhatsApp does not permit unofficial clients.
-Your number can be restricted or banned, and your phone will show an unofficial-client notice under Linked devices.
-The risk is higher when this runs on a cloud host than on a machine at home.**
+**This connects through an unofficial WhatsApp client.
+Use it at your own risk.**
 
 You are shown these same sentences on the consent screen before the QR
 code, you accept the risk yourself, and nothing in this project can remove it.

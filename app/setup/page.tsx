@@ -9,6 +9,7 @@ import { Consent } from '@/app/connections/consent'
 import { WhatsAppConsent } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
+import { HOSTED_URL } from '@/app/links'
 import { setupConnectAction, setupPasswordAction, setupCancelAction, finishSetupAction } from './actions'
 
 // First run. Open to whoever reaches a fresh instance first — exactly the
@@ -56,6 +57,11 @@ function SetupChannelCard({ channel, live }: { channel: Channel; live: Connectio
       {live && errorText(live) && <p className="danger" role="alert">{errorText(live)}</p>}
       {consent}
       <ConnectButton channel={channel} action={setupConnectAction} />
+      {channel === 'whatsapp' && (
+        <p className="muted">
+          Rather not link your own number? <a href={HOSTED_URL}>Steno Cloud</a> records with a number it provides.
+        </p>
+      )}
     </section>
   )
 }

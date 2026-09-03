@@ -83,14 +83,13 @@ describe('wiring', () => {
     expect(src).toMatch(/ports\.set\(\s*'whatsapp'/)
   })
 
-  it('the connections page carries the three WhatsApp sentences verbatim', () => {
+  it('the connections page carries the WhatsApp consent sentences verbatim', () => {
     const file = path.join(ROOT, 'app/connections/whatsapp-consent.tsx')
     if (!existsSync(file)) return
     const src = readFileSync(file, 'utf8')
     for (const sentence of [
-      'WhatsApp does not permit unofficial clients.',
-      'Your number can be restricted or banned, and your phone will show an unofficial-client notice under Linked devices.',
-      'The risk is higher when this runs on a cloud host than on a machine at home.',
+      'This connects through an unofficial WhatsApp client.',
+      'Use it at your own risk.',
     ]) {
       expect(src).toContain(sentence)
     }
