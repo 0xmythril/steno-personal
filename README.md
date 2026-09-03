@@ -13,8 +13,11 @@ One container, one volume, one file.
 
 - **Read-only by construction.** The code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
-- **Yours only.** No sign-up, no telemetry, no analytics, no third party — one
-  optional exception you switch on yourself (see Configuration).
+- **Yours only.** No sign-up, no accounts, no third-party analytics SDK. Two
+  things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md):
+  enrichment, off until you turn it on, and an anonymous usage count of chats,
+  messages and features — never their contents — that you can turn off in
+  Settings and that goes nowhere unless the host sets `STENO_TELEMETRY_URL`.
 - **Agent-ready.** An MCP endpoint with five read tools: list chats, read a
   chat, search, list the people in your address book, and ask which accounts
   are connected.
@@ -244,6 +247,7 @@ means unset.
 | `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
 | `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
 | `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
+| `STENO_TELEMETRY_URL` | unset | Where the once-a-day anonymous usage ping is posted. **Unset means no ping is ever built or sent**, whatever the Settings toggle says, so a self-hoster who ignores this reports nothing. Set it and the ping runs unless the user turns it off under **Anonymous usage** in Settings. It carries a locally minted random id, the version, which channels are live, counts of chats, messages, people and keys, and the enrichment toggles — never a message, name, number, title, query or key. See [What leaves your machine](PRIVACY.md#what-leaves-your-machine). |
 | `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](docs/self-hosting.md#lost-access). |
 | `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 

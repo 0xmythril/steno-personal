@@ -16,3 +16,13 @@ describe('node_modules', () => {
     expect(execSync('git ls-files node_modules', { encoding: 'utf8' }).trim()).toBe('')
   })
 })
+
+// lib/version.ts is what the usage ping reports, so a release that bumped
+// package.json alone would silently attribute every ping to the old version.
+describe('the shipped version', () => {
+  it('lib/version.ts matches package.json', async () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+    const { APP_VERSION } = await import('@/lib/version')
+    expect(APP_VERSION).toBe(pkg.version)
+  })
+})

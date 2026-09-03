@@ -3,10 +3,10 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 // A repo-wide sweep, not a unit test. It exists because the promises this
-// project makes (AGPL, no telemetry, no cloud storage, one importer per chat
-// library, an honest WhatsApp warning) are the product on the open-source
-// side, and every one of them is a single careless import or paragraph edit
-// away from being false.
+// project makes (AGPL, no third-party analytics, no cloud storage, one
+// importer per chat library, an honest WhatsApp warning) are the product on
+// the open-source side, and every one of them is a single careless import or
+// paragraph edit away from being false.
 
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.mjs', '.js'])
 // Everything at the top level that is not source: build output, git, the
@@ -93,6 +93,13 @@ describe('the WhatsApp warning is on the front page', () => {
 // list, not a general outbound-traffic guard: a bare fetch() to a telemetry
 // endpoint is not caught by it, and PRIVACY.md says so rather than claiming
 // more than this list delivers.
+//
+// This project now posts an anonymous usage ping of its own (0.2.0), so the
+// list no longer means "nothing is ever reported". What it still means, and
+// what PRIVACY.md still promises, is that no third party is in that path: the
+// ping is hand-built in lib/services/telemetry.ts and goes to the one
+// collector the host names in STENO_TELEMETRY_URL, or nowhere. No vendor SDK
+// is loaded, so nobody but that collector sees anything.
 const BANNED_EVERYWHERE = [
   '@/lib/services/analytics', '@mocanetwork',
   'posthog', 'mixpanel', '@segment/', 'analytics-node',
@@ -101,7 +108,13 @@ const BANNED_EVERYWHERE = [
 const isBanned = (name: string): boolean =>
   BANNED_EVERYWHERE.some(b => name === b || name.startsWith(b))
 
-describe('no telemetry, no cloud identity, one importer per chat library', () => {
+// Prose that NAMES a thing is not code that USES it: the telemetry service and
+// the schema both explain at length which columns they refuse to read, and a
+// grep that cannot tell the two apart would punish the explanation.
+const stripComments = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+describe('no third-party analytics, no cloud identity, one importer per chat library', () => {
   const SCOPED = [
     { needle: 'mtcute', allowed: 'lib/channels/telegram.ts' },
     { needle: 'baileys', allowed: 'lib/channels/whatsapp.ts' },
@@ -119,6 +132,42 @@ describe('no telemetry, no cloud identity, one importer per chat library', () =>
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  // The usage ping is the one thing in the repo that sends anything anywhere
+  // on its own. Keeping it to one collector named in one variable, reached
+  // from one file, is what makes "here is exactly what leaves, and here is
+  // the off switch" a claim a reader can check in one sitting — the same
+  // reasoning as one importer per chat library.
+  //
+  // env.ts declares the variable and the Settings card reads it to say
+  // whether a collector is configured; neither sends. Only the service does.
+  it('only the reporter, its variable and its Settings card know the endpoint', () => {
+    const mentions = sourceFiles
+      .filter(f => stripComments(readFileSync(f, 'utf8')).includes('STENO_TELEMETRY_URL'))
+      .map(f => f.split(path.sep).join('/'))
+      .sort()
+    expect(mentions).toEqual([
+      'app/settings/telemetry.tsx', 'lib/env.ts', 'lib/services/telemetry.ts',
+    ])
+    // The POST itself lives in exactly one of them.
+    for (const f of mentions.filter(f => f !== 'lib/services/telemetry.ts')) {
+      expect(readFileSync(f, 'utf8')).not.toMatch(/fetch\s*\(/)
+    }
+  })
+
+  // Aggregates only. A column that holds someone's words, name or number must
+  // never be read by the reporter, and this is what keeps a later "just one
+  // more field" honest. Comments are stripped first: the file explains at
+  // length which columns it refuses to touch, and naming one is not reading it.
+  it('the usage ping reads no column that holds content', () => {
+    const code = stripComments(readFileSync('lib/services/telemetry.ts', 'utf8'))
+    const FORBIDDEN = [
+      'senderName', 'displayName', 'externalId', 'externalChatId', 'phone',
+      'title', 'extractedText', 'description', 'notes', 'keyHash',
+      'Ciphertext', 'label',
+    ]
+    expect(FORBIDDEN.filter(name => code.includes(name))).toEqual([])
   })
 
   it('only the two channel files import their chat library', () => {

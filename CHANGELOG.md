@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Anonymous usage reporting.** Once a day the worker posts a short, aggregate record of how this instance is used: a locally minted random id, the version, whether each channel is connected, counts of chats, messages, people and unrevoked keys, and whether enrichment is on. It never carries a message, a chat title, a name, a phone number, a search query or a key, and the random id is derived from nothing — not your volume, not your account, not the machine. It is **on by default** and turned off under **Anonymous usage** in Settings, and it posts nothing at all unless the host sets the new `STENO_TELEMETRY_URL`. This changes a promise earlier versions made: see the rewritten "What leaves your machine" in PRIVACY.md.
 - **People**: an address book that groups a Telegram identity and a WhatsApp identity into one person, so chats and transcripts name them the same way on both channels. Manual at the core; suggestions from a matching phone number or an identical display name are offered on the page and never act on their own, and a dismissed pair is not offered again.
 - The channel port gains one read, `listContacts()`, and the worker refreshes the contact cache after a backfill and every six hours. Nothing is written back to Telegram or WhatsApp.
 - Chats and messages carry a `person` field — `{ id, name } | null` — wherever the sender or the other side of a direct chat is someone you have linked; the direct-chat title prefers the name you chose.

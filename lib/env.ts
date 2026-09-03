@@ -35,6 +35,11 @@ export const envSchema = z.object({
   // and prints it to the log — the only place a key is ever printed.
   STENO_RESET: blank(z.string().optional()),
   STENO_MINT_KEY: blank(z.string().optional()),
+  // Where the anonymous usage ping is posted. There is no default and no
+  // fallback: unset means no ping is ever built or sent, whatever the
+  // Settings toggle says. A fork that wants its own numbers points this at
+  // its own collector; a self-hoster who sets nothing sends nothing.
+  STENO_TELEMETRY_URL: blank(z.url().optional()),
 })
 
 export type Env = z.infer<typeof envSchema>

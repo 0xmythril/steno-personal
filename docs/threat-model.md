@@ -204,8 +204,12 @@ variable does not hide it from the platform that supplies it.
 - **No multi-user, no sharing.** One instance is one person. Sharing an archive
   would need membership and permission checks, and those are the private cloud
   product's problem, not this one's.
-- **No outbound anything.** No telemetry, no crash reporting, no update check.
-  The only optional outbound call is to OpenRouter, off until you save a key.
+- **No crash reporting, no update check, no third-party analytics SDK.** Two
+  outbound calls exist and both are switchable: OpenRouter enrichment, off
+  until you save a key, and a once-a-day anonymous usage ping that is on by
+  default, sends aggregate counts and no archive content, goes only to the
+  host's own `STENO_TELEMETRY_URL`, and sends nothing at all when that is
+  unset. The payload is pinned by `tests/telemetry.test.ts`.
 - **No encryption of message text at rest.** Above.
 
 ## Reporting

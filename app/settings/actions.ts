@@ -120,6 +120,15 @@ export async function clearOpenrouterKeyAction() {
   redirect('/settings')
 }
 
+// Anonymous usage reporting. The only setting on this page that is ON until
+// the owner says otherwise, which is why the card says so in words.
+export async function updateTelemetryAction(formData: FormData) {
+  await requireSession()
+  // An unchecked box submits nothing at all, which is exactly `false`.
+  await updateSettings({ telemetryEnabled: formData.get('telemetryEnabled') === 'on' })
+  redirect('/settings')
+}
+
 export async function updateEnrichmentAction(formData: FormData) {
   await requireSession()
   await updateSettings({

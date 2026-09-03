@@ -19,8 +19,14 @@ fails CI rather than a reviewer's memory.
    `@mtcute/*`; only `lib/channels/whatsapp.ts` imports Baileys. Everything
    else talks to the `ChannelPort` / `ChannelSession` interfaces in
    `lib/channels/port.ts`.
-3. **Nothing leaves the machine** except the one OpenRouter call a user turns
-   on. No analytics, telemetry, crash reporting, or update checks.
+3. **Two things can leave the machine, both listed and both switchable.** The
+   OpenRouter enrichment call a user turns on, and an anonymous usage ping the
+   user can turn off in Settings. The ping is aggregate counts only — never a
+   message, a name, a number, a title or a key — it goes to the single
+   collector named in `STENO_TELEMETRY_URL` and nowhere if that is unset, and
+   no third-party analytics SDK is used or permitted. Nothing else: no crash
+   reporting, no update checks. `tests/telemetry.test.ts` pins the payload and
+   `tests/launch-invariants.test.ts` still bans the vendor SDKs.
 4. **Secrets never reach a URL, a log, or a response body.** Access keys and
    session material travel in httpOnly cookies or `Authorization` headers;
    logs use `errorShape()` from `lib/log.ts` and never print identifiers.

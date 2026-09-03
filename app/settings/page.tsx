@@ -6,6 +6,7 @@ import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
+import { TelemetrySection } from './telemetry'
 import { mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -117,6 +118,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
           <EnrichmentSection />
         </div>
+
+        <TelemetrySection />
       </main>
     </>
   )

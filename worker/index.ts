@@ -4,9 +4,14 @@ import { purgeExpiredSessions } from '@/lib/services/sessions'
 import { SessionManager } from '@/lib/channels/session-manager'
 import { buildPorts } from '@/lib/channels/ports'
 import { buildDrains } from '@/worker/drains'
+import { sendTelemetryPing } from '@/lib/services/telemetry'
 
 const TICK_MS = 3000
 const SESSION_PURGE_EVERY_MS = 60_000
+// How often the worker ASKS. sendTelemetryPing enforces the real once-a-day
+// interval itself, from a timestamp in the database, so a restart loop cannot
+// turn into a flood.
+const TELEMETRY_CHECK_EVERY_MS = 60 * 60_000
 
 async function main() {
   const ports = buildPorts({ apiId: env.TELEGRAM_API_ID, apiHash: env.TELEGRAM_API_HASH })
@@ -37,6 +42,7 @@ async function main() {
   })
 
   let lastPurge = 0
+  let lastTelemetryCheck = 0
   for (;;) {
     if (stopping) break
     try {
@@ -48,6 +54,13 @@ async function main() {
       }
       await drainMedia()
       await drainAnalysis()
+      if (Date.now() - lastTelemetryCheck > TELEMETRY_CHECK_EVERY_MS) {
+        lastTelemetryCheck = Date.now()
+        // Never throws: every failure path inside returns an outcome, so a
+        // collector that is down cannot cost the archive a tick.
+        const outcome = await sendTelemetryPing()
+        if (outcome === 'sent') log.info('anonymous usage ping sent')
+      }
     } catch (e) {
       // One bad tick must never end the worker: the next one retries.
       // errorShape strips bound query parameters from driver errors.

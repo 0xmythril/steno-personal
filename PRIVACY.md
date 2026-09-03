@@ -7,18 +7,22 @@ chats, so you can decide whether to run it.
 Parts of what follows are enforced by a test in `tests/`, and it is worth being
 exact about which. The repo-wide sweep in `tests/launch-invariants.test.ts`
 refuses an import of — or a dependency on — any analytics or telemetry package
-it knows of, holds each chat library to its single importer, pins the licence,
-and keeps an email address out of `SECURITY.md`. Separate structural tests hold
-the transcript page to having no compose control of any kind and the channel
-wrappers to exposing no send method. Everything else below is documented
+it knows of, holds the usage ping below to one file and one variable, holds
+each chat library to its single importer, pins the licence, and keeps an email
+address out of `SECURITY.md`. `tests/telemetry.test.ts` pins the ping's payload
+field by field and fails if a chat's words, names or numbers can reach it.
+Separate structural tests hold the transcript page to having no compose control
+of any kind and the channel wrappers to exposing no send method. Everything else below is documented
 behaviour: a description of what the code does, which you can read and check,
 rather than something the suite would catch a change to.
 
 ## Who holds your data
 
 You do. The archive is one SQLite file on a disk you chose, on a machine you
-chose. Nobody who wrote this software can read it, and nothing phones home. If
-you delete the folder, it is gone.
+chose. Nobody who wrote this software can read it. The one thing that does
+leave on its own is an anonymous count of how the software is used, described
+under "What leaves your machine" — it carries nothing from your archive, and
+you can switch it off. If you delete the folder, everything else is gone.
 
 ## What it reads
 
@@ -113,17 +117,48 @@ Messages you delete on your own phone are treated the same way.
 
 ## What leaves your machine
 
-Ordinarily, nothing. The only traffic is to Telegram and WhatsApp themselves,
-which is how a chat client works.
+Mostly the only traffic is to Telegram and WhatsApp themselves, which is how a
+chat client works. Beyond that there are exactly two things, and this section
+is the whole list of them.
 
-There is exactly one thing you can switch on that changes that. If you save an
-OpenRouter key in Settings and enable image or voice-note enrichment, then those
-attachments are sent to OpenRouter so their text can be extracted and made
-searchable. It is off by default, it is per-medium, and it stops the moment you
-clear the key. Nothing else — no analytics, no crash reporting, no update check,
-no usage ping — ever leaves the box. There is no analytics code in this repo; a
-test refuses the analytics and telemetry packages we know of, and nothing in
-the code makes an outbound request except the OpenRouter call you enable.
+**Enrichment, off until you turn it on.** If you save an OpenRouter key in
+Settings and enable image or voice-note enrichment, then those attachments are
+sent to OpenRouter so their text can be extracted and made searchable. It is
+off by default, it is per-medium, and it stops the moment you clear the key.
+
+**An anonymous usage count, on until you turn it off.** Once a day the worker
+posts a short record of how this instance is used, so the project can see which
+parts are worth keeping. Be clear about the trade: this one is **on by
+default**, and it is the only setting in the product that is. You turn it off
+under **Anonymous usage** in Settings, and off means off — nothing is posted
+again.
+
+Here is the entire payload, which is all `tests/telemetry.test.ts` will let it
+be:
+
+- a random id minted on this instance at the first send;
+- the version of this software;
+- the time of the send;
+- whether a Telegram and a WhatsApp connection are live, as two booleans;
+- how many chats, messages, people and unrevoked keys exist, as four numbers;
+- whether an OpenRouter key is saved and whether each enrichment toggle is on.
+
+And here is what it cannot contain, because the code never reads the columns:
+no message text, no chat title, no contact or sender name, no phone number, no
+search query, no key, no ciphertext, no file. The random id is `randomUUID()`
+minted locally — it is not derived from your key, your volume, your account or
+your machine, so it links one instance's pings to each other and to nothing
+else. There is no third-party analytics SDK anywhere in this repo; a test still
+refuses the ones we know of, and the ping is hand-built in
+`lib/services/telemetry.ts`, the only file that sends it.
+
+It also needs somewhere to go. The ping is posted to the single URL the person
+running the container sets in `STENO_TELEMETRY_URL`, and **if that is unset
+nothing is built and nothing is sent, whatever the Settings box says.** A
+self-hosted instance that never sets it never reports anything, and the
+Settings card tells you which of the two situations you are in.
+
+Beyond those two: no crash reporting, no update check, nothing else.
 
 ## What the logs contain
 
