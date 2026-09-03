@@ -31,51 +31,49 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error }: {
         Your agent reads this archive over MCP with an access key as its bearer token. It can list your
         chats, read a transcript, and search — nothing else; the archive is read-only.
       </p>
-      <p>
-        MCP endpoint: <code>{mcpUrl}</code> <CopyButton value={mcpUrl} label="Copy URL" />
-      </p>
+      <span className="token"><code>{mcpUrl}</code> <CopyButton value={mcpUrl} label="Copy URL" /></span>
       {keys.length > 0 && (
-        <form action={useKeyForInstructionsAction} className="inline">
-          <label>
-            Key to fill in{' '}
+        <form action={useKeyForInstructionsAction} className="row">
+          <label className="field">
+            <span>Key to fill in</span>
             <select name="keyId" defaultValue={selectedId ?? ''}>
               <option value="" disabled>Choose a key</option>
               {keys.map(k => <option key={k.id} value={k.id}>{k.label}</option>)}
             </select>
-          </label>{' '}
+          </label>
           <button type="submit">Fill in</button>
           {rawKey && (
-            <>{' '}<button type="submit" formAction={clearInstructionsKeyAction}>Clear</button></>
+            <button type="submit" formAction={clearInstructionsKeyAction}>Clear</button>
           )}
-          {error && <span className="danger"> Cannot decrypt that key: SECRET_KEY changed since it was made.</span>}
+          {error && <span className="danger">Cannot decrypt that key: SECRET_KEY changed since it was made.</span>}
         </form>
       )}
       {rawKey
-        ? <p className="muted">The snippets below carry the selected key. They are filled in for a few minutes only; use Clear to blank them sooner.</p>
-        : <p className="muted">Create a key above, or pick one and press Fill in, and these snippets come back with it already in place. Until then, replace <code>{KEY_PLACEHOLDER}</code> yourself.</p>}
+        ? <p className="help">The snippets below carry the selected key. They are filled in for a few minutes only; use Clear to blank them sooner.</p>
+        : <p className="help">Create a key above, or pick one and press Fill in, and these snippets come back with it already in place. Until then, replace <code>{KEY_PLACEHOLDER}</code> yourself.</p>}
 
       <h3>Let the agent set itself up</h3>
       <p className="muted">
         Paste this into any agent that can edit its own MCP config. It names the server, gives it the URL and key, and tells it how to verify.
       </p>
       <pre>{prompt}</pre>
-      <CopyButton value={prompt} label="Copy instructions" />
+      <div className="actions"><CopyButton value={prompt} label="Copy instructions" /></div>
 
       <h3>Claude Code</h3>
       <pre>{command}</pre>
-      <CopyButton value={command} label="Copy command" />
+      <div className="actions"><CopyButton value={command} label="Copy command" /></div>
 
       <h3>Claude Desktop</h3>
       <p className="muted">Add this to <code>claude_desktop_config.json</code> and restart the app.</p>
       <pre>{json}</pre>
-      <CopyButton value={json} label="Copy config" />
+      <div className="actions"><CopyButton value={json} label="Copy config" /></div>
 
       <h3>Cursor</h3>
       <p className="muted">The same block goes in <code>~/.cursor/mcp.json</code> (or <code>.cursor/mcp.json</code> in a project).</p>
       <pre>{json}</pre>
-      <CopyButton value={json} label="Copy config" />
+      <div className="actions"><CopyButton value={json} label="Copy config" /></div>
 
-      <p className="muted">
+      <p className="help">
         Revoking the key above disconnects every agent using it, immediately.
       </p>
     </section>

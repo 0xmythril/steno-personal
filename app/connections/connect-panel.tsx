@@ -70,19 +70,23 @@ export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
       : status.passwordRejected ? 'That password was not right — please try again.' : null
     if (pwState?.ok === true && !error) return <p className="muted">Checking your password…</p>
     return (
-      <form action={submitPassword}>
+      <form action={submitPassword} className="field" style={{ maxWidth: 360 }}>
         <input type="hidden" name="connectionId" value={connectionId} />
-        <p><label htmlFor="tg-password">Your Telegram two-step verification password</label></p>
-        <input id="tg-password" name="password" type="password" autoComplete="off" required />{' '}
-        <button type="submit">Continue</button>
+        <label htmlFor="tg-password">Your Telegram two-step verification password</label>
+        <input id="tg-password" name="password" type="password" autoComplete="off" required />
         {error && <p className="danger" role="alert">{error}</p>}
+        <div className="actions"><button type="submit" className="primary">Continue</button></div>
       </form>
     )
   }
 
   if (qrSvg) {
     return (
-      <>
+      <div className="connect">
+        {/* Finished SVG from the server: the component receives an image, not
+            a token, and polls only a timestamp to learn when a fresh code was
+            published. */}
+        <div className="qr" dangerouslySetInnerHTML={{ __html: qrSvg }} />
         {channel === 'whatsapp' ? (
           <ol>
             <li>Open WhatsApp on your phone.</li>
@@ -96,11 +100,7 @@ export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
             <li>Scan this code.</li>
           </ol>
         )}
-        {/* Finished SVG from the server: the component receives an image, not
-            a token, and polls only a timestamp to learn when a fresh code was
-            published. */}
-        <div style={{ maxWidth: '18rem' }} dangerouslySetInnerHTML={{ __html: qrSvg }} />
-      </>
+      </div>
     )
   }
 
@@ -115,9 +115,9 @@ export function ConnectPanel({ connectionId, channel, initial, qrSvg }: {
           ? 'Waiting for a login code. This needs the worker to be running; if it is not, no code will appear.'
           : 'Waiting for a login code. This needs the worker to be running with Telegram API credentials set; if it is not, no code will appear.'}
       </p>
-      <form action={cancelConnectionAction}>
+      <form action={cancelConnectionAction} className="actions">
         <input type="hidden" name="connectionId" value={connectionId} />
-        <button type="submit">Cancel</button>
+        <button type="submit" className="small">Cancel</button>
       </form>
     </>
   )

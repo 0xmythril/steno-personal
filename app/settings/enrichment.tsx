@@ -17,61 +17,55 @@ export async function EnrichmentSection() {
       </p>
 
       {s.hasOpenrouterKey ? (
-        <div>
-          <p>OpenRouter key: <strong>key saved</strong></p>
-          <form action={clearOpenrouterKeyAction}>
-            <button type="submit" className="danger">Clear key</button>
-          </form>
-          <p className="muted">Clearing the key also turns both toggles off.</p>
-        </div>
+        <form action={clearOpenrouterKeyAction} className="token">
+          <code>OpenRouter key: saved</code>
+          <button type="submit" className="small danger">Clear key</button>
+        </form>
       ) : (
-        <form action={saveOpenrouterKeyAction}>
-          <label>
-            OpenRouter key{' '}
-            <input
-              type="password" name="openrouterKey" autoComplete="off" spellCheck={false}
-              placeholder="sk-or-…" required
-            />
-          </label>{' '}
-          <button type="submit">Save key</button>
-          <p className="muted">Stored encrypted on this volume. It is never shown again.</p>
+        <form action={saveOpenrouterKeyAction} className="stack" style={{ gap: 8 }}>
+          <div className="row">
+            <label className="field">
+              <span>OpenRouter key</span>
+              <input
+                type="password" name="openrouterKey" autoComplete="off" spellCheck={false}
+                placeholder="sk-or-…" required
+              />
+            </label>
+            <button type="submit" className="primary">Save key</button>
+          </div>
+          <p className="help">Stored encrypted on this volume. It is never shown again.</p>
         </form>
       )}
+      {s.hasOpenrouterKey && <p className="help">Clearing the key also turns both toggles off.</p>}
 
-      <form action={updateEnrichmentAction}>
-        <p>
-          <label>
-            <input type="checkbox" name="analyzeImages" defaultChecked={s.analyzeImages} disabled={!s.hasOpenrouterKey} />
-            {' '}Read text from images
-          </label>
-        </p>
-        <p>
-          <label>
-            <input type="checkbox" name="analyzeAudio" defaultChecked={s.analyzeAudio} disabled={!s.hasOpenrouterKey} />
-            {' '}Transcribe voice notes
-          </label>
-        </p>
-        <p>
-          <label>
-            Vision model{' '}
+      <form action={updateEnrichmentAction} className="stack" style={{ gap: 10 }}>
+        <label className="check">
+          <input type="checkbox" name="analyzeImages" defaultChecked={s.analyzeImages} disabled={!s.hasOpenrouterKey} />
+          Read text from images
+        </label>
+        <label className="check">
+          <input type="checkbox" name="analyzeAudio" defaultChecked={s.analyzeAudio} disabled={!s.hasOpenrouterKey} />
+          Transcribe voice notes
+        </label>
+        <div className="two-up">
+          <label className="field">
+            <span>Vision model</span>
             <select name="visionModel" defaultValue={s.visionModel}>
               {VISION_CATALOG.map(e => (
                 <option key={e.id} value={e.id}>{e.label} — {e.provider}</option>
               ))}
             </select>
           </label>
-        </p>
-        <p>
-          <label>
-            Transcription model{' '}
+          <label className="field">
+            <span>Transcription model</span>
             <select name="transcriptionModel" defaultValue={s.transcriptionModel}>
               {TRANSCRIPTION_CATALOG.map(e => (
                 <option key={e.id} value={e.id}>{e.label} — {e.provider}</option>
               ))}
             </select>
           </label>
-        </p>
-        <button type="submit">Save enrichment settings</button>
+        </div>
+        <div className="actions"><button type="submit" className="small">Save enrichment settings</button></div>
       </form>
     </section>
   )

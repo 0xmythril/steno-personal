@@ -11,5 +11,6 @@ export default defineConfig({
   resolve: { alias: {
     '@': path.resolve(import.meta.dirname),
     'server-only': path.resolve(import.meta.dirname, 'tests/helpers/server-only.ts'),
+    'next/font/google': path.resolve(import.meta.dirname, 'tests/helpers/next-font-google.ts'),
   } },
 })
