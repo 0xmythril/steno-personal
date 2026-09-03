@@ -163,12 +163,17 @@ connection.
   notes. `person_identities` links one channel identity — a Telegram user id or
   a WhatsApp phone JID — to a person, `unique(channel, external_id)` so an
   identity belongs to at most one, with a `source` column recording whether the
-  link was made by hand or confirmed from a phone or name match.
+  link was made by hand, confirmed from a phone or name match, or written by
+  `populatePeople()` off the contact cache (`auto`). `people.name_source` says
+  whether the name follows that cache (`channel`) or is an alias the owner typed
+  (`owner`), and `people.archived_at` hides a person from every read while
+  keeping their links, so the populater never recreates them.
   `channel_contacts` is the cache of what `listContacts()` last returned, keyed
   `unique(connection_id, external_id)` and cascaded away with its connection.
   `dismissed_suggestions` remembers a pair the owner said no to, by the two
   external ids. Suggestions themselves are computed on every read, never
-  stored. Deleting a person cascades to its identity rows only: `chats` and
+  stored. The portal's Hide only sets `archived_at`; a real delete — the losing
+  row of a merge — cascades to its identity rows only: `chats` and
   `messages` have no foreign key into any of this, and the lookups that put a
   person on a chat or a message are correlated subqueries on
   `(channel, external_id)` that answer null when nobody is linked.

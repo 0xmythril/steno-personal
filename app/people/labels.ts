@@ -15,11 +15,12 @@ export function candidateLabel(
 export const PEOPLE_ERRORS: Record<string, string> = {
   length: 'A name has to be between 1 and 100 characters.',
   linked: 'That identity already belongs to someone else. Unlink it there first.',
-  empty: 'Choose someone to link first.',
+  empty: 'Choose somebody from the list first.',
   stale: 'That suggestion is out of date: one side is already linked to a person. The list below is current.',
   // Covers a person and a link alike: whichever one the action reached for,
-  // the row was not there any more.
-  gone: 'That is already gone — it was deleted while this page was open.',
+  // the row was not there any more — hidden, merged away, or unlinked.
+  gone: 'That is already gone — it was hidden, merged or unlinked while this page was open.',
+  self: 'Choose somebody else: a person cannot be merged into themselves.',
   unknown: 'This instance has never heard of that identity. The list below is current.',
 }
 
@@ -30,5 +31,7 @@ export const SOURCE_LABELS = {
   manual: 'you linked it',
   phone_match: 'confirmed phone match',
   name_match: 'confirmed name match',
-  auto: 'from your contacts',
+  // The populater's own link (decision 11). Nobody pressed a button for it, and
+  // the row says so rather than passing itself off as the owner's work.
+  auto: 'found in your contacts',
 } as const

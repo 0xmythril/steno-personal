@@ -27,6 +27,7 @@ All notable changes to this project are documented here. The format follows
 - The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
+- **People** shows where each name came from and what to do about it: rows the address book filled in for you are tagged *Auto*, a name you typed is tagged *alias* with a "Use channel name" button beside it, a "Merge into" box on a person's page folds two rows into one, and Delete is now **Hide** — the links stay so a contact sync cannot bring them back, and a "Hidden" section at the foot of the People page restores them.
 - The Welcome page's Continue button now waits for the "I have saved this key" tick; copying the key alone no longer opens it.
 - The WhatsApp consent wording is now two sentences: it is an unofficial client, use it at your own risk; a note under Connect WhatsApp points at Steno Cloud for anyone who would rather not link their own number. The Telegram terms-of-service bullet about model training is gone from the consent screen.
 - Transcript pages show 50 messages per page (was 100), and http(s) links in messages are clickable (opening in a new tab; no other scheme is ever linked).

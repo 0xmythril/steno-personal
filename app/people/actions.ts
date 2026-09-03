@@ -3,7 +3,8 @@
 import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import {
-  createPerson, updatePerson, archivePerson,
+  createPerson, getPerson, updatePerson,
+  archivePerson, restorePerson, mergePeople, resetName,
   linkIdentity, unlinkIdentity, listIdentityCandidates,
   confirmSuggestion, dismissSuggestion,
 } from '@/lib/services/people'
@@ -44,31 +45,80 @@ export async function updatePersonAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
   if (!id) redirect('/people')
+  // Typing a name is aliasing the person: from then on no contact sync may
+  // touch it (decision 13). Saving the box unchanged is not typing a name, so
+  // the name is only passed on when it actually differs — otherwise adding a
+  // note to someone the address book filled in for you would quietly freeze
+  // their name, which is not what the owner asked for.
+  const current = await getPerson(id)
+  if (!current) redirect('/people?error=gone')
+  const name = field(formData, 'name')
   let updated: boolean
   try {
     // An empty notes box means "clear the notes", which is what the service
     // does with a blank string. The name box is required by the form.
-    updated = await updatePerson(id, { name: field(formData, 'name'), notes: field(formData, 'notes') })
+    updated = await updatePerson(id, {
+      name: name === current.name ? undefined : name,
+      notes: field(formData, 'notes'),
+    })
   } catch (err) {
     if (err instanceof RangeError) redirect(`/people/${id}?error=length`)
     throw err
   }
-  // The service says "no such row" when the person was deleted while this page
-  // sat open — another tab, or the Delete button below it. Saying so beats
-  // redirecting to a 404 that looks like the save itself broke.
+  // The service says "no such row" when the person was hidden or merged away
+  // while this page sat open — another tab, or the Hide button below it.
+  // Saying so beats redirecting to a 404 that looks like the save itself broke.
   if (!updated) redirect('/people?error=gone')
   redirect(`/people/${id}`)
 }
 
-// Hides the person. Their links stay, so the contact sync never offers to
-// create them again, and chats and messages are untouched — the address book
-// is an annotation over the archive, never a part of it.
-export async function deletePersonAction(formData: FormData): Promise<void> {
+// The owner's "no, use whatever the channel calls them": the alias is dropped
+// and the name follows the contact list again.
+export async function resetNameAction(formData: FormData): Promise<void> {
+  await requireSession()
+  const id = field(formData, 'personId')
+  if (!id) redirect('/people')
+  const reset = await resetName(id)
+  if (!reset) redirect('/people?error=gone')
+  redirect(`/people/${id}`)
+}
+
+// Two rows, one person. `from` is emptied of its identities and deleted
+// outright, so the page the owner ends up on is the survivor's.
+export async function mergePeopleAction(formData: FormData): Promise<void> {
+  await requireSession()
+  const id = field(formData, 'personId')
+  if (!id) redirect('/people')
+  const intoId = field(formData, 'intoId')
+  // The select opens on a placeholder with no value; submitting it is a slip.
+  if (!intoId) redirect(`/people/${id}?error=empty`)
+  if (intoId === id) redirect(`/people/${id}?error=self`)
+  const merged = await mergePeople(id, intoId)
+  // Either side hidden, merged away or never there: nothing happened, and the
+  // person the owner was looking at is still the one to come back to.
+  if (!merged) redirect(`/people/${id}?error=gone`)
+  redirect(`/people/${intoId}`)
+}
+
+// Hides the person. Their links stay, so the populater never creates them
+// again, and chats and messages are untouched — the address book is an
+// annotation over the archive, never a part of it (decision 14). Reversible
+// from the Hidden section of the People page.
+export async function hidePersonAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
   const archived = id ? await archivePerson(id) : true
   if (!archived) redirect('/people?error=gone')
   redirect('/people')
+}
+
+export async function restorePersonAction(formData: FormData): Promise<void> {
+  await requireSession()
+  const id = field(formData, 'personId')
+  if (!id) redirect('/people')
+  const restored = await restorePerson(id)
+  if (!restored) redirect('/people?error=gone')
+  redirect(`/people/${id}`)
 }
 
 export async function linkIdentityAction(formData: FormData): Promise<void> {
