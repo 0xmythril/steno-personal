@@ -4,6 +4,7 @@ import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
+import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { Consent } from '@/app/connections/consent'
 import { WhatsAppConsent } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
@@ -30,7 +31,7 @@ function SetupChannelCard({ channel, live }: { channel: Channel; live: Connectio
   if (live?.status === 'pending') {
     return (
       <section className="card">
-        <h2>{CHANNEL_LABELS[channel]}</h2>
+        <div className="card-head"><h2>{CHANNEL_LABELS[channel]}</h2><span className="chip warn">Waiting for scan</span></div>
         {consent}
         <ConnectPanel
           connectionId={live.id}
@@ -51,7 +52,7 @@ function SetupChannelCard({ channel, live }: { channel: Channel; live: Connectio
   }
   return (
     <section className="card">
-      <h2>{CHANNEL_LABELS[channel]}</h2>
+      <div className="card-head"><h2>{CHANNEL_LABELS[channel]}</h2><span className="chip off">Not connected</span></div>
       {live && errorText(live) && <p className="danger" role="alert">{errorText(live)}</p>}
       {consent}
       <ConnectButton channel={channel} action={setupConnectAction} />
@@ -69,33 +70,46 @@ export default async function SetupPage() {
   if (active) {
     return (
       <main>
-        <h1>steno-personal</h1>
-        <section className="card">
-          <h2>Connected</h2>
-          <p>
-            {CHANNEL_LABELS[active.channel]}{active.displayName ? `: ${active.displayName}` : ''} is paired and archiving
-            has started. Your first access key comes next — it is what logs you in here and what your agents use.
-          </p>
-          <form action={finishSetupAction}>
-            <button type="submit">Create my access key</button>
-          </form>
-        </section>
+        <div className="onboard">
+          <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
+          <h1>Connected</h1>
+          <section className="card">
+            <div className="card-head">
+              <h2>{CHANNEL_LABELS[active.channel]}{active.displayName ? `: ${active.displayName}` : ''}</h2>
+              <span className="chip ok">Live</span>
+            </div>
+            <p>
+              This account is paired and archiving has started. Your first access key comes next — it is what logs
+              you in here and what your agents use.
+            </p>
+            <form action={finishSetupAction} className="actions">
+              <button type="submit" className="primary">Create my access key</button>
+            </form>
+          </section>
+        </div>
       </main>
     )
   }
 
   return (
     <main>
-      <h1>steno-personal</h1>
-      <p>
-        This instance has no owner yet. Connect Telegram or WhatsApp to claim it: the account you pair is what
-        this archive reads, and it is also how you prove it is yours if you ever lose your access key.
+      <div className="page-head">
+        <div>
+          <span className="brand" style={{ marginBottom: 10 }}><BrandLogo size={24} /><Wordmark /></span>
+          <h1>This instance has no owner yet</h1>
+        </div>
+      </div>
+      <p className="lede">
+        Connect Telegram or WhatsApp to claim it: the account you pair is what this archive reads, and it is also
+        how you prove it is yours if you ever lose your access key.
       </p>
       <p className="muted">
         Read what connecting does before you scan. You can connect the other channel afterwards, from Connections.
       </p>
-      <SetupChannelCard channel="telegram" live={liveOf('telegram')} />
-      <SetupChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
+      <div className="two-up">
+        <SetupChannelCard channel="telegram" live={liveOf('telegram')} />
+        <SetupChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
+      </div>
     </main>
   )
 }

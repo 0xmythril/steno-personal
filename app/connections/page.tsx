@@ -23,18 +23,23 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
   if (live?.status === 'active') {
     return (
       <section className="card">
-        <h2>{CHANNEL_LABELS[channel]}{live.displayName ? `: ${live.displayName}` : ''}</h2>
+        <div className="card-head">
+          <h2>{CHANNEL_LABELS[channel]}{live.displayName ? `: ${live.displayName}` : ''}</h2>
+          <span className="chip ok">Live</span>
+        </div>
         <p className="muted">
-          Connected, read-only. Last synced {formatRelativeTime(live.lastSyncAt)}.
+          Connected, read-only. Last synced <span className="mono">{formatRelativeTime(live.lastSyncAt)}</span>.
         </p>
-        <form action={disconnectAction} className="inline">
-          <input type="hidden" name="connectionId" value={live.id} />
-          <button type="submit">Disconnect</button>
-        </form>{' '}
-        <form action={deleteEverythingAction} className="inline">
-          <input type="hidden" name="connectionId" value={live.id} />
-          <button type="submit" className="danger">Delete this account and everything it archived</button>
-        </form>
+        <div className="actions">
+          <form action={disconnectAction} className="inline">
+            <input type="hidden" name="connectionId" value={live.id} />
+            <button type="submit" className="small">Disconnect</button>
+          </form>
+          <form action={deleteEverythingAction} className="inline">
+            <input type="hidden" name="connectionId" value={live.id} />
+            <button type="submit" className="small danger">Delete this account and everything it archived</button>
+          </form>
+        </div>
       </section>
     )
   }
@@ -42,7 +47,10 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
   if (live?.status === 'pending') {
     return (
       <section className="card">
-        <h2>{CHANNEL_LABELS[channel]}</h2>
+        <div className="card-head">
+          <h2>{CHANNEL_LABELS[channel]}</h2>
+          <span className="chip warn">Waiting for scan</span>
+        </div>
         {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
         <ConnectPanel
           connectionId={live.id}
@@ -62,7 +70,10 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
 
   return (
     <section className="card">
-      <h2>{CHANNEL_LABELS[channel]}</h2>
+      <div className="card-head">
+        <h2>{CHANNEL_LABELS[channel]}</h2>
+        <span className="chip off">Not connected</span>
+      </div>
       {live && errorText(live) && <p className="danger" role="alert">{errorText(live)}</p>}
       <>
         {channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />}
@@ -84,32 +95,38 @@ export default async function ConnectionsPage() {
   const history = all.filter(c => c.revokedAt !== null)
 
   return (
-    <main>
-      <Nav label={session.label} />
-      <h1>Connections</h1>
-      <HostedCta />
-      <ChannelCard channel="telegram" live={liveOf('telegram')} />
-      <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
+    <>
+      <Nav label={session.label} current="connections" />
+      <main>
+        <div className="page-head"><div><p className="eyebrow">Accounts</p><h1>Connections</h1></div></div>
+        <HostedCta />
+        <div className="two-up">
+          <ChannelCard channel="telegram" live={liveOf('telegram')} />
+          <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
+        </div>
 
-      {history.length > 0 && (
-        <section className="card">
-          <h2>Past connections</h2>
-          <p className="muted">Ended, but whatever they archived is still readable. Recovery attempts — someone pairing a phone on the login page to prove this archive is theirs — are listed too.</p>
-          <table>
-            <thead><tr><th>Channel</th><th>Account</th><th>Ended</th><th>Reason</th></tr></thead>
-            <tbody>
-              {history.map(c => (
-                <tr key={c.id}>
-                  <td>{CHANNEL_LABELS[c.channel]}</td>
-                  <td>{c.purpose === 'recovery' ? <em>Recovery attempt</em> : (c.displayName ?? '—')}</td>
-                  <td>{formatRelativeTime(c.revokedAt)}</td>
-                  <td>{errorText(c) ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-    </main>
+        {history.length > 0 && (
+          <section className="card">
+            <h2>Past connections</h2>
+            <p className="muted">Ended, but whatever they archived is still readable. Recovery attempts — someone pairing a phone on the login page to prove this archive is theirs — are listed too.</p>
+            <div className="tbl"><div className="scroll">
+              <table>
+                <thead><tr><th>Channel</th><th>Account</th><th>Ended</th><th>Reason</th></tr></thead>
+                <tbody>
+                  {history.map(c => (
+                    <tr key={c.id}>
+                      <td>{CHANNEL_LABELS[c.channel]}</td>
+                      <td className="name">{c.purpose === 'recovery' ? <span className="chip off">Recovery attempt</span> : (c.displayName ?? '—')}</td>
+                      <td className="mono">{formatRelativeTime(c.revokedAt)}</td>
+                      <td>{errorText(c) ? <span className="chip bad">{errorText(c)}</span> : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </section>
+        )}
+      </main>
+    </>
   )
 }

@@ -14,20 +14,18 @@ export function SaveKeyGate({ rawKey }: { rawKey: string }) {
   }
   return (
     <>
-      <p>
-        <code style={{ wordBreak: 'break-all' }}>{rawKey}</code>{' '}
-        <button type="button" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-      </p>
-      <p>
-        <label>
-          <input type="checkbox" checked={written} onChange={e => setWritten(e.target.checked)} />
-          {' '}I have saved this key somewhere safe
-        </label>
-      </p>
-      <p>
-        <button type="submit" disabled={!copied && !written}>Continue</button>
-        {!copied && !written && <span className="muted"> Copy the key, or tick the box, to continue.</span>}
-      </p>
+      <span className="token">
+        <code>{rawKey}</code>
+        <button type="button" className="small" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </span>
+      <label className="check">
+        <input type="checkbox" checked={written} onChange={e => setWritten(e.target.checked)} />
+        I have saved this key somewhere safe
+      </label>
+      <div className="actions">
+        <button type="submit" className="primary" disabled={!copied && !written}>Continue</button>
+        {!copied && !written && <span className="help">Copy the key, or tick the box, to continue.</span>}
+      </div>
     </>
   )
 }

@@ -5,6 +5,7 @@ import { PASSWORD_REJECTED } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
+import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { WhatsAppRisk } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
@@ -51,7 +52,7 @@ function Attempt({ attempt }: { attempt: RecoveryStatus }) {
   if (attempt.status === 'pending') {
     return (
       <section className="card">
-        <h2>{label}</h2>
+        <div className="card-head"><h2>{label}</h2><span className="chip warn">Waiting for scan</span></div>
         {attempt.channel === 'whatsapp' && <WhatsAppRisk />}
         <ConnectPanel
           connectionId={attempt.id}
@@ -73,16 +74,16 @@ function Attempt({ attempt }: { attempt: RecoveryStatus }) {
   if (attempt.outcome === 'matched') {
     return (
       <section className="card">
-        <h2>{label}</h2>
+        <div className="card-head"><h2>{label}</h2><span className="chip ok">Matched</span></div>
         {attempt.hasKey ? (
           <>
             <p>That is the account this archive belongs to. A new access key is ready for you.</p>
-            <form action={recoverClaimAction}><button type="submit">Continue</button></form>
+            <form action={recoverClaimAction} className="actions"><button type="submit" className="primary">Continue</button></form>
           </>
         ) : (
           <>
             <p>This attempt&apos;s key has already been collected.</p>
-            <form action={recoverCancelAction}><button type="submit">Start again</button></form>
+            <form action={recoverCancelAction} className="actions"><button type="submit" className="small">Start again</button></form>
           </>
         )}
       </section>
@@ -91,7 +92,7 @@ function Attempt({ attempt }: { attempt: RecoveryStatus }) {
   if (attempt.outcome === 'mismatched') {
     return (
       <section className="card">
-        <h2>{label}</h2>
+        <div className="card-head"><h2>{label}</h2><span className="chip bad">Not this archive</span></div>
         <p className="danger" role="alert">
           The account you paired is not the one this archive belongs to. It has been unlinked again.
         </p>
@@ -100,7 +101,7 @@ function Attempt({ attempt }: { attempt: RecoveryStatus }) {
           the person running this instance can mint a new key, or reset it, from the host — see{' '}
           <a href={LOST_ACCESS_DOCS}>Lost access</a> in the self-hosting notes.
         </p>
-        <form action={recoverCancelAction}><button type="submit">Try another way</button></form>
+        <form action={recoverCancelAction} className="actions"><button type="submit" className="small">Try another way</button></form>
       </section>
     )
   }
@@ -108,9 +109,9 @@ function Attempt({ attempt }: { attempt: RecoveryStatus }) {
   const reason = attempt.lastError && attempt.lastError !== PASSWORD_REJECTED ? attempt.lastError : null
   return (
     <section className="card">
-      <h2>{label}</h2>
+      <div className="card-head"><h2>{label}</h2><span className="chip bad">Did not finish</span></div>
       {reason && <p className="danger" role="alert">{reason}</p>}
-      <form action={recoverCancelAction}><button type="submit">Start again</button></form>
+      <form action={recoverCancelAction} className="actions"><button type="submit" className="small">Start again</button></form>
     </section>
   )
 }
@@ -122,10 +123,12 @@ export default async function RecoverPage() {
   const channels = attempt ? [] : await knownAccountChannels()
   return (
     <main>
-      <h1>steno-personal</h1>
-      <h2>Lost your access key?</h2>
-      {attempt ? <Attempt attempt={attempt} /> : <StartCards channels={channels} />}
-      <p className="muted"><Link href="/login">Back to log in</Link></p>
+      <div className="onboard">
+        <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
+        <h1>Lost your access key?</h1>
+        {attempt ? <Attempt attempt={attempt} /> : <StartCards channels={channels} />}
+        <p className="help"><Link href="/login">Back to log in</Link></p>
+      </div>
     </main>
   )
 }

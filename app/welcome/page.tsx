@@ -23,23 +23,27 @@ export default async function WelcomePage() {
   if (!flash || flash.id !== session.keyId) redirect('/')
 
   return (
-    <main>
+    <>
       <Nav label={session.label} />
-      <h1>Your access key</h1>
-      <section className="card">
-        <p>
-          This key logs you into this portal, and it is what an agent uses to read your archive over MCP.
-          Save it now — in a password manager, or somewhere you will find it.
-        </p>
-        <form action={welcomeDoneAction}>
-          <SaveKeyGate rawKey={flash.rawKey} />
-        </form>
-        <p className="muted">
-          While you are logged in you can see it again under Settings, and make more keys there — one per device or
-          agent. Logged out, nobody can show it to you: the way back in is to pair the same phone again from the login
-          page, or a key minted by whoever runs this instance.
-        </p>
-      </section>
-    </main>
+      <main>
+        <div className="onboard">
+          <div><p className="eyebrow">First run</p><h1>Your access key</h1></div>
+          <section className="card">
+            <p>
+              This key logs you into this portal, and it is what an agent uses to read your archive over MCP.
+              Save it now — in a password manager, or somewhere you will find it.
+            </p>
+            <form action={welcomeDoneAction} className="stack" style={{ gap: 12 }}>
+              <SaveKeyGate rawKey={flash.rawKey} />
+            </form>
+            <p className="help">
+              While you are logged in you can see it again under Settings, and make more keys there — one per device or
+              agent. Logged out, nobody can show it to you: the way back in is to pair the same phone again from the login
+              page, or a key minted by whoever runs this instance.
+            </p>
+          </section>
+        </div>
+      </main>
+    </>
   )
 }

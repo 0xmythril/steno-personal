@@ -8,17 +8,19 @@ import { connectAction, type ConnectResult } from './actions'
 // branch, so there is no success state to render here.
 //
 // `action` lets the setup and recovery pages post to their own guarded action
-// with the same button; `label` names what pressing it starts.
-export function ConnectButton({ channel, action, label = 'Connect' }: {
+// with the same button; `label` names what pressing it starts, and defaults
+// to naming the channel.
+export function ConnectButton({ channel, action, label }: {
   channel: 'telegram' | 'whatsapp'
   action?: (prev: ConnectResult | null, formData: FormData) => Promise<ConnectResult>
   label?: string
 }) {
   const [state, formAction, pending] = useActionState<ConnectResult | null, FormData>(action ?? connectAction, null)
+  const text = label ?? `Connect ${channel === 'telegram' ? 'Telegram' : 'WhatsApp'}`
   return (
-    <form action={formAction}>
+    <form action={formAction} className="stack" style={{ gap: 8 }}>
       <input type="hidden" name="channel" value={channel} />
-      <button type="submit" disabled={pending}>{pending ? 'Connecting…' : label}</button>
+      <div className="actions"><button type="submit" className="primary" disabled={pending}>{pending ? 'Connecting…' : text}</button></div>
       {state?.ok === false && <p className="danger" role="alert">{state.message}</p>}
     </form>
   )

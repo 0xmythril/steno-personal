@@ -10,7 +10,7 @@ import { DEVICE_MODEL } from '@/lib/channels/device-model'
 export function Consent({ channel }: { channel: 'telegram' | 'whatsapp' }) {
   return (
     <div className="card">
-      <h3>What connecting does</h3>
+      <p className="eyebrow">What connecting does</p>
       <ul>
         <li>
           <strong>It reads everything on the account.</strong> Every chat — direct

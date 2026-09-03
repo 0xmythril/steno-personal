@@ -13,6 +13,9 @@ const PAGE_SIZE = 100
 // Read-only by construction: there is no reply box and nowhere to type,
 // because the connection physically cannot send. A structural test asserts the
 // absence, so nothing here may grow a form, an input, or a submit control.
+//
+// The layout is the steno pad from DESIGN.md: time in a 64px margin against a
+// rule, the speaker and their words beside it.
 export default async function ChatPage({ params, searchParams }: {
   params: Promise<{ id: string }>
   searchParams: Promise<{ cursor?: string | string[] }>
@@ -37,52 +40,60 @@ export default async function ChatPage({ params, searchParams }: {
   // without scrolling to find them. Links only — no control here may send.
   const pager = (
     <p className="pager">
-      {olderHref && <><Link href={olderHref}>&uarr; Older messages</Link>{' · '}</>}
+      {olderHref && <Link href={olderHref}>&uarr; Older messages</Link>}
       <Link href={latestHref}>Latest messages &darr;</Link>
     </p>
   )
 
   return (
-    <main>
-      <Nav label={session.label} />
-      <p className="muted"><Link href="/">&larr; All chats</Link></p>
-      <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
-      <p className="muted">Read-only archive &middot; {page.chat.messageCount} messages</p>
+    <>
+      <Nav label={session.label} current="chats" />
+      <main>
+        <p className="muted"><Link href="/">&larr; All chats</Link></p>
+        <div className="pad">
+          <div className="pad-head">
+            <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
+            <span className="muted mono">Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} messages</span>
+          </div>
 
-      {pager}
+          {pager}
 
-      {chronological.length === 0 ? (
-        <p className="muted">No messages archived in this chat yet.</p>
-      ) : (
-        <ul className="transcript">
-          {groupByDate(chronological).map(group => (
-            <Fragment key={group.dateLabel}>
-              <li className="date-sep">{group.dateLabel}</li>
-              {groupRuns(group.messages).map(run => (
-                <li key={run.messages[0].id} className="msg-run">
-                  <p className="msg-meta">
-                    <strong>{run.isMe ? 'You' : run.senderLabel}</strong>{' '}
-                    <span className="muted">{formatTime(run.messages[0].sentAt)}</span>
-                  </p>
-                  {run.messages.map(m => (
-                    <div key={m.id} className="msg-body">
-                      {m.text ?? <span className="muted">({m.type})</span>}
-                      {m.editedAt && <span className="muted"> (edited)</span>}
-                      {m.media && <MediaAttachment media={m.media} />}
-                    </div>
+          {chronological.length === 0 ? (
+            <div className="empty" style={{ border: 0 }}>
+              <h2>No messages archived in this chat yet.</h2>
+            </div>
+          ) : (
+            <ul className="transcript">
+              {groupByDate(chronological).map(group => (
+                <Fragment key={group.dateLabel}>
+                  <li className="date-sep">{group.dateLabel}</li>
+                  {groupRuns(group.messages).map(run => (
+                    <li key={run.messages[0].id} className="msg-run">
+                      <span className="msg-time">{formatTime(run.messages[0].sentAt)}</span>
+                      <div className="msg-col">
+                        <p className={run.isMe ? 'msg-who me' : 'msg-who'}>{run.isMe ? 'You' : run.senderLabel}</p>
+                        {run.messages.map(m => (
+                          <div key={m.id} className="msg-body">
+                            {m.text ?? <span className="kind">({m.type})</span>}
+                            {m.editedAt && <span className="edited">edited</span>}
+                            {m.media && <MediaAttachment media={m.media} />}
+                          </div>
+                        ))}
+                      </div>
+                    </li>
                   ))}
-                </li>
+                </Fragment>
               ))}
-            </Fragment>
-          ))}
-        </ul>
-      )}
+            </ul>
+          )}
 
-      <p className="pager" id="bottom">
-        {olderHref && <><Link href={olderHref}>&uarr; Older messages</Link>{' · '}</>}
-        {cursor && <><Link href={`/chats/${page.chat.id}#bottom`}>Latest messages &darr;</Link>{' · '}</>}
-        <Link href="#top">Back to top &uarr;</Link>
-      </p>
-    </main>
+          <p className="pager foot" id="bottom">
+            {olderHref && <Link href={olderHref}>&uarr; Older messages</Link>}
+            {cursor && <Link href={`/chats/${page.chat.id}#bottom`}>Latest messages &darr;</Link>}
+            <Link href="#top">Back to top &uarr;</Link>
+          </p>
+        </div>
+      </main>
+    </>
   )
 }
