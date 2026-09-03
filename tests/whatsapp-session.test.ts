@@ -76,20 +76,46 @@ describe('BaileysWhatsAppPort.open', () => {
     await session.close()
   })
 
-  it('asks for full history only until the marker exists', async () => {
+  // WhatsApp streams history in many chunks. The marker means "the sync
+  // finished", which is the server's own progress figure and nothing else.
+  it('asks for full history until the sync reports completion, then stops', async () => {
     const authRoot = testAuthRoot('open-marker')
     const markerPath = path.join(authRoot, 'wa-c1', 'history-synced')
 
     const first = await opened(authRoot)
     expect(first.h.sockets[0].opts.syncFullHistory).toBe(true)
     expect(existsSync(markerPath)).toBe(false)
-    first.h.sockets[0].emit('messaging-history.set', { chats: [], messages: [] })
+
+    first.h.sockets[0].emit('messaging-history.set', { chats: [], messages: [], progress: 42, isLatest: true })
+    await flush(30)
+    expect(existsSync(markerPath)).toBe(false)   // still streaming
+
+    first.h.sockets[0].emit('messaging-history.set', { chats: [], messages: [], progress: 100, isLatest: false })
     await flush(30)
     expect(existsSync(markerPath)).toBe(true)
     await first.session.close()
 
     const second = await opened(authRoot)
     expect(second.h.sockets[0].opts.syncFullHistory).toBe(false)
+    await second.session.close()
+  })
+
+  // isLatest is `!creds.processedHistoryMessages?.length`
+  // (lib/Utils/process-message.js:245) — true on the FIRST chunk. A chunk that
+  // reports no progress at all must not write the marker either.
+  it('never writes the marker on a chunk that has not reported completion', async () => {
+    const authRoot = testAuthRoot('open-marker-partial')
+    const markerPath = path.join(authRoot, 'wa-c1', 'history-synced')
+
+    const first = await opened(authRoot)
+    first.h.sockets[0].emit('messaging-history.set', { chats: [], messages: [], isLatest: true })
+    await flush(30)
+    expect(existsSync(markerPath)).toBe(false)
+    await first.session.close()
+
+    // …so the next open asks for the rest of it.
+    const second = await opened(authRoot)
+    expect(second.h.sockets[0].opts.syncFullHistory).toBe(true)
     await second.session.close()
   })
 

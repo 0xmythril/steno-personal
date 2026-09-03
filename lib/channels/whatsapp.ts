@@ -50,8 +50,25 @@ export type WaConnectionUpdate = {
   isNewLogin?: boolean
 }
 
-/** lib/Types/Events.d.ts — 'messaging-history.set'; Chat = proto.IConversation. */
-export type WaHistorySet = { chats?: Array<{ id?: string | null; name?: string | null }>; messages?: unknown[] }
+/**
+ * lib/Types/Events.d.ts:18-29 — 'messaging-history.set'; Chat = proto.IConversation.
+ *
+ * `progress` is the server's own percentage for this sync phase, carried
+ * through from the HistorySync item (lib/Utils/history.js:116) and consolidated
+ * onto the event by the buffer (lib/Utils/event-buffer.js:553). Baileys itself
+ * treats `progress === 100` as explicit completion (lib/Socket/chats.js:948).
+ *
+ * `isLatest` is NOT a completion signal, despite the name: it is computed as
+ * `!creds.processedHistoryMessages?.length` (lib/Utils/process-message.js:245),
+ * i.e. it is true on the FIRST chunk of a sync and false thereafter. It is
+ * named here so the next reader does not reach for it.
+ */
+export type WaHistorySet = {
+  chats?: Array<{ id?: string | null; name?: string | null }>
+  messages?: unknown[]
+  progress?: number | null
+  isLatest?: boolean
+}
 /** lib/Types/Events.d.ts — 'messages.upsert'. */
 export type WaUpsert = { messages?: unknown[]; type?: string }
 /** lib/Types/GroupMetadata.d.ts, as delivered by 'groups.upsert' / 'groups.update'. */
@@ -265,7 +282,11 @@ export function baileysDeps(): WaDeps {
         emitOwnEvents: true,
         // lib/Utils/validate-connection.js: this sets requireFullSync inside
         // generateRegistrationNode (line 86) — pairing only — AND
-        // webInfo.webSubPlatform on every connect (line 35).
+        // webInfo.webSubPlatform on every connect (line 35). The latter only
+        // moves off WEB_BROWSER for a desktop browser tuple (lines 33-41),
+        // which the default below is not — so on a RECONNECT this flag reaches
+        // the wire nowhere: what history a re-open receives is WhatsApp's
+        // decision, and the marker only records whether we would ask again.
         //
         // No `browser` tuple. As of 2026-09 WhatsApp terminates a
         // DARWIN-platform socket — close code 428, "Connection Terminated",
@@ -525,8 +546,10 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
     const markerPath = path.join(dir, HISTORY_MARKER)
     // "First open" per spec 4.3: the auth dir has no history-synced marker.
-    // The marker is written once a history batch has actually been ingested,
-    // not merely once we connected, so a crash mid-sync retries next time.
+    // The marker is written once the history sync REPORTS COMPLETION (see the
+    // messaging-history.set handler), never merely because we connected or
+    // because a first chunk landed — so a crash, a restart or a close part-way
+    // through leaves it unwritten and the next open asks again.
     let historyPending = !(await exists(markerPath))
 
     let sock: WaSocket | null = null
@@ -760,14 +783,19 @@ export class BaileysWhatsAppPort implements ChannelPort {
       s.ev.on('groups.upsert', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
       s.ev.on('groups.update', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
 
-      s.ev.on('messaging-history.set', ({ chats, messages }) => {
+      s.ev.on('messaging-history.set', ({ chats, messages, progress }) => {
         lastEventAt = Date.now()
         enqueue(async () => {
           for (const c of chats ?? []) if (c?.id && c.name) titles.set(c.id, c.name)
           for (const raw of messages ?? []) await handleRaw(raw)
           // Counts and kinds only (spec invariant 6).
-          log.info({ chats: (chats ?? []).length, messages: (messages ?? []).length }, 'whatsapp history batch')
-          await markHistorySynced()
+          log.info({ chats: (chats ?? []).length, messages: (messages ?? []).length, progress: progress ?? null }, 'whatsapp history batch')
+          // WhatsApp streams history in many chunks over minutes. Marking on
+          // the first one meant a restart, a crash, or a close mid-sync left
+          // the marker on disk, so every later open asked for no history and
+          // the rest was never requested. Only the server's own completion
+          // percentage may write it.
+          if (progress === 100) await markHistorySynced()
         })
       })
 
