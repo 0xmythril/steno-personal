@@ -3,7 +3,7 @@ import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
 import { callTool, listTools, mcpRequest, rpc } from './helpers/mcp'
 import * as queries from '@/lib/services/queries'
-import { mintAccessKey } from '@/lib/services/access-keys'
+import { mintAccessKey, revokeAccessKey } from '@/lib/services/access-keys'
 import { POST } from '@/app/mcp/route'
 
 async function agentKey(label = 'agent'): Promise<string> {
@@ -15,11 +15,23 @@ async function agentKey(label = 'agent'): Promise<string> {
 describe('MCP bearer auth', () => {
   beforeEach(resetDb)
 
-  it('401s a missing, unknown, or revoked key', async () => {
+  it('401s a missing or unknown key', async () => {
     const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     expect((await POST(mcpRequest('', body))).status).toBe(401)
     expect((await POST(mcpRequest('sp_not_a_real_key', body))).status).toBe(401)
     expect((await POST(mcpRequest('definitely-not-prefixed', body))).status).toBe(401)
+  })
+
+  it('401s the next call after that key is revoked', async () => {
+    // The M3 exit criterion, driven end to end: the same key that worked a
+    // moment ago is refused once it is revoked. The test above only covers
+    // keys that were never valid.
+    const minted = await mintAccessKey('to be revoked')
+    if (!minted.ok) throw new Error(minted.reason)
+    const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
+    expect((await POST(mcpRequest(minted.rawKey, body))).status).toBe(200)
+    await revokeAccessKey(minted.id)
+    expect((await POST(mcpRequest(minted.rawKey, body))).status).toBe(401)
   })
 
   it('lists exactly the four read tools for a valid key', async () => {
