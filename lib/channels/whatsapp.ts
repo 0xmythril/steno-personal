@@ -215,11 +215,15 @@ export function baileysDeps(): WaDeps {
         emitOwnEvents: true,
         // lib/Utils/validate-connection.js: this sets requireFullSync inside
         // generateRegistrationNode (line 86) — pairing only — AND
-        // webInfo.webSubPlatform on every connect (line 35), but only in
-        // combination with the desktop browser tuple below. Without both,
-        // WhatsApp sends recent history and nothing more.
+        // webInfo.webSubPlatform on every connect (line 35).
+        //
+        // No `browser` tuple. As of 2026-09 WhatsApp terminates a
+        // DARWIN-platform socket — close code 428, "Connection Terminated",
+        // before any QR is ever emitted — and the Mac OS desktop tuple this
+        // file used to pass registers as exactly that. Omitting the option
+        // leaves Baileys' default (macOS Chrome), which does pair; history
+        // depth with the default tuple is verified by the owner run.
         syncFullHistory: opts.syncFullHistory,
-        browser: ['Mac OS', 'Desktop', '14.4.1'],
         logger: waLogger(),
       })
       return sock as unknown as WaSocket

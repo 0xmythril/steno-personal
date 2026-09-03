@@ -50,11 +50,15 @@ describe('the WhatsApp port sends nothing', () => {
     expect(src()).toContain('emitOwnEvents: true')
   })
 
-  // getWebInfo (lib/Utils/validate-connection.js:35) only promotes
-  // webSubPlatform when browser[1] === 'Desktop'; drop the tuple and
-  // syncFullHistory silently stops buying full history.
-  it('keeps the desktop browser tuple that gates full history', () => {
-    expect(src()).toContain("'Desktop'")
+  // History depth is asked for by syncFullHistory alone. The desktop browser
+  // tuple this file used to carry is what WhatsApp terminates on (close code
+  // 428, before any QR), so it must stay gone: Baileys' default tuple pairs.
+  it('still asks for full history', () => {
+    expect(src()).toContain('syncFullHistory')
+  })
+
+  it('never identifies as a desktop client', () => {
+    expect(src()).not.toContain("'Desktop'")
   })
 })
 
