@@ -47,7 +47,7 @@ export default async function ChatPage({ params, searchParams }: {
 
   return (
     <>
-      <Nav label={session.label} current="chats" />
+      <Nav label={session.label} via={session.via} current="chats" />
       <main>
         <p className="muted"><Link href="/">&larr; All chats</Link></p>
         <div className="pad">

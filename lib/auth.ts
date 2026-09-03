@@ -3,7 +3,7 @@
 // The file lives under lib/ and is only ever imported from server code.
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createSession, deleteSession, resolveSession } from '@/lib/services/sessions'
+import { createSession, deleteSession, resolveSession, type ResolvedSession, type SessionCredential } from '@/lib/services/sessions'
 import { hasAnyAccessKey, verifyAccessKey } from '@/lib/services/access-keys'
 import { FIRST_KEY_COOKIE } from '@/lib/services/keys-flash'
 
@@ -15,7 +15,8 @@ export const SESSION_COOKIE = 'sp_session'
 // user out while their session row was still valid.
 export const COOKIE_MAX_AGE_S = 400 * 86_400
 
-export type PortalSession = { sessionId: string; keyId: string; label: string }
+// via says which credential opened the session; the other id is null.
+export type PortalSession = ResolvedSession
 
 export async function currentSession(): Promise<PortalSession | null> {
   const jar = await cookies()
@@ -55,8 +56,8 @@ export async function isHttps(): Promise<boolean> {
   return h.get('x-forwarded-proto')?.split(',')[0].trim() === 'https'
 }
 
-export async function startSession(keyId: string): Promise<void> {
-  const id = await createSession(keyId)
+export async function startSession(credential: SessionCredential): Promise<void> {
+  const id = await createSession(credential)
   const jar = await cookies()
   jar.set(SESSION_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: COOKIE_MAX_AGE_S, path: '/' })
 }
@@ -73,8 +74,10 @@ export async function endSession(): Promise<void> {
 // Mutating routes are cookie-only — see requireCookieAuth below. A bearer
 // header that is present but bad is a REJECTION, never a fall-through to the
 // cookie: an agent sending a stale key must be told so, not silently answered
-// with whatever the browser happens to be logged in as.
-export async function authenticateRequest(req: Request): Promise<{ via: 'cookie' | 'bearer'; keyId: string } | null> {
+// with whatever the browser happens to be logged in as. A cookie session
+// opened with a passkey has no key, so keyId is null there; no caller reads
+// it for a cookie session.
+export async function authenticateRequest(req: Request): Promise<{ via: 'cookie' | 'bearer'; keyId: string | null } | null> {
   const header = req.headers.get('authorization')
   if (header?.startsWith('Bearer ')) {
     const key = await verifyAccessKey(header.slice('Bearer '.length).trim())

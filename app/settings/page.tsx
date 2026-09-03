@@ -35,7 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Nav label={session.label} current="settings" />
+      <Nav label={session.label} via={session.via} current="settings" />
       <main>
         <div className="page-head"><div><p className="eyebrow">This instance</p><h1>Settings</h1></div></div>
 

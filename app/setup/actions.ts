@@ -53,6 +53,6 @@ export async function finishSetupAction(): Promise<void> {
   const minted = await mintAccessKey('First key')
   if (!minted.ok) throw new Error(`first key mint failed: ${minted.reason}`)
   await setFirstKeyFlash(minted.id, minted.rawKey)
-  await startSession(minted.id)
+  await startSession({ keyId: minted.id })
   redirect('/welcome')
 }

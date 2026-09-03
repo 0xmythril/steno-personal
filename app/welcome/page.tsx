@@ -24,7 +24,7 @@ export default async function WelcomePage() {
 
   return (
     <>
-      <Nav label={session.label} />
+      <Nav label={session.label} via={session.via} />
       <main>
         <div className="onboard">
           <div><p className="eyebrow">First run</p><h1>Your access key</h1></div>

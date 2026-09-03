@@ -102,7 +102,7 @@ export default async function ConnectionsPage() {
 
   return (
     <>
-      <Nav label={session.label} current="connections" />
+      <Nav label={session.label} via={session.via} current="connections" />
       <main>
         <div className="page-head"><div><p className="eyebrow">Accounts</p><h1>Connections</h1></div></div>
         <HostedCta />

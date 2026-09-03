@@ -19,7 +19,7 @@ export default async function PeoplePage({ searchParams }: {
 
   return (
     <>
-      <Nav label={session.label} current="people" />
+      <Nav label={session.label} via={session.via} current="people" />
       <main>
       <h1>People</h1>
       <p className="muted">
