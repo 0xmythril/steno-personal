@@ -128,6 +128,19 @@ describe('M3 structural invariants', () => {
     expect(src).not.toMatch(/drizzle-orm/)
   })
 
+  it('neither agent surface can reach a PersonView', () => {
+    // publicPeople() drops the phone AND the externalId, because a WhatsApp
+    // identity is a phone number. That only holds while it is the one door:
+    // listPeople/getPerson return the portal's shape, numbers included, and a
+    // route that imported either could serve it in one line. A comment said
+    // so; this says it in a way that fails.
+    for (const file of ['app/mcp/route.ts', 'app/api/people/route.ts']) {
+      const src = readFileSync(file, 'utf8')
+      expect(src, file).toMatch(/\bpublicPeople\b/)
+      expect(src, file).not.toMatch(/\b(listPeople|getPerson)\b/)
+    }
+  })
+
   it('the route authenticates with access keys only, never the portal session', () => {
     // /mcp is a bearer-token API for agents, not a browser session. Importing
     // lib/auth.ts would mean a cookie could authenticate a tool call.
