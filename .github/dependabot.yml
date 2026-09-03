@@ -13,9 +13,22 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: "@whiskeysockets/baileys"
         update-types: [version-update:semver-major]
+      # Majors that need a deliberate migration, not a weekly PR: TypeScript 7
+      # (the Go compiler) and ESLint 10 both fail CI today, and @types/node
+      # tracks the runtime pinned in .nvmrc and the Dockerfile.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    # The Node major is chosen by hand, in step with .nvmrc and engines.
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
