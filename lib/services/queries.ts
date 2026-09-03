@@ -242,15 +242,12 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
   // inner query is a standard SQLite flattening barrier (drizzle drops a
   // negative limit rather than emitting `LIMIT -1`, so this uses a limit far
   // above any real result set instead), so bm25() is computed once per
-  // search_index row here...
+  // search_index row here — and nothing else is: ids and a score only.
   const ranked = db.select({
-    ...messageSelection,
-    chatId: messages.chatId,
-    chatTitle: chats.title,
+    messageId: searchIndex.messageId,
     rank: sql<number>`bm25(search_index)`.as('rank'),
   }).from(searchIndex)
     .innerJoin(messages, eq(messages.id, searchIndex.messageId))
-    .innerJoin(chats, eq(chats.id, messages.chatId))
     .where(and(...conds))
     .orderBy(sql`rank`)
     .limit(1_000_000)
@@ -259,16 +256,36 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
   // ...and collapsed here, one level up: a message can own several index rows
   // from M4 onwards (its own text plus each attachment's extracted text), so
   // group to one hit per message and rank it by its best-matching row. bm25
-  // is more negative the better the match, hence ascending.
-  const rows = await db.select({
-    id: ranked.id, externalMessageId: ranked.externalMessageId, senderName: ranked.senderName,
-    fromOwner: ranked.fromOwner, sentAt: ranked.sentAt, type: ranked.type, text: ranked.text,
-    editedAt: ranked.editedAt, personId: ranked.personId, personName: ranked.personName,
-    chatId: ranked.chatId, chatTitle: ranked.chatTitle,
+  // is more negative the better the match, hence ascending. This is where the
+  // page is cut. An aggregate subquery under a join is not flattened by
+  // SQLite, so the LIMIT here really does bound what the outer query touches.
+  const best = db.select({
+    messageId: ranked.messageId,
+    rank: sql<number>`min(${ranked.rank})`.as('best_rank'),
   }).from(ranked)
-    .groupBy(ranked.id)
+    .groupBy(ranked.messageId)
     .orderBy(asc(sql`min(${ranked.rank})`))
     .limit(Math.max(1, Math.min(limit, MAX_LIMIT)))
+    .as('best')
+
+  // Only now, on the page and nothing more, are the names resolved.
+  // messageSelection carries four correlated subqueries per row (the sender's
+  // person, the owner's contact name, and the two the display title needs);
+  // inside `ranked` they ran once per FTS-matched row, which for a common word
+  // is the whole corpus rather than the fifty rows anybody sees.
+  //
+  // chatTitle is the SAME expression the chat list uses, not chats.title: a
+  // WhatsApp DM's stored title is routinely null or the owner's own name, so
+  // the raw column made a search hit read as `null` in the exact chat the list
+  // beside it names after a person.
+  const rows = await db.select({
+    ...messageSelection,
+    chatId: messages.chatId,
+    chatTitle: displayTitle.as('chat_title'),
+  }).from(best)
+    .innerJoin(messages, eq(messages.id, best.messageId))
+    .innerJoin(chats, eq(chats.id, messages.chatId))
+    .orderBy(asc(best.rank))
 
   const mediaById = await mediaForMessages(rows.map(r => r.id))
   return rows.map(r => ({ ...toView(r, mediaById.get(r.id) ?? null), chatId: r.chatId, chatTitle: r.chatTitle }))

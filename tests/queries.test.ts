@@ -4,7 +4,7 @@ import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
 import { createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
 import { db } from '@/lib/db/client'
-import { connections } from '@/lib/db/schema'
+import { channelContacts, connections } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 describe('listChats', () => {
@@ -289,6 +289,50 @@ describe('people on chats and messages', () => {
     const group = await makeChat(conn, { kind: 'group', title: 'Team' })
     await addMessage(group, { senderName: null, senderExternalId: ADA, text: 'nameless' })
     expect((await getMessages(group.id))!.messages[0].senderName).toBe('Saved Contact')
+  })
+
+  // The contact cache is keyed per connection, and reconnecting an account
+  // makes a new one. Both rows are the owner's own contacts, so both are
+  // usable — but the chat's own connection is the one that was reading that
+  // account when the message arrived, and it wins even when the other row is
+  // the fresher read.
+  it("prefers the chat's own connection when two of them know the same contact", async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(conn.id, 'whatsapp', [{ externalId: ADA, displayName: 'This Connection', phone: null }])
+    const other = await makeConnection({ channel: 'whatsapp', status: 'revoked' })
+    await syncContacts(other.id, 'whatsapp', [{ externalId: ADA, displayName: 'Another Connection', phone: null }])
+    // Stamped explicitly rather than relying on call order: the other row is
+    // unambiguously the more recent read, so only the own-connection rule can
+    // decide this.
+    await db.update(channelContacts).set({ syncedAt: new Date(Date.now() + 60_000) })
+      .where(eq(channelContacts.connectionId, other.id))
+
+    const group = await makeChat(conn, { kind: 'group', title: 'Team' })
+    await addMessage(group, { senderName: null, senderExternalId: ADA, text: 'the dentist appointment' })
+    expect((await getMessages(group.id))!.messages[0].senderName).toBe('This Connection')
+    // The same expression, through the other read path.
+    expect((await searchMessages('dentist'))[0].senderName).toBe('This Connection')
+  })
+
+  // A search hit and the chat list are two views of the same chat; they must
+  // not disagree about its name. searchMessages used to return the raw
+  // chats.title column, which for a WhatsApp DM is routinely null or the
+  // owner's own name.
+  it('titles a search hit exactly as the chat list titles the chat', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    await db.update(connections).set({ displayName: 'Me Myself' }).where(eq(connections.id, conn.id))
+    const dm = await makeChat(conn, { title: 'Me Myself', externalChatId: ADA })
+    await addMessage(dm, { senderName: 'Bo', senderExternalId: ADA, text: 'the dentist appointment' })
+
+    const listed = () => listChats().then(cs => cs.find(c => c.id === dm.id)!.title)
+    expect(await listed()).toBe('Bo')
+    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Bo')
+
+    // …and once the owner names them, both say the name the owner chose.
+    const ada = await createPerson({ name: 'Ada Lovelace' })
+    await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
+    expect(await listed()).toBe('Ada Lovelace')
+    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Ada Lovelace')
   })
 
   it('carries the person and the contact name into search results', async () => {
