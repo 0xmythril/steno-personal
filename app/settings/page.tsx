@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { requireSession } from '@/lib/auth'
 import { listActiveAccessKeys, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/services/access-keys'
-import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flash'
+import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
 import { ConnectAgent } from './connect-agent'
@@ -22,13 +22,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams
   const mintError = typeof sp.mintError === 'string' ? sp.mintError : null
   const revealError = typeof sp.revealError === 'string' ? sp.revealError : null
+  const instructionsError = typeof sp.instructionsError === 'string' ? sp.instructionsError : null
 
   const jar = await cookies()
   let minted = parseFlash(jar.get(MINTED_KEY_COOKIE)?.value)
   let revealed = parseFlash(jar.get(REVEALED_KEY_COOKIE)?.value)
+  let chosen = parseFlash(jar.get(INSTRUCTIONS_KEY_COOKIE)?.value)
   // A flash must never outlive its key.
   if (minted && !keys.some(k => k.id === minted!.id)) minted = null
   if (revealed && !keys.some(k => k.id === revealed!.id)) revealed = null
+  if (chosen && !keys.some(k => k.id === chosen!.id)) chosen = null
 
   return (
     <main>
@@ -98,7 +101,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </form>
       </section>
 
-      <ConnectAgent rawKey={minted?.rawKey ?? null} />
+      <ConnectAgent
+        rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
+        selectedId={chosen?.id ?? minted?.id ?? null}
+        keys={keys.map(k => ({ id: k.id, label: k.label }))}
+        error={instructionsError}
+      />
 
       <EnrichmentSection />
     </main>

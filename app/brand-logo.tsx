@@ -1,6 +1,6 @@
 // Product mark, shared with the hosted Steno: a chat bubble with a pencil
 // across it — "everything that was said, written down". Same geometry as
-// 0xmythril/steno so the two editions read as one family.
+// the hosted Steno's mark so the two editions read as one family.
 //
 // This project has no design tokens, so colours come from three places:
 // the family green (literal), the page background (the `Canvas` system

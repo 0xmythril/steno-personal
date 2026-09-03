@@ -230,6 +230,12 @@ docker compose exec app npm run mint-key -- recovery
 It prints one `sp_…` key. Log in with it, mint a named key in Settings, and
 revoke `recovery`.
 
+## Contributing
+
+Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md)
+first — it lists the promises the code keeps and what the project will not
+become. Conduct is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Documentation
 
 | | |

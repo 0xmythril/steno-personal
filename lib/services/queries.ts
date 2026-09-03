@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { chats, media, mediaAnalysis, messages } from '@/lib/db/schema'
+import { chats, media, mediaAnalysis, messages, connections } from '@/lib/db/schema'
 import { searchIndex } from '@/lib/db/fts'
 import type { Channel } from '@/lib/channels/port'
 import type { IncomingMessage } from '@/lib/services/ingest'
@@ -33,9 +33,27 @@ const DEFAULT_SEARCH_LIMIT = 50
 const liveMessageCount = sql<number>`(${db.select({ count: sql<number>`count(*)` }).from(messages)
   .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt)))})`
 
+// A direct chat is named after the person on the other side. Channels do not
+// always hand us that: WhatsApp has no subject for a DM and a history sync can
+// leave the title null, and a title that equals the owner's own display name
+// is the wrong side of the conversation. So for a DM the title yields to the
+// most recent non-owner sender name whenever it is null or the owner's, and a
+// WhatsApp DM with no name at all falls back to the phone number that is its
+// id — a number beats "Untitled chat". Groups and channels keep their subject.
+const ownerDisplayName = sql`(select ${connections.displayName} from ${connections} where ${connections.id} = ${chats.connectionId})`
+const latestCounterparty = sql`(select ${messages.senderName} from ${messages}
+  where ${messages.chatId} = ${chats.id} and ${messages.fromOwner} = 0
+    and ${messages.senderName} is not null and ${messages.deletedAt} is null
+  order by ${messages.sentAt} desc limit 1)`
+const whatsappNumber = sql`case when ${chats.channel} = 'whatsapp' and ${chats.externalChatId} like '%@s.whatsapp.net'
+  then '+' || substr(${chats.externalChatId}, 1, instr(${chats.externalChatId}, '@') - 1) end`
+const displayTitle = sql<string | null>`case when ${chats.kind} = 'dm'
+  then coalesce(nullif(${chats.title}, ${ownerDisplayName}), ${latestCounterparty}, ${whatsappNumber}, ${chats.title})
+  else ${chats.title} end`
+
 const chatSelection = {
   id: chats.id, channel: chats.channel, kind: chats.kind,
-  title: chats.title, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
+  title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
 }
 
 const messageSelection = {
@@ -68,8 +86,12 @@ function decodeCursor(cursor: string): { sentAt: Date; id: string } | null {
   return { sentAt: new Date(ms), id }
 }
 
-export async function listChats(): Promise<ChatSummary[]> {
+export type ChatChannel = 'telegram' | 'whatsapp'
+export const CHAT_CHANNELS: readonly ChatChannel[] = ['telegram', 'whatsapp']
+
+export async function listChats(opts: { channel?: ChatChannel } = {}): Promise<ChatSummary[]> {
   return db.select(chatSelection).from(chats)
+    .where(opts.channel ? eq(chats.channel, opts.channel) : undefined)
     // A chat with no messages yet still belongs in the list; sort it by when
     // we learned about it rather than dropping it to the bottom forever.
     .orderBy(desc(sql`coalesce(${chats.lastMessageAt}, ${chats.createdAt})`), desc(chats.id))

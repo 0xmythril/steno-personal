@@ -13,7 +13,11 @@ const SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.mjs', '.js'])
 // working documents, and the two directories whose own content is allowed to
 // name the things banned below (a test asserting "nothing imports posthog"
 // must not be an offender itself; the docs quote package names in prose).
-const NOT_SOURCE = new Set(['node_modules', '.next', '.git', '.superpowers', 'tests', 'docs'])
+const NOT_SOURCE = new Set(['node_modules', 'tests', 'docs'])
+// Every dot-directory is tooling state, never source: .next, .git,
+// .superpowers, and .claude — whose worktrees/ holds whole extra checkouts of
+// this repo that would otherwise be swept as second importers.
+const isSource = (entry: string) => !NOT_SOURCE.has(entry) && !entry.startsWith('.')
 
 function walk(dir: string): string[] {
   if (!existsSync(dir)) return []
@@ -21,7 +25,7 @@ function walk(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry)
     if (statSync(full).isDirectory()) {
-      if (NOT_SOURCE.has(entry)) continue
+      if (!isSource(entry)) continue
       out.push(...walk(full))
     } else if (SOURCE_EXT.has(path.extname(entry))) {
       out.push(full)
@@ -35,7 +39,7 @@ function walk(dir: string): string[] {
 // the regression this file exists to catch. Every top-level directory except
 // NOT_SOURCE, plus the top-level source files themselves.
 const sourceFiles = readdirSync('.')
-  .filter(entry => !NOT_SOURCE.has(entry))
+  .filter(isSource)
   .flatMap(entry => (statSync(entry).isDirectory()
     ? walk(entry)
     : SOURCE_EXT.has(path.extname(entry)) ? [entry] : []))

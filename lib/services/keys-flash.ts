@@ -4,3 +4,5 @@
 // only export async functions.
 export const MINTED_KEY_COOKIE = 'sp_minted_key'
 export const REVEALED_KEY_COOKIE = 'sp_revealed_key'
+// The key the user chose to fill into the "Connect your agent" snippets.
+export const INSTRUCTIONS_KEY_COOKIE = 'sp_instructions_key'

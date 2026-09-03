@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not behave as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste access keys, session material, phone numbers, or chat content.
+        Logs from this project never contain those on purpose; please keep it that way.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The tag or commit, or the image tag you deployed.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it runs
+      options: [Docker at home, Railway, Bare Node, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Channel involved
+      options: [Telegram, WhatsApp, Both, Neither]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: Container or worker log lines around the problem. Redact anything personal.
+      render: text

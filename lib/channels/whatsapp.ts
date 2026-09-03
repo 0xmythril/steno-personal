@@ -65,6 +65,10 @@ export type WaConnectionUpdate = {
  */
 export type WaHistorySet = {
   chats?: Array<{ id?: string | null; name?: string | null }>
+  /** lib/Types/Contact.d.ts — saved name, push name (`notify`), business name. */
+  contacts?: Partial<WaContact>[]
+  /** lib/Types/Auth.d.ts LIDMapping — a LID paired with its phone JID. */
+  lidPnMappings?: Array<{ lid?: string; pn?: string }>
   messages?: unknown[]
   progress?: number | null
   isLatest?: boolean
@@ -73,6 +77,9 @@ export type WaHistorySet = {
 export type WaUpsert = { messages?: unknown[]; type?: string }
 /** lib/Types/GroupMetadata.d.ts, as delivered by 'groups.upsert' / 'groups.update'. */
 export type WaGroup = { id?: string | null; subject?: string | null }
+// A contact as WhatsApp describes it: `name` is the owner's saved name, `notify`
+// the push name, `verifiedName` a business's. `lid` pairs a LID with its phone JID.
+export type WaContact = { id?: string | null; lid?: string | null; name?: string | null; notify?: string | null; verifiedName?: string | null }
 
 export type WaEventMap = {
   'connection.update': WaConnectionUpdate
@@ -81,6 +88,8 @@ export type WaEventMap = {
   'messages.upsert': WaUpsert
   'groups.upsert': WaGroup[]
   'groups.update': WaGroup[]
+  'contacts.upsert': Partial<WaContact>[]
+  'contacts.update': Partial<WaContact>[]
 }
 
 export interface WaSocket {
@@ -738,6 +747,24 @@ export class BaileysWhatsAppPort implements ChannelPort {
     const rememberTitles = (groups: WaGroup[] | undefined): void => {
       for (const g of groups ?? []) if (g?.id && g.subject) titles.set(g.id, g.subject)
     }
+    // A DM is named after the contact: the saved name first, then a verified
+    // business name, then the push name. Stored under both the phone JID and
+    // the LID so a lookup by either form finds it, and the pairing itself
+    // feeds the LID→PN map so no resolver round-trip is needed for it.
+    const rememberContacts = (contacts: Partial<WaContact>[] | undefined): void => {
+      for (const c of contacts ?? []) {
+        if (!c?.id) continue
+        const name = c.name || c.verifiedName || c.notify
+        if (name) {
+          titles.set(c.id, name)
+          if (c.lid) titles.set(c.lid, name)
+        }
+        if (c.lid && c.id.endsWith('@s.whatsapp.net')) lidToPn.set(c.lid, stripDevice(c.id))
+      }
+    }
+    const rememberLidMappings = (mappings: Array<{ lid?: string; pn?: string }> | undefined): void => {
+      for (const m of mappings ?? []) if (m?.lid && m?.pn) lidToPn.set(m.lid, stripDevice(m.pn))
+    }
 
     let settleOpen: ((err?: unknown) => void) | null = null
     const ready = new Promise<void>((resolve, reject) => {
@@ -782,11 +809,17 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
       s.ev.on('groups.upsert', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
       s.ev.on('groups.update', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
+      s.ev.on('contacts.upsert', contacts => { lastEventAt = Date.now(); rememberContacts(contacts) })
+      s.ev.on('contacts.update', contacts => { lastEventAt = Date.now(); rememberContacts(contacts) })
 
-      s.ev.on('messaging-history.set', ({ chats, messages, progress }) => {
+      s.ev.on('messaging-history.set', ({ chats, contacts, messages, progress, lidPnMappings }) => {
         lastEventAt = Date.now()
         enqueue(async () => {
+          // Names before messages, so the first message of a chat already
+          // carries its title; a saved contact name outranks chats[].name.
+          rememberLidMappings(lidPnMappings)
           for (const c of chats ?? []) if (c?.id && c.name) titles.set(c.id, c.name)
+          rememberContacts(contacts)
           for (const raw of messages ?? []) await handleRaw(raw)
           // Counts and kinds only (spec invariant 6).
           log.info({ chats: (chats ?? []).length, messages: (messages ?? []).length, progress: progress ?? null }, 'whatsapp history batch')
@@ -882,7 +915,6 @@ export class BaileysWhatsAppPort implements ChannelPort {
     }
 
     const session: ChannelSession = {
-      // eslint-disable-next-line require-yield
       async *backfill(_opts: BackfillOpts, _shouldContinue?: () => boolean): AsyncGenerator<IncomingMessage> {
         // WhatsApp answers no history query. The phone PUSHES history
         // (messaging-history.set) and those messages go to onMessage exactly

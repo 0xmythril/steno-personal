@@ -39,8 +39,13 @@ describe('settings enrichment section', () => {
       expect(block, name).toBeDefined()
       expect(block.slice(0, block.indexOf('\n}'))).toMatch(/requireSession\(\)/)
     }
-    // M0's settings-structure test asserts exactly two jar.set calls in this
-    // file; the enrichment actions must not add a third.
-    expect((actions.match(/jar\.set\(/g) ?? []).length).toBe(2)
+    // The enrichment actions must not set any flash cookie of their own: the
+    // OpenRouter key is write-only from the portal's side. Checked per
+    // action body rather than by a file-wide count, which would break every
+    // time an unrelated flash (minted, revealed, instructions) is added.
+    for (const name of ['saveOpenrouterKeyAction', 'clearOpenrouterKeyAction', 'updateEnrichmentAction']) {
+      const block = actions.split(`export async function ${name}`)[1]
+      expect(block.slice(0, block.indexOf('\n}')), name).not.toMatch(/jar\.set\(/)
+    }
   })
 })
