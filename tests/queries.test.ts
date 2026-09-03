@@ -43,9 +43,14 @@ describe('listChats', () => {
     // A real counterparty title stays.
     const named = await makeChat(conn, { title: 'Dave (saved contact)' })
     await addMessage(named, { senderName: 'dave push name' })
-    // Only the owner has ever spoken: nothing better than the stored title.
-    const oneSided = await makeChat(conn, { title: null })
+    // Only the owner has ever spoken and there is no name anywhere: a WhatsApp
+    // DM still has the phone number that is its id.
+    const oneSided = await makeChat(conn, { title: null, externalChatId: '15551230000@s.whatsapp.net' })
     await addMessage(oneSided, { senderName: 'Me Myself', fromOwner: true })
+    // A Telegram DM's id is an opaque user id, so it stays untitled.
+    const tgConn = await makeConnection({ channel: 'telegram' })
+    const tgOneSided = await makeChat(tgConn, { title: null, externalChatId: '123456789' })
+    await addMessage(tgOneSided, { senderName: null, fromOwner: true })
     // Groups keep a null subject rather than borrowing a member's name.
     const group = await makeChat(conn, { kind: 'group', title: null })
     await addMessage(group, { senderName: 'Erin' })
@@ -54,7 +59,8 @@ describe('listChats', () => {
     expect(byId.get(untitled.id)).toBe('Bob')
     expect(byId.get(mine.id)).toBe('Carol')
     expect(byId.get(named.id)).toBe('Dave (saved contact)')
-    expect(byId.get(oneSided.id)).toBeNull()
+    expect(byId.get(oneSided.id)).toBe('+15551230000')
+    expect(byId.get(tgOneSided.id)).toBeNull()
     expect(byId.get(group.id)).toBeNull()
     // The transcript header agrees with the list.
     expect((await getMessages(untitled.id))?.chat.title).toBe('Bob')

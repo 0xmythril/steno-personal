@@ -37,15 +37,18 @@ const liveMessageCount = sql<number>`(${db.select({ count: sql<number>`count(*)`
 // always hand us that: WhatsApp has no subject for a DM and a history sync can
 // leave the title null, and a title that equals the owner's own display name
 // is the wrong side of the conversation. So for a DM the title yields to the
-// most recent non-owner sender name whenever it is null or the owner's; groups
-// and channels keep their subject as is.
+// most recent non-owner sender name whenever it is null or the owner's, and a
+// WhatsApp DM with no name at all falls back to the phone number that is its
+// id — a number beats "Untitled chat". Groups and channels keep their subject.
 const ownerDisplayName = sql`(select ${connections.displayName} from ${connections} where ${connections.id} = ${chats.connectionId})`
 const latestCounterparty = sql`(select ${messages.senderName} from ${messages}
   where ${messages.chatId} = ${chats.id} and ${messages.fromOwner} = 0
     and ${messages.senderName} is not null and ${messages.deletedAt} is null
   order by ${messages.sentAt} desc limit 1)`
+const whatsappNumber = sql`case when ${chats.channel} = 'whatsapp' and ${chats.externalChatId} like '%@s.whatsapp.net'
+  then '+' || substr(${chats.externalChatId}, 1, instr(${chats.externalChatId}, '@') - 1) end`
 const displayTitle = sql<string | null>`case when ${chats.kind} = 'dm'
-  then coalesce(nullif(${chats.title}, ${ownerDisplayName}), ${latestCounterparty}, ${chats.title})
+  then coalesce(nullif(${chats.title}, ${ownerDisplayName}), ${latestCounterparty}, ${whatsappNumber}, ${chats.title})
   else ${chats.title} end`
 
 const chatSelection = {

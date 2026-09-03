@@ -113,6 +113,36 @@ describe('live message flow', () => {
     await c.close()
   })
 
+  it('names a DM after the contact, saved name first, before the push name', async () => {
+    const c = await connect('msg-contact-name')
+    c.socket.emit('contacts.upsert', [{ id: DM_PN, lid: DM_LID, name: 'Bo Saved', notify: 'Bo' }])
+    c.socket.emit('messages.upsert', {
+      // Arrives on the LID; the contact's own pairing resolves it without the resolver.
+      messages: [{ key: { remoteJid: DM_LID, id: 'D1', fromMe: false }, messageTimestamp: 1_700_000_000, pushName: 'Bo', message: { conversation: 'hi' } }],
+      type: 'notify',
+    })
+    await flush(20)
+    expect(c.messages[0]).toMatchObject({ externalChatId: DM_PN, chatKind: 'dm', chatTitle: 'Bo Saved' })
+    await c.close()
+  })
+
+  it('a history batch names its DMs from contacts[] before replaying the messages', async () => {
+    const c = await connect('msg-history-contacts')
+    c.socket.emit('messaging-history.set', {
+      chats: [],
+      contacts: [{ id: DM_PN, notify: 'Bo Push' }],
+      lidPnMappings: [{ lid: DM_LID, pn: DM_PN }],
+      messages: [
+        // Owner-sent, no push name for the counterparty anywhere in the message.
+        { key: { remoteJid: DM_LID, id: 'H1', fromMe: true }, messageTimestamp: 1_700_000_000, message: { conversation: 'sent by me' } },
+      ],
+      progress: 50,
+    })
+    await flush(20)
+    expect(c.messages.map(m => [m.externalChatId, m.chatTitle])).toEqual([[DM_PN, 'Bo Push']])
+    await c.close()
+  })
+
   it('leaves an unresolvable LID alone', async () => {
     const c = await connect('msg-lid-unresolved')
     c.socket.emit('messages.upsert', {
