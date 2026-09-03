@@ -15,4 +15,16 @@ describe('the transcript page', () => {
     expect(src).toMatch(/cursor=/)
     expect(src).toMatch(/<Link/)
   })
+
+  it('lets the reader jump to the newest messages and back to the top, with links', () => {
+    // Anchors, not scripts: a #bottom target after the transcript and a #top
+    // target on the heading, both reachable from the pager at either end.
+    const src = readFileSync('app/chats/[id]/page.tsx', 'utf8')
+    expect(src).toMatch(/<h1 id="top"/)
+    expect(src).toMatch(/id="bottom"/)
+    expect(src).toMatch(/href=\{latestHref\}/)
+    expect(src).toMatch(/href="#top"/)
+    // From an older page "latest" is a navigation to the first page's foot.
+    expect(src).toMatch(/cursor \? `\/chats\/\$\{page\.chat\.id\}#bottom` : '#bottom'/)
+  })
 })

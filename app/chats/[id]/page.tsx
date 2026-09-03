@@ -27,19 +27,29 @@ export default async function ChatPage({ params, searchParams }: {
 
   // The query returns newest-first; a conversation reads oldest-first.
   const chronological = [...page.messages].reverse()
+  const olderHref = page.nextCursor ? `/chats/${page.chat.id}?cursor=${encodeURIComponent(page.nextCursor)}` : null
+  // "Latest" is the first page, landed at its foot. From the first page
+  // itself that is just a scroll; from an older page it is a navigation.
+  const latestHref = cursor ? `/chats/${page.chat.id}#bottom` : '#bottom'
+
+  // Older / Latest at both ends of the page, Top only at the foot: a
+  // 100-message page is long enough that the reader needs both directions
+  // without scrolling to find them. Links only — no control here may send.
+  const pager = (
+    <p className="pager">
+      {olderHref && <><Link href={olderHref}>&uarr; Older messages</Link>{' · '}</>}
+      <Link href={latestHref}>Latest messages &darr;</Link>
+    </p>
+  )
 
   return (
     <main>
       <Nav label={session.label} />
       <p className="muted"><Link href="/">&larr; All chats</Link></p>
-      <h1>{page.chat.title ?? 'Untitled chat'}</h1>
+      <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
       <p className="muted">Read-only archive &middot; {page.chat.messageCount} messages</p>
 
-      {page.nextCursor && (
-        <p>
-          <Link href={`/chats/${page.chat.id}?cursor=${encodeURIComponent(page.nextCursor)}`}>Older messages</Link>
-        </p>
-      )}
+      {pager}
 
       {chronological.length === 0 ? (
         <p className="muted">No messages archived in this chat yet.</p>
@@ -67,6 +77,12 @@ export default async function ChatPage({ params, searchParams }: {
           ))}
         </ul>
       )}
+
+      <p className="pager" id="bottom">
+        {olderHref && <><Link href={olderHref}>&uarr; Older messages</Link>{' · '}</>}
+        {cursor && <><Link href={`/chats/${page.chat.id}#bottom`}>Latest messages &darr;</Link>{' · '}</>}
+        <Link href="#top">Back to top &uarr;</Link>
+      </p>
     </main>
   )
 }
