@@ -4,7 +4,7 @@ Your own Telegram and WhatsApp chats, archived read-only into one SQLite
 file, readable by your agents over MCP. Self-hosted: one container, one
 volume, no accounts.
 
-**Status:** M1 (Telegram). WhatsApp arrives in M2, agent access over MCP in M3.
+**Status:** M2 (Telegram and WhatsApp live). Agent access over MCP in M3.
 
 ## Quick start
 
