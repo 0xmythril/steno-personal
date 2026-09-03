@@ -70,9 +70,26 @@ export async function applyEdit(connectionId: string, channel: Channel, m: Incom
     .set({ text: m.text, editedAt: new Date() })
     .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId)))
     .returning({ id: messages.id })
-  // An edit for a message we never saw is still the message arriving; storing
-  // it beats dropping it, and the next backfill would have added it anyway.
-  if (updated.length === 0) await recordMessage(connectionId, channel, m)
+  if (updated.length > 0) return
+
+  // No row to edit. What to do about that is a per-channel judgement, because
+  // the two channels put different things in an edit DTO.
+  //
+  // Telegram's edit update is the whole message — sender, timestamp, media and
+  // all — so storing it beats dropping it, and the next backfill would have
+  // added the same row anyway.
+  //
+  // WhatsApp's is not: the port has only the protocol envelope, so the DTO
+  // carries no sender, the EDIT's timestamp, media: null, and a `raw` that is a
+  // protocolMessage. Inserted under the original's id it would win
+  // first-writer-wins — and then silently DROP the real message when the
+  // history sync delivers it minutes later, leaving an unusable row in its
+  // place. History streams for minutes while live edits arrive in parallel, so
+  // this is an ordinary race on WhatsApp, not a corner. Drop the edit: the
+  // message itself is still coming, and an edit whose text is already in the
+  // pushed history changes nothing.
+  if (channel === 'whatsapp') return
+  await recordMessage(connectionId, channel, m)
 }
 
 export async function applyDelete(connectionId: string, ref: { externalChatId?: string; externalMessageId: string }): Promise<void> {
