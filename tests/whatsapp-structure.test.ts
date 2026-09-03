@@ -5,11 +5,13 @@ import path from 'node:path'
 const ROOT = process.cwd()
 const PORT_FILE = path.join(ROOT, 'lib/channels/whatsapp.ts')
 const SELF = path.join(ROOT, 'tests/whatsapp-structure.test.ts')
-const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'data', 'coverage', 'dist', 'drizzle', 'docs'])
+const SKIP_DIRS = new Set(['node_modules', 'data', 'coverage', 'dist', 'drizzle', 'docs'])
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (SKIP_DIRS.has(entry)) continue
+    // Dot-directories are tooling state (.next, .git, .claude/worktrees with
+    // whole extra checkouts of this repo), never source.
+    if (SKIP_DIRS.has(entry) || entry.startsWith('.')) continue
     const full = path.join(dir, entry)
     if (statSync(full).isDirectory()) walk(full, out)
     else if (/\.(ts|tsx|mts|mjs|js)$/.test(entry)) out.push(full)
