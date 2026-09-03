@@ -96,10 +96,16 @@ without disturbing the others.
 The tools are `list_chats`, `get_messages`, `search_messages`, and `whoami`.
 They only read. There is no tool that sends anything.
 
+**Shortest path:** open **Settings**, create a key, and press **Copy
+instructions** under "Let the agent set itself up". Paste that block into any
+agent that can edit its own MCP config; it names the server `steno-personal`,
+carries the URL and the key, and tells the agent to verify with `whoami`. The
+manual versions follow.
+
 **Claude Code**
 
 ```bash
-claude mcp add --transport http steno https://<your-host>/mcp \
+claude mcp add --transport http steno-personal https://<your-host>/mcp \
   --header "Authorization: Bearer sp_your_key_here"
 ```
 
@@ -110,7 +116,7 @@ the app:
 ```json
 {
   "mcpServers": {
-    "steno": {
+    "steno-personal": {
       "command": "npx",
       "args": [
         "-y", "mcp-remote",
@@ -128,7 +134,7 @@ the app:
 ```json
 {
   "mcpServers": {
-    "steno": {
+    "steno-personal": {
       "url": "https://<your-host>/mcp",
       "headers": { "Authorization": "Bearer sp_your_key_here" }
     }

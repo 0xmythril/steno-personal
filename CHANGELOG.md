@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The MCP server is registered as `steno-personal` (was `steno`) in every snippet.
+- Settings gains "Let the agent set itself up": a copy-paste block for any agent that can edit its own MCP config.
+- The WhatsApp pending screen no longer shows Telegram-only copy.
+
 ## [0.1.0] — 2026-09-03
 
 First public release. Everything below is new.
