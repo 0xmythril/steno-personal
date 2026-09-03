@@ -234,7 +234,17 @@ export class SessionManager {
     if (this.backfillsInFlight.has(connId)) return
     if (Date.now() - running.lastBackfillAttempt < BACKFILL_RETRY_BACKOFF_MS) return
     running.lastBackfillAttempt = Date.now()
-    const p = this.runBackfill(connId, running).finally(() => this.backfillsInFlight.delete(connId))
+    const p = this.runBackfill(connId, running)
+      .finally(() => this.backfillsInFlight.delete(connId))
+      // Terminal, for the same reason as the login chain above: nothing
+      // downstream awaits this promise on the happy path (tick() deliberately
+      // does not, and the worker loop never calls whenIdle()), so a rejection
+      // from runBackfill's own error handling — handleSessionError awaiting a
+      // revokeConnection write that throws, say — would escape as an unhandled
+      // rejection and take the worker process down. It also keeps stopAll()'s
+      // Promise.all from rejecting past the close() loop and leaking every
+      // open session on the way out.
+      .catch(e => log.error({ err: errorShape(e), connectionId: connId }, 'backfill driver failed'))
     this.backfillsInFlight.set(connId, p)
   }
 

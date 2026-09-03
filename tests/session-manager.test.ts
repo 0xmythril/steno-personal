@@ -6,6 +6,7 @@ import { encryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
 import { revokeConnection, submitLoginPassword } from '@/lib/services/connections'
+import * as connectionsModule from '@/lib/services/connections'
 import * as loginModule from '@/lib/services/login'
 import { FakePort } from '@/lib/channels/fake-port'
 import { ChannelError, type Channel, type ChannelPort, type IncomingMessage } from '@/lib/channels/port'
@@ -144,6 +145,36 @@ describe('session manager', () => {
     // row is exactly where the login left it — proof this ran the real path,
     // not a no-op.
     expect((await rowOf(conn.id)).status).toBe('pending')
+  })
+
+  it('a backfill driver rejection never escapes as an unhandled rejection', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    // The backfill dies the way a phone-side revoke kills it, so runBackfill
+    // routes into handleSessionError… and the revoke write it makes there is
+    // forced to fail too. Nothing downstream awaits the backfill promise on
+    // the happy path, so the only thing between that rejection and the
+    // process is the terminal .catch() appended in maybeStartBackfill.
+    port.scriptBackfillError(new ChannelError('auth invalidated', 'auth_invalidated'))
+    const revokeSpy = vi.spyOn(connectionsModule, 'revokeConnection').mockRejectedValueOnce(new Error('db write failed'))
+    let unhandled: unknown = null
+    const onUnhandled = (e: unknown) => { unhandled = e }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const mgr = new SessionManager(portsOf(port))
+      await mgr.tick()
+      await mgr.whenIdle()
+      await new Promise(r => setTimeout(r, 20)) // let a same-tick rejection surface
+      await mgr.stopAll()
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(revokeSpy).toHaveBeenCalled()
+    revokeSpy.mockRestore() // after the assertion: mockRestore also clears the call log
+    // The revoke write was mocked to reject, so the row is untouched — proof
+    // this ran the real path rather than a no-op.
+    expect(unhandled).toBeNull()
+    expect((await rowOf(conn.id)).status).toBe('active')
   })
 
   it('leaves a pending login alone when no port is registered for its channel', async () => {
