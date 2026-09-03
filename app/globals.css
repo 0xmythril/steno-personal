@@ -11,6 +11,8 @@ form.inline { display: inline; }
 table { border-collapse: collapse; width: 100%; }
 td, th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
 ul.transcript { list-style: none; padding: 0; }
+.pager { margin: 1rem 0; }
+html { scroll-behavior: smooth; }
 li.date-sep { margin: 1.5rem 0 0.5rem; font-size: 0.85em; opacity: 0.6; }
 li.msg-run { margin: 0.75rem 0; }
 p.msg-meta, .msg-body { margin: 0.1rem 0; }
