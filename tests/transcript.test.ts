@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { formatDateHeading, formatTime, formatRelativeTime } from '@/lib/format'
-import { groupRuns, groupByDate } from '@/lib/transcript'
+import { linkify, groupRuns, groupByDate } from '@/lib/transcript'
 import type { MessageView } from '@/lib/services/queries'
 
 const msg = (over: Partial<MessageView> & { id: string }): MessageView => ({
@@ -116,5 +116,35 @@ describe('transcript grouping', () => {
     ], 'UTC')
     expect(groups.map(g => g.messages.map(m => m.externalMessageId))).toEqual([['1', '2'], ['3']])
     expect(groups[0].dateLabel).toMatch(/^Sat,? 1 Aug 2026$/)
+  })
+})
+
+describe('linkify', () => {
+  it('turns http(s) URLs and www. hosts into links and leaves everything else as text', () => {
+    expect(linkify('see https://example.org/a?b=1 and www.steno.chat now')).toEqual([
+      { kind: 'text', value: 'see ' },
+      { kind: 'link', value: 'https://example.org/a?b=1', href: 'https://example.org/a?b=1' },
+      { kind: 'text', value: ' and ' },
+      { kind: 'link', value: 'www.steno.chat', href: 'https://www.steno.chat' },
+      { kind: 'text', value: ' now' },
+    ])
+  })
+
+  it('keeps trailing punctuation and an unbalanced paren out of the link', () => {
+    expect(linkify('(docs: https://x.y/a).')).toEqual([
+      { kind: 'text', value: '(docs: ' },
+      { kind: 'link', value: 'https://x.y/a', href: 'https://x.y/a' },
+      { kind: 'text', value: ').' },
+    ])
+    expect(linkify('https://en.wikipedia.org/wiki/A_(b)')).toEqual([
+      { kind: 'link', value: 'https://en.wikipedia.org/wiki/A_(b)', href: 'https://en.wikipedia.org/wiki/A_(b)' },
+    ])
+  })
+
+  it('never links a non-http scheme, because the text is untrusted', () => {
+    expect(linkify('javascript:alert(1) data:text/html,x mailto:a@b.c')).toEqual([
+      { kind: 'text', value: 'javascript:alert(1) data:text/html,x mailto:a@b.c' },
+    ])
+    expect(linkify('')).toEqual([])
   })
 })

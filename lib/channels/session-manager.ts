@@ -42,6 +42,12 @@ const PING_EVERY_MS = 60_000
 // is time-critical: a person linked from a contact saved an hour ago is still
 // linked correctly an hour later.
 const CONTACTS_SYNC_MS = 6 * 3_600_000
+// WhatsApp pushes its contact list (and everyone's push names) over the first
+// minutes after a session opens, well after the post-backfill sync has run.
+// For the first hour a session re-reads every five minutes so those names
+// reach the cache while the reader is still looking, then settles to six hours.
+const CONTACTS_WARMUP_WINDOW_MS = 3_600_000
+const CONTACTS_WARMUP_MS = 5 * 60_000
 // What a FAILED read waits instead. Six hours is the cadence for an address
 // book that is already cached; a read that never landed has nothing cached at
 // all, and the People page stays full of bare ids until one does. Ten minutes
@@ -94,6 +100,11 @@ type Running = {
   // re-logging — once a minute. 0 means never synced, but the post-backfill
   // sync below always gets there first.
   lastContactsSyncAt: number
+  // When the next read is due: five minutes on during the warm-up hour, six
+  // hours after that, ten minutes after a failure. A tick that arrives late
+  // fires the overdue read then and there.
+  nextContactsSyncAt: number
+  openedAt: number            // for the contact-sync warm-up window
   backfillSinceDays: number   // fixed at open time; retries reuse it
   // Consecutive 'other' failures of the THROTTLED (backfilled-branch, once a
   // minute) liveness probe only. Reset by any successful ping on that branch;
@@ -109,7 +120,11 @@ type Running = {
 // so the single-flight guard and the "log once, not once a tick" property both
 // survive.
 function retrySoon(running: Running): void {
-  running.lastContactsSyncAt = Date.now() - (CONTACTS_SYNC_MS - CONTACTS_RETRY_MS)
+  running.nextContactsSyncAt = Date.now() + CONTACTS_RETRY_MS
+}
+
+function contactsInterval(running: Running): number {
+  return Date.now() - running.openedAt < CONTACTS_WARMUP_WINDOW_MS ? CONTACTS_WARMUP_MS : CONTACTS_SYNC_MS
 }
 
 // A session whose ping keeps failing with 'other' is not dead (that would be
@@ -375,7 +390,7 @@ export class SessionManager {
           // stopAll can close — never an untracked, leaked session.
           const running: Running = {
             channel: conn.channel, session, backfilled: false, stopped: false,
-            lastBackfillAttempt: 0, lastPingAt: 0, lastContactsSyncAt: 0,
+            lastBackfillAttempt: 0, lastPingAt: 0, lastContactsSyncAt: 0, nextContactsSyncAt: 0, openedAt: Date.now(),
             backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
             consecutiveOther: 0,
           }
@@ -492,7 +507,7 @@ export class SessionManager {
   // so a caller inside the tick loop can drop the promise safely.
   private maybeSyncContacts(connId: string, running: Running): void {
     if (running.stopped) return
-    if (Date.now() - running.lastContactsSyncAt < CONTACTS_SYNC_MS) return
+    if (Date.now() < running.nextContactsSyncAt) return
     void this.syncContactsNow(connId, running)
   }
 
@@ -513,6 +528,7 @@ export class SessionManager {
     const inFlight = this.contactSyncsInFlight.get(connId)
     if (inFlight) return inFlight
     running.lastContactsSyncAt = Date.now()
+    running.nextContactsSyncAt = Date.now() + contactsInterval(running)
     const p = this.runContactSync(connId, running)
       .finally(() => this.contactSyncsInFlight.delete(connId))
       // Terminal, as on the login and backfill chains: runContactSync's own
