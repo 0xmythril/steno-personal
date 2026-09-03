@@ -5,7 +5,7 @@ import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { WaDeps } from '@/lib/channels/whatsapp'
 import { ChannelError } from '@/lib/channels/port'
 import type { LoginDriver } from '@/lib/channels/port'
-import { fakeWaDeps, flush, testAuthRoot } from './helpers/fake-wa-socket'
+import { fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
 
 function recordingDriver() {
   const qrs: string[] = []
@@ -27,7 +27,7 @@ describe('BaileysWhatsAppPort.login', () => {
     const { driver, qrs, calls } = recordingDriver()
 
     const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-1' })
-    await flush()
+    await waitForSocket(h)
     h.last().emitQr('qr-one')
     h.last().emitQr('qr-two')
     await flush()
@@ -55,9 +55,9 @@ describe('BaileysWhatsAppPort.login', () => {
     const { driver } = recordingDriver()
 
     const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-2' })
-    await flush()
+    await waitForSocket(h)
     h.sockets[0].emitClose(515) // DisconnectReason.restartRequired
-    await flush()
+    await waitForSocket(h, 2)
     expect(h.sockets).toHaveLength(2)
     h.sockets[1].emitOpen()
 
@@ -70,9 +70,9 @@ describe('BaileysWhatsAppPort.login', () => {
     const { driver } = recordingDriver()
 
     const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-3' })
-    await flush()
+    await waitForSocket(h)
     h.sockets[0].emitClose(515)
-    await flush()
+    await waitForSocket(h, 2)
     h.sockets[1].emitClose(515)
 
     await expect(pending).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
@@ -85,7 +85,7 @@ describe('BaileysWhatsAppPort.login', () => {
     const { driver } = recordingDriver()
 
     const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-4' })
-    await flush()
+    await waitForSocket(h)
     h.sockets[0].emitClose(401) // DisconnectReason.loggedOut
 
     await expect(pending).rejects.toBeInstanceOf(ChannelError)
@@ -102,6 +102,7 @@ describe('BaileysWhatsAppPort.login', () => {
     await expect(port.login(driver, { timeoutMs: 20, connectionId: 'conn-5' }))
       .rejects.toMatchObject({ kind: 'timed_out' })
     // A socket the timeout orphaned is closed, not left open.
+    await waitForSocket(h)
     await flush()
     expect(h.last().endCalls).toBe(1)
   })
@@ -128,7 +129,7 @@ describe('BaileysWhatsAppPort.login', () => {
     const { driver } = recordingDriver()
 
     const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-7' })
-    await flush()
+    await waitForSocket(h)
     expect(h.saveCredsCalls()).toBe(0)
 
     // pair-success emits creds.update; those keys are the whole session.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { IncomingMessage } from '@/lib/services/ingest'
-import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot } from './helpers/fake-wa-socket'
+import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
 
 const GROUP = '12345-67890@g.us'
 const DM_LID = '9988776655@lid'
@@ -22,7 +22,7 @@ async function connect(name: string): Promise<Collected> {
     openTimeoutMs: 500, reconnectMinMs: 10_000, reconnectMaxMs: 20_000, staleMs: 60_000,
   })
   const pending = port.open('wa-c1', { connectionId: 'c1' })
-  await flush()
+  await waitForSocket(h)
   h.sockets[0].emitOpen()
   const session = await pending
   const messages: IncomingMessage[] = []
@@ -164,7 +164,7 @@ describe('history flow', () => {
     const h = fakeWaDeps()
     const port = new BaileysWhatsAppPort({ authRoot: testAuthRoot('hist-buffer'), deps: h.deps, openTimeoutMs: 500, reconnectMinMs: 10_000 })
     const pending = port.open('wa-c1', { connectionId: 'c1' })
-    await flush()
+    await waitForSocket(h)
     h.sockets[0].emitOpen()
     const session = await pending
 

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { IncomingMessage } from '@/lib/channels/port'
-import { fakeWaDeps, flush, testAuthRoot, type FakeWaHarness } from './helpers/fake-wa-socket'
+import { fakeWaDeps, flush, testAuthRoot, waitForSocket, type FakeWaHarness } from './helpers/fake-wa-socket'
 
 const FAST = { openTimeoutMs: 500, reconnectMinMs: 20, reconnectMaxMs: 80, staleMs: 60_000 }
 
@@ -25,7 +25,7 @@ async function opened(authRoot: string, over: Partial<typeof FAST> = {}) {
   const h = fakeWaDeps()
   const port = new BaileysWhatsAppPort({ authRoot, deps: h.deps, ...FAST, ...over })
   const pending = port.open('wa-c1', { connectionId: 'c1' })
-  await flush()
+  await waitForSocket(h)
   h.sockets[0].emitOpen()
   const session = await pending
   return { h, port, session }
@@ -133,7 +133,7 @@ describe('BaileysWhatsAppPort.open', () => {
     const h = fakeWaDeps()
     const port = new BaileysWhatsAppPort({ authRoot: testAuthRoot('open-401'), deps: h.deps, ...FAST })
     const pending = port.open('wa-c1', { connectionId: 'c1' })
-    await flush()
+    await waitForSocket(h)
     h.sockets[0].emitClose(401)
     await expect(pending).rejects.toMatchObject({ name: 'ChannelError', kind: 'auth_invalidated' })
   })
@@ -145,7 +145,7 @@ describe('BaileysWhatsAppPort.open', () => {
       const h = fakeWaDeps()
       const port = new BaileysWhatsAppPort({ authRoot: testAuthRoot(`open-${code}`), deps: h.deps, ...FAST })
       const pending = port.open('wa-c1', { connectionId: 'c1' })
-      await flush()
+      await waitForSocket(h)
       h.sockets[0].emitClose(code)
       await expect(pending).rejects.toMatchObject({ name: 'ChannelError', kind: 'auth_invalidated' })
     })

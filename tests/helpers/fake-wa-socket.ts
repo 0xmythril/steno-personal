@@ -9,6 +9,19 @@ export function flush(ms = 10): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+// Poll instead of sleeping a fixed duration: `flush()` only guesses how long
+// mkdir + the makeSocket chain takes, and that guess can lose under load
+// (see .superpowers/sdd/2026-09-03-m2-whatsapp/flakiness.md). Every call site
+// that immediately indexes h.sockets[0]/h.last() must wait on this instead.
+export async function waitForSocket(h: FakeWaHarness, n = 1): Promise<void> {
+  for (let i = 0; i < 500 && h.sockets.length < n; i++) {
+    await flush(1)
+  }
+  if (h.sockets.length < n) {
+    throw new Error(`waitForSocket: expected ${n} socket(s), got ${h.sockets.length} after 500ms`)
+  }
+}
+
 export class FakeWaSocket implements WaSocket {
   readonly opts: WaSocketOpts
   user: { id?: string; lid?: string; name?: string } | undefined

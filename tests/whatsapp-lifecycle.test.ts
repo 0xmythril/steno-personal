@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { ChannelSession } from '@/lib/channels/port'
-import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot } from './helpers/fake-wa-socket'
+import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
 
 async function connect(name: string, over: { staleMs?: number; reconnectMinMs?: number; download?: (m: unknown) => Promise<Buffer> } = {}) {
   const h = fakeWaDeps({ download: over.download })
@@ -13,7 +13,7 @@ async function connect(name: string, over: { staleMs?: number; reconnectMinMs?: 
     reconnectMinMs: over.reconnectMinMs ?? 10_000, reconnectMaxMs: 20_000, staleMs: over.staleMs ?? 60_000,
   })
   const pending = port.open('wa-c1', { connectionId: 'c1' })
-  await flush()
+  await waitForSocket(h)
   h.sockets[0].emitOpen()
   const session: ChannelSession = await pending
   return { h, authRoot, session, socket: (): FakeWaSocket => h.last() }
