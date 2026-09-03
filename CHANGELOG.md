@@ -7,7 +7,13 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Setup on first visit.** A fresh instance lands on `/setup`: pair Telegram or WhatsApp, then receive your first access key once on `/welcome`, with a Copy button and a Continue that waits until you have copied it or ticked that you wrote it down.
+- **Lost-key recovery.** `/login` → "Pair your phone again": pairing the same account this archive reads (now or in the past) proves it is yours and mints a new key; a different account is told it needs a key or the host procedure. The pairing device is unlinked again immediately, and finished attempts appear under Past connections.
+- `STENO_MINT_KEY` and `STENO_RESET`: one-shot boot operations for the host operator — mint a key and print it once, or empty `DATA_DIR` — remembered in `$DATA_DIR/boot-ops.json` so a variable left set does nothing on the next restart. Documented under "Lost access" in docs/self-hosting.md.
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
+
+### Removed
+- The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.

@@ -92,10 +92,11 @@ active". Never a phone number, never a group name, never a contact's name,
 never message text, never a search query. You can turn the log level up to
 `trace` for debugging without your chats appearing in it.
 
-The single deliberate exception is the first-boot banner, which prints your
-bootstrap access key once because there would otherwise be no way in. The README
-tells you to revoke that key as soon as you have minted your own. Beyond that
-one line, no secret ever appears in a log, an API response, or a status page —
+The single deliberate exception is a key you ask for yourself by setting
+`STENO_MINT_KEY`, printed once because with every key lost and no phone to pair
+there would otherwise be no way in; the self-hosting notes tell you to revoke
+it as soon as you have minted your own. Beyond that one requested line, no
+secret ever appears in a log, an API response, or a status page —
 your session strings and saved keys are stored encrypted and only decrypted
 inside the process that needs them.
 

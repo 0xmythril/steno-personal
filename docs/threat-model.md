@@ -35,16 +35,30 @@ token, so a leak is a full read.
 
 **Controls.** Keys are 32 random bytes, base64url, prefixed `sp_`. They are
 shown once at mint time through a short-lived httpOnly cookie, never in a URL
-and never in a log. They are labelled and revoked individually or all at once,
-and revoking one immediately deletes the browser sessions created with it.
-Each key's last-used time is on the Settings page, so a key being used from
-somewhere unexpected is visible if you look. Browser sessions expire after 30
-idle days.
+and never in a log — the first key included, which is handed out on `/welcome`
+after a channel is paired rather than printed at boot. The only key that ever
+reaches a log is one the host operator asks for with `STENO_MINT_KEY`. Keys
+are labelled and revoked individually or all at once, and revoking one
+immediately deletes the browser sessions created with it. Each key's last-used
+time is on the Settings page, so a key being used from somewhere unexpected is
+visible if you look. Browser sessions expire after 30 idle days.
+
+**Lost keys.** A locked-out owner recovers by pairing the same account again
+from `/login`. The recovery pairing is a second device on a row that never
+becomes a connection: the worker reads the account id the channel reports,
+compares it with the archive's connections (live or past), mints a key on a
+match, and logs the device out again either way. The session string is never
+stored and the paired account is never recorded. A stranger who pairs their own
+phone is told it does not match, is unlinked, learns nothing about the archive,
+and leaves a "Recovery attempt" row under Past connections for the owner to
+see. Anyone can start such an attempt — it costs the worker one QR session per
+channel at a time and nothing else.
 
 **Residual.** Detection is manual — nobody is watching the last-used column for
 you, and there is no alerting. A key stolen from an agent's configuration file
 works until you notice. Mint one key per agent and per device so revocation is
-surgical, and revoke the printed bootstrap key as soon as you have your own.
+surgical, and revoke any key you had printed to a log once you have replaced
+it.
 
 ## 2. A leaked volume or backup
 
@@ -84,6 +98,21 @@ a client-supplied `X-Forwarded-Proto`; see
 [self-hosting.md](self-hosting.md#behind-a-reverse-proxy). `POST /api/login` is
 the scriptable twin of the login form and is bounded by the same key entropy;
 it adds no new exposure.
+
+**The fresh-instance window.** Until a key exists, `/setup` is open: whoever
+reaches a brand-new deploy first can pair their own account and become its
+owner. This is the same exposure the log-printed key had (a public deploy's log
+was readable by whoever could read the dashboard) moved to the URL, and it
+closes for good the moment the first key is minted. It cannot be used against
+an existing archive — a fresh instance has none — and the owner of a claimed
+instance simply resets it from the host. Claim a public deploy as soon as it is
+green.
+
+**No reset from the network.** Wiping an instance and minting an emergency key
+are boot-time operations driven by `STENO_RESET` and `STENO_MINT_KEY`, which
+only someone who can set the process's environment — the host operator — can
+do. No route, page, or server action can empty the database, so adversary 3
+cannot destroy the archive either.
 
 **Residual.** No rate limiting, no IP allow-list, no second factor. The strongest
 mitigation is not deploying publicly at all: run it at home and reach it over a
