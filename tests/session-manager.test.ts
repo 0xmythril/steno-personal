@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { env } from '@/lib/env'
 import { log } from '@/lib/log'
-import { connections, messages } from '@/lib/db/schema'
+import { channelContacts, connections, messages } from '@/lib/db/schema'
 import { encryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
@@ -540,6 +540,192 @@ describe('session manager', () => {
     }
     expect(port.pingCount).toBe(2)
     expect((await rowOf(conn.id)).lastSyncAt).not.toEqual(firstSync)
+    await mgr.stopAll()
+  })
+
+  // Contact sync. The address book is the raw material the People page turns
+  // into "this Telegram id and this WhatsApp number are one person", and the
+  // only place it comes from is the channel's own contact list.
+  it("caches the channel's address book once the backfill lands", async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [
+      { externalId: '5', displayName: 'Bob', phone: '+44 7700 900123' },
+      { externalId: '9', displayName: null, phone: null },
+    ]
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+
+    const rows = await db.select().from(channelContacts).where(eq(channelContacts.connectionId, conn.id))
+    expect(rows.map(r => [r.channel, r.externalId, r.displayName, r.phone]).sort()).toEqual([
+      // The service normalises the phone on the way in; the manager hands it
+      // through exactly as the channel reported it.
+      ['telegram', '5', 'Bob', '+447700900123'],
+      ['telegram', '9', null, null],
+    ])
+    expect(port.listContactsCount).toBe(1)
+    await mgr.stopAll()
+  })
+
+  // A contact list is a convenience over an archive that is already correct
+  // without it, so the failure budget here is deliberately the gentlest in
+  // this file: log it, keep the session, try again next window.
+  it('an address book that will not load is logged and never stops the session', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [{ externalId: '5', displayName: 'Bob', phone: '+447700900123' }]
+    port.scriptContactsError(new Error('CONTACTS_UNAVAILABLE'))
+    const mgr = new SessionManager(portsOf(port))
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle()
+
+      const call = warn.mock.calls.find(c => c[1] === 'contact sync failed')
+      expect(call).toBeDefined()
+      const bag = call![0] as { err: { message: string }; connectionId: string }
+      expect(bag.err.message).toMatch(/CONTACTS_UNAVAILABLE/)
+      // The error and the id, nothing else: this is the one code path that
+      // handles every name and phone number the instance holds.
+      expect(Object.keys(bag).sort()).toEqual(['connectionId', 'err'])
+      expect(await db.select().from(channelContacts)).toHaveLength(0)
+
+      // Same session, still active: not closed, not recycled, not revoked, and
+      // the backfill it followed still counted.
+      expect(port.sessionClosed).toBe(false)
+      expect(warn.mock.calls.find(c => c[1] === 'session recycled')).toBeUndefined()
+      const row = await rowOf(conn.id)
+      expect(row.status).toBe('active')
+      expect(row.revokedAt).toBeNull()
+      expect(row.lastError).toBeNull()
+      expect(row.lastSyncAt).toBeInstanceOf(Date)
+    } finally {
+      warn.mockRestore()
+    }
+    // And it keeps archiving, which is the whole point of not stopping.
+    port.emitMessage(msg({ externalMessageId: '7', text: 'still archiving', sentAt: new Date() }))
+    await waitFor(async () => (await allMessages()).length === 1)
+    await mgr.stopAll()
+  })
+
+  // The one failure a contact read is NOT forgiving about: this is not "the
+  // address book is unavailable", it is the session being gone, and it is
+  // treated exactly as a failed liveness probe would be.
+  it('revokes when the contact read is the call that notices a dead session', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.scriptContactsError(new ChannelError('AUTH_KEY_UNREGISTERED', 'auth_invalidated'))
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+
+    const row = await rowOf(conn.id)
+    expect(row.status).toBe('revoked')
+    expect(row.sessionCiphertext).toBeNull()
+    expect(port.sessionClosed).toBe(true)
+    await mgr.stopAll()
+  })
+
+  it('re-reads the address book every six hours, not every tick', async () => {
+    await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [{ externalId: '5', displayName: 'Bob', phone: null }]
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()   // opens, backfills, syncs once
+    expect(port.listContactsCount).toBe(1)
+
+    try {
+      // Fake ONLY Date, as the ping-throttle test above does, so the real DB
+      // I/O keeps working and only the reading the throttle compares against
+      // jumps.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      // Past the one-minute ping window — so the branch that could re-read
+      // contacts genuinely runs — but nowhere near the six-hour one.
+      vi.setSystemTime(Date.now() + 61_000)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.pingCount).toBe(1)
+      expect(port.listContactsCount).toBe(1)
+
+      vi.setSystemTime(Date.now() + 6 * 3_600_000)
+      await mgr.tick(); await mgr.whenIdle()
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(port.listContactsCount).toBe(2)
+    await mgr.stopAll()
+  })
+
+  // Six hours is the cadence for an address book that is already cached. A
+  // read that never landed cached nothing, and the People page shows bare ids
+  // until one does — so a failure buys ten minutes, not six hours.
+  it('retries a failed address book read in ten minutes, not in six hours', async () => {
+    await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [{ externalId: '5', displayName: 'Bob', phone: null }]
+    port.scriptContactsError(new Error('CONTACTS_UNAVAILABLE'))
+    const mgr = new SessionManager(portsOf(port))
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.listContactsCount).toBe(1)
+      expect(await db.select().from(channelContacts)).toHaveLength(0)
+
+      // Fake ONLY Date, as the throttle tests above do.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      // Past the one-minute ping window — so the branch that could re-read
+      // contacts genuinely runs — and well short of ten minutes.
+      vi.setSystemTime(Date.now() + 61_000)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.listContactsCount).toBe(1)
+
+      vi.setSystemTime(Date.now() + 10 * 60_000)
+      port.scriptContactsError(null)
+      await mgr.tick(); await mgr.whenIdle()
+    } finally {
+      vi.useRealTimers()
+      warn.mockRestore()
+    }
+    expect(port.listContactsCount).toBe(2)
+    expect(await db.select().from(channelContacts)).toHaveLength(1)
+    await mgr.stopAll()
+  })
+
+  // consecutiveOther is the liveness probe's counter and nothing else's. A
+  // contact list that will not load says nothing about whether the session is
+  // wedged, and three of them in a row must not recycle it.
+  it('three failing contact reads leave the recycle counter untouched', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.scriptContactsError(new Error('CONTACTS_UNAVAILABLE'))
+    const mgr = new SessionManager(portsOf(port))
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    const error = vi.spyOn(log, 'error').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle()
+      vi.useFakeTimers({ toFake: ['Date'] })
+      for (const _ of [1, 2]) {
+        vi.setSystemTime(Date.now() + 11 * 60_000)
+        await mgr.tick(); await mgr.whenIdle()
+      }
+      vi.useRealTimers()
+
+      expect(port.listContactsCount).toBe(3)
+      expect(warn.mock.calls.filter(c => c[1] === 'contact sync failed')).toHaveLength(3)
+      // MAX_CONSECUTIVE_OTHER is 3: if these had been counted, the third would
+      // have recycled the session.
+      expect(warn.mock.calls.find(c => c[1] === 'session recycled')).toBeUndefined()
+      // And they never reached handleSessionError at all.
+      expect(error.mock.calls.find(c => c[1] === 'session error; will retry next tick')).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+      warn.mockRestore()
+      error.mockRestore()
+    }
+    expect(port.sessionClosed).toBe(false)
+    const row = await rowOf(conn.id)
+    expect(row.status).toBe('active')
+    expect(row.revokedAt).toBeNull()
+    // Still the same live session, still archiving.
+    port.emitMessage(msg({ externalMessageId: '11', text: 'still archiving', sentAt: new Date() }))
+    await waitFor(async () => (await allMessages()).length === 1)
     await mgr.stopAll()
   })
 

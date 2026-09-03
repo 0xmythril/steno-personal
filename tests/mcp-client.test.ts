@@ -39,7 +39,8 @@ describe('an MCP client reads a chat through a bearer key', () => {
     const client = await connect(await agentKey())
     try {
       const { tools } = await client.listTools()
-      expect(tools.map(t => t.name).sort()).toEqual(['get_messages', 'list_chats', 'search_messages', 'whoami'])
+      expect(tools.map(t => t.name).sort())
+        .toEqual(['get_messages', 'list_chats', 'list_people', 'search_messages', 'whoami'])
 
       expect(firstText(await client.callTool({ name: 'list_chats', arguments: {} }))).toContain('Mum')
 
@@ -48,6 +49,9 @@ describe('an MCP client reads a chat through a bearer key', () => {
 
       const found = firstText(await client.callTool({ name: 'search_messages', arguments: { query: 'call' } }))
       expect(found).toContain('call me back')
+
+      const people = firstText(await client.callTool({ name: 'list_people', arguments: {} }))
+      expect(people).toBe('[]')
 
       expect(firstText(await client.callTool({ name: 'whoami', arguments: {} }))).toContain('Alex')
     } finally {

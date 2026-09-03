@@ -31,11 +31,51 @@ gaps would be worse than none.
 Attachments are downloaded to your disk so a picture in a chat is still there
 when you look next year.
 
+## Your address book
+
+One person can be reached on both apps, so there is a **People** page that lets
+you say so. To make that possible the connection reads your contact list — on
+Telegram, the contacts you have saved, with the phone numbers Telegram is
+willing to show you; on WhatsApp, the saved names it already sends for the
+numbers you talk to — and stores them in the same local SQLite file as
+everything else. It is a read, like reading a message. Nothing is written back,
+and no contact of yours is created, changed or deleted anywhere.
+
+No field of the address book carries a phone number off this machine. The
+numbers are shown to you on the People page, because you need to see which
+number you are linking, and they never reach a log. `whoami` still never returns
+one, and neither does `list_people` or `GET /api/people`: an agent is told a
+person's name, whatever you wrote in their notes, which channels are linked, and
+how many chats they appear in, under an id this instance minted for its own use
+— never the Telegram id, never the WhatsApp number, never the number stored on
+the link. The notes are the one field you write yourself and they go out
+verbatim, so treat that box as something your agent will read.
+
+That is a promise about the address book, not about the archive underneath it,
+and the difference matters. **A WhatsApp identity *is* a phone number.** A
+WhatsApp chat or a WhatsApp sender that nobody — not you, not WhatsApp, not this
+archive — has a name for is shown as that number, everywhere: on the chat list,
+in a transcript, in `list_chats`, `get_messages`, `search_messages` and their
+REST equivalents. It is your own archive, and the number you would see on your
+phone beats *"Unknown"*. In the same way, **a name you saved in your own
+contacts is used to label that person's messages wherever the channel sent
+none** — in the portal and to an agent alike. Both only put a label on a message
+the archive already holds and an access key can already read, and neither is
+ever written to a log.
+
+The links are yours, not the channels'. Nothing is linked automatically: a
+suggested match sits on the page until you confirm it, and dismissing one is
+remembered. Deleting a person deletes your links and nothing else — the chats,
+the messages and the attachments are untouched, and every name goes back to
+whatever the channel calls it. Deleting a connection clears the contacts read
+from that account and leaves your people alone.
+
 ## What it can never do
 
 **It cannot send anything.** The part of the code that talks to Telegram and
-WhatsApp exposes exactly seven abilities: fetch history, receive a new message,
-receive an edit, receive a deletion, download an attachment, check the
+WhatsApp exposes exactly eight abilities: fetch history, receive a new message,
+receive an edit, receive a deletion, download an attachment, read your contact
+list — names and, where Telegram shows them to you, phone numbers — check the
 connection is alive, and log itself out. There is no send. This is not a policy
 that could be relaxed in a later version without rewriting the interface every
 channel is built against — which is why it is checked by a test.
@@ -109,11 +149,17 @@ and it is why you mint a key per agent and revoke it when you are done.
 display name and status, never a phone number. On an instance with nothing
 connected that list is simply empty; it is not gated.
 
-The three content tools — `list_chats`, `get_messages`, `search_messages` —
-answer with exactly one sentence, *"No personal account is connected."*, when
+The four content tools — `list_chats`, `get_messages`, `search_messages`,
+`list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
 there is nothing at all to serve: no active connection **and** an empty
 archive. They will not describe chats you do not have, invent an empty state,
 or hint at what they could do once you connect something.
+
+The REST reads are deliberately not gated that way. `GET /api/people`, like
+`GET /api/chats`, answers an empty list on an empty instance: a REST client
+asked for a list and got the true one, and the sentence exists for an agent
+reading a tool description, not for a caller parsing JSON. Either way the key
+had to be valid first, and neither answer says anything about you.
 
 That gate is about a stranger who reaches a fresh instance, not about your
 archive. After you **Disconnect** an account, its chats stay readable — to an

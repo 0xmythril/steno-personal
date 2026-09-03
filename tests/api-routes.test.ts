@@ -23,10 +23,12 @@ import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
 import * as queries from '@/lib/services/queries'
 import { mintAccessKey } from '@/lib/services/access-keys'
+import { createPerson, linkIdentity } from '@/lib/services/people'
 import { startSession } from '@/lib/auth'
 import { GET as getChats } from '@/app/api/chats/route'
 import { GET as getMessagesRoute } from '@/app/api/chats/[id]/messages/route'
 import { GET as getSearch } from '@/app/api/search/route'
+import { GET as getPeople } from '@/app/api/people/route'
 
 async function key(label = 'agent') {
   const r = await mintAccessKey(label)
@@ -57,10 +59,11 @@ beforeEach(async () => {
 })
 
 describe('REST routes reject unauthenticated callers', () => {
-  it('401s all three with neither a cookie session nor a bearer key', async () => {
+  it('401s all four with neither a cookie session nor a bearer key', async () => {
     expect((await getChats(cookie('/api/chats'))).status).toBe(401)
     expect((await getMessagesRoute(cookie('/api/chats/x/messages'), params('x'))).status).toBe(401)
     expect((await getSearch(cookie('/api/search?q=hi'))).status).toBe(401)
+    expect((await getPeople(cookie('/api/people'))).status).toBe(401)
   })
 
   it('401s a request carrying a bad bearer key even with a live cookie session elsewhere', async () => {
@@ -185,6 +188,39 @@ describe('REST routes serve the same data as the MCP tools', () => {
 
     const blank = await getSearch(bearer('/api/search?q=%20%20', k.rawKey))
     expect(blank.status).toBe(400)
+  })
+
+  it('GET /api/people lists the address book without a phone number or a channel id', async () => {
+    // The same mapping the MCP tool uses, and the same promise: an access key
+    // must not be able to read through this route what list_people refuses.
+    const k = await key()
+    const conn = await seedConnection({ channel: 'telegram' })
+    const chat = await seedChat(conn, { title: 'Ada', kind: 'dm', externalChatId: '42' })
+    await seedMessage(chat, { text: 'hello' })
+    const { id } = await createPerson({ name: 'Ada', notes: 'from the archive' })
+    await linkIdentity(id, {
+      channel: 'telegram', externalId: '42', displayName: 'Ada', phone: '+447700900123',
+    })
+    await linkIdentity(id, { channel: 'whatsapp', externalId: '447700900123@s.whatsapp.net' })
+
+    const res = await getPeople(bearer('/api/people', k.rawKey))
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({
+      people: [{ id, name: 'Ada', notes: 'from the archive', channels: ['telegram', 'whatsapp'], chatCount: 1 }],
+    })
+    expect(text).not.toContain('+447700900123')
+    expect(text).not.toContain('@s.whatsapp.net')
+    expect(text).not.toContain('externalId')
+  })
+
+  it('GET /api/people also accepts the portal session cookie', async () => {
+    await signedIn()
+    await createPerson({ name: 'Ada' })
+    const res = await getPeople(cookie('/api/people'))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { people: Array<{ name: string }> }
+    expect(body.people.map(p => p.name)).toEqual(['Ada'])
   })
 
   it('answers a failed query with 500 { error: internal }, never the query or its parameters', async () => {

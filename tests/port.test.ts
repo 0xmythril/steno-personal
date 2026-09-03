@@ -20,8 +20,12 @@ describe('the port is read-only by construction', () => {
     const body = src.slice(src.indexOf('export interface ChannelSession'))
     const surface = body.slice(0, body.indexOf('\n}'))
     const declared = [...surface.matchAll(/^\s{2}(\w+)\s*[(<]/gm)].map(m => m[1])
+    // Nine since the address book (people design decision 8): listContacts()
+    // is the one member added to this surface, and it is a READ — the contact
+    // list the owner's own account already holds. The count moved on purpose;
+    // it does not move again without one.
     expect(declared.sort()).toEqual(
-      ['backfill', 'close', 'downloadMedia', 'logOut', 'onDelete', 'onEdit', 'onMessage', 'ping'],
+      ['backfill', 'close', 'downloadMedia', 'listContacts', 'logOut', 'onDelete', 'onEdit', 'onMessage', 'ping'],
     )
   })
 })

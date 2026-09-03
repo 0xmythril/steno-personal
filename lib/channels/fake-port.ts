@@ -1,5 +1,6 @@
 import type {
-  BackfillOpts, Channel, ChannelAccount, ChannelPort, ChannelSession, IncomingMessage, LoginDriver,
+  BackfillOpts, Channel, ChannelAccount, ChannelContact, ChannelPort, ChannelSession,
+  IncomingMessage, LoginDriver,
 } from '@/lib/channels/port'
 
 type LoginResult = { sessionString: string; account: ChannelAccount }
@@ -14,10 +15,16 @@ export class FakePort implements ChannelPort {
   private backfillMessages: IncomingMessage[] = []
   private backfillError: Error | null = null
   private pingError: Error | null = null
+  private contactsError: Error | null = null
   private logOutError: Error | null = null
   private logOutHangs = false
   private download: { data: Buffer; mimeType: string | null } | null = null
   private session: FakeSession | null = null
+  // The channel's address book, read live by the open session so a test can
+  // change it between manager ticks the way a real contact sync would see it
+  // change. Public rather than scripted through a setter because a contact
+  // list is plain data, not a behaviour to script.
+  contacts: ChannelContact[] = []
 
   constructor(readonly channel: Channel = 'telegram') {}
 
@@ -35,6 +42,10 @@ export class FakePort implements ChannelPort {
   scriptBackfillError(err: Error | null) { this.backfillError = err }
   // Simulates a phone-side revocation caught by the manager's liveness probe.
   scriptPingError(err: Error | null) { this.pingError = err }
+  // An address book that will not load: a rate limit, a transient RPC fault,
+  // or — as a ChannelError('auth_invalidated') — a session that died between
+  // the probe and the read.
+  scriptContactsError(err: Error | null) { this.contactsError = err }
   // Simulates an already-dead session that cannot log itself out.
   scriptLogOutError(err: Error | null) { this.logOutError = err }
   // Simulates a channel that accepts the log-out call and never answers it —
@@ -55,6 +66,11 @@ export class FakePort implements ChannelPort {
   // How many liveness probes the manager has actually made — the manager
   // throttles them, so a test needs to count them, not just observe an error.
   get pingCount(): number { return this.session?.pings ?? 0 }
+  // Same reasoning for the address book: the manager reads it once after a
+  // backfill and then only every six hours, so "did it read it again?" is a
+  // count, not an observable side effect (a second sync of the same contacts
+  // upserts to identical rows).
+  get listContactsCount(): number { return this.session?.contactReads ?? 0 }
   get loggedOut(): boolean { return this.session?.loggedOut ?? false }
   get sessionClosed(): boolean { return this.session?.closed ?? false }
 
@@ -79,7 +95,8 @@ export class FakePort implements ChannelPort {
     this.session = new FakeSession(
       this.backfillMessages,
       () => this.backfillError, () => this.pingError, () => this.logOutError,
-      () => this.logOutHangs, () => this.download,
+      () => this.logOutHangs, () => this.download, () => this.contacts,
+      () => this.contactsError,
     )
     return this.session
   }
@@ -92,6 +109,7 @@ class FakeSession implements ChannelSession {
   closed = false
   loggedOut = false
   pings = 0
+  contactReads = 0
 
   constructor(
     private backfillMessages: IncomingMessage[],
@@ -100,6 +118,8 @@ class FakeSession implements ChannelSession {
     private getLogOutError: () => Error | null,
     private getLogOutHangs: () => boolean,
     private getDownload: () => { data: Buffer; mimeType: string | null } | null,
+    private getContacts: () => ChannelContact[],
+    private getContactsError: () => Error | null = () => null,
   ) {}
 
   async *backfill(_opts: BackfillOpts, shouldContinue: () => boolean = () => true): AsyncIterable<IncomingMessage> {
@@ -127,6 +147,13 @@ class FakeSession implements ChannelSession {
     const payload = this.getDownload()
     if (!payload) throw new Error('FakePort: downloadMedia not scripted')
     return payload
+  }
+
+  async listContacts(): Promise<ChannelContact[]> {
+    this.contactReads++
+    const err = this.getContactsError()
+    if (err) throw err
+    return this.getContacts()
   }
 
   async ping(): Promise<void> {

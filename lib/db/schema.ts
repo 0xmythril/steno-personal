@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
 import { randomUUID } from 'node:crypto'
 
 const now = () => new Date()
@@ -144,3 +144,65 @@ export const settings = sqliteTable('settings', {
   visionModel: text('vision_model'),
   transcriptionModel: text('transcription_model'),
 })
+
+// The address book. A person is the owner's own annotation over the channel
+// identities the archive already stores — nothing here is fetched from, or
+// pushed back to, a channel. Deleting a person deletes its identity rows and
+// touches no chat or message (people design decision 7).
+export const people = sqliteTable('people', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  name: text('name').notNull(),
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+})
+
+// One channel identity belongs to at most one person: unique(channel,
+// external_id) is what makes "who is this?" a single-row answer on every read
+// path, and what makes a second link attempt an `already_linked` rather than a
+// silent duplicate. `source` records how the link was made — a suggestion
+// never links on its own, so 'phone_match'/'name_match' mean "the owner
+// confirmed a suggestion of that kind", not "the machine decided".
+// Deliberately NOT tied to a connection: reconnecting an account must not
+// erase the owner's address book.
+export const personIdentities = sqliteTable('person_identities', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  externalId: text('external_id').notNull(),
+  displayName: text('display_name'),
+  phone: text('phone'),
+  source: text('source', { enum: ['manual', 'phone_match', 'name_match'] }).notNull().default('manual'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [
+  uniqueIndex('person_identities_channel_external_unique').on(t.channel, t.externalId),
+  index('person_identities_person_idx').on(t.personId),
+])
+
+// A cache of what the channel already told us about the owner's own contacts,
+// refreshed by the worker. It exists so a phone number can be matched offline
+// and so a candidate list can show a name for someone who has not written a
+// message yet. It belongs to the connection that read it: disconnecting the
+// account drops the cache, while the person links above survive.
+export const channelContacts = sqliteTable('channel_contacts', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
+  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  externalId: text('external_id').notNull(),
+  displayName: text('display_name'),
+  phone: text('phone'),
+  syncedAt: integer('synced_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [
+  uniqueIndex('channel_contacts_connection_external_unique').on(t.connectionId, t.externalId),
+  index('channel_contacts_channel_external_idx').on(t.channel, t.externalId),
+])
+
+// "No, those two are not the same person." Suggestions themselves are
+// computed, never stored, so this table is the only memory the matcher has —
+// without it a dismissed pair would come back on the next page load. The pair
+// itself is the key; there is nothing else to say about it.
+export const dismissedSuggestions = sqliteTable('dismissed_suggestions', {
+  telegramExternalId: text('telegram_external_id').notNull(),
+  whatsappExternalId: text('whatsapp_external_id').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+}, t => [primaryKey({ columns: [t.telegramExternalId, t.whatsappExternalId] })])

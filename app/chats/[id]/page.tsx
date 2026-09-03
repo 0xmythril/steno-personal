@@ -47,7 +47,14 @@ export default async function ChatPage({ params, searchParams }: {
       <Nav label={session.label} />
       <p className="muted"><Link href="/">&larr; All chats</Link></p>
       <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
-      <p className="muted">Read-only archive &middot; {page.chat.messageCount} messages</p>
+      {/* The address book is edited on /people; this page only ever links to
+          it, because nothing here may grow a form. */}
+      <p className="muted">
+        Read-only archive &middot; {page.chat.messageCount} messages
+        {page.chat.person
+          ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
+          : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
+      </p>
 
       {pager}
 
@@ -62,6 +69,7 @@ export default async function ChatPage({ params, searchParams }: {
                 <li key={run.messages[0].id} className="msg-run">
                   <p className="msg-meta">
                     <strong>{run.isMe ? 'You' : run.senderLabel}</strong>{' '}
+                    {run.rawLabel && <span className="muted">({run.rawLabel}) </span>}
                     <span className="muted">{formatTime(run.messages[0].sentAt)}</span>
                   </p>
                   {run.messages.map(m => (

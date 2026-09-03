@@ -5,7 +5,8 @@ import type { MessageView } from '@/lib/services/queries'
 
 const msg = (over: Partial<MessageView> & { id: string }): MessageView => ({
   externalMessageId: over.id, sentAt: new Date('2026-08-01T10:00:00Z'),
-  type: 'text', text: 'hi', senderName: 'Alice', fromOwner: false, editedAt: null, media: null,
+  type: 'text', text: 'hi', senderName: 'Alice', fromOwner: false, editedAt: null,
+  person: null, media: null,
   ...over,
 })
 
@@ -59,6 +60,52 @@ describe('transcript grouping', () => {
     const runs = groupRuns([msg({ id: '1', senderName: null })])
     expect(runs[0].senderLabel).toBe('Unknown')
     expect(runs[0].senderKey).toBe('them:Unknown')
+  })
+
+  it('labels a run with the person, not the name the channel stored', () => {
+    const person = { id: 'p1', name: 'Ada' }
+    const runs = groupRuns([
+      msg({ id: '1', senderName: 'ada@work', person }),
+      msg({ id: '2', senderName: 'Ada Lovelace', person }),
+    ])
+    // One person under two spellings is one run: the key is the person's id,
+    // which is the only stable sender identity a MessageView carries.
+    expect(runs).toHaveLength(1)
+    expect(runs[0].senderKey).toBe('person:p1')
+    expect(runs[0].senderLabel).toBe('Ada')
+    // …and the channel's own name is still shown, muted, beside it.
+    expect(runs[0].rawLabel).toBe('ada@work')
+  })
+
+  it('says nothing extra when the stored name already is the person name', () => {
+    const runs = groupRuns([msg({ id: '1', senderName: 'Ada', person: { id: 'p1', name: 'Ada' } })])
+    expect(runs[0].senderLabel).toBe('Ada')
+    expect(runs[0].rawLabel).toBeNull()
+    // An unlinked sender has nothing to disagree with.
+    expect(groupRuns([msg({ id: '2', senderName: 'Bob' })])[0].rawLabel).toBeNull()
+  })
+
+  it('keeps two people apart even when the channel calls them the same thing', () => {
+    const runs = groupRuns([
+      msg({ id: '1', senderName: 'A', person: { id: 'p1', name: 'Ada' } }),
+      msg({ id: '2', senderName: 'A', person: { id: 'p2', name: 'Alan' } }),
+    ])
+    expect(runs).toHaveLength(2)
+    expect(runs.map(r => r.senderKey)).toEqual(['person:p1', 'person:p2'])
+  })
+
+  it('never lets the address book relabel the owner', () => {
+    // Linking one's own identity to a person must not turn "You" into a name
+    // or merge the owner's run with the other side's.
+    const person = { id: 'p1', name: 'Ada' }
+    const runs = groupRuns([
+      msg({ id: '1', fromOwner: true, senderName: 'Ada', person }),
+      msg({ id: '2', fromOwner: false, senderName: 'Ada', person }),
+    ])
+    expect(runs).toHaveLength(2)
+    expect(runs[0].senderKey).toBe('me')
+    expect(runs[0].rawLabel).toBeNull()
+    expect(runs[1].senderKey).toBe('person:p1')
   })
 
   it('groups by calendar day in the given zone', () => {

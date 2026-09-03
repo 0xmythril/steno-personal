@@ -6,8 +6,12 @@ import {
 } from '@/lib/services/login'
 import { removeWhatsappAuthDirs, revokedWhatsappConnectionIds, revokeConnection } from '@/lib/services/connections'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
+import { syncContacts } from '@/lib/services/people'
 import { enqueueMedia, type Downloader } from '@/lib/services/media'
-import { ChannelError, type Channel, type ChannelPort, type ChannelSession, type IncomingMessage } from '@/lib/channels/port'
+import {
+  ChannelError,
+  type Channel, type ChannelContact, type ChannelPort, type ChannelSession, type IncomingMessage,
+} from '@/lib/channels/port'
 
 const LOGIN_TIMEOUT_MS = 15 * 60_000
 const BACKFILL_CAPS = { maxDialogs: 200, maxPerChat: 500 }
@@ -29,6 +33,25 @@ const LOGOUT_TIMEOUT_MS = 20_000
 // and a frozen last_sync_at). Once a minute is ample: a revoke surfacing in a
 // minute instead of three seconds is not a product regression.
 const PING_EVERY_MS = 60_000
+// The address book only drifts at human speed: a contact is renamed, or a new
+// number is saved on the phone, a handful of times a week. Reading it is a
+// real RPC against the same rate limits the liveness probe lives under, so it
+// runs once after the backfill lands (when the archive is at its emptiest and
+// the names matter most) and four times a day after that. Nothing downstream
+// is time-critical: a person linked from a contact saved an hour ago is still
+// linked correctly an hour later.
+const CONTACTS_SYNC_MS = 6 * 3_600_000
+// What a FAILED read waits instead. Six hours is the cadence for an address
+// book that is already cached; a read that never landed has nothing cached at
+// all, and the People page stays full of bare ids until one does. Ten minutes
+// is long enough to ride out a FLOOD_WAIT and short enough that a first
+// pairing is not spent looking at numbers.
+const CONTACTS_RETRY_MS = 10 * 60_000
+// The contact read is the one call in this file with no binding-level bound of
+// its own guaranteed: mtcute caps its RPC and WhatsApp answers from a map, but
+// stopAll() awaits contactSyncsInFlight, so a future binding that hangs here
+// would wedge shutdown. Same treatment as logOut().
+const CONTACTS_TIMEOUT_MS = 30_000
 
 // Bounds a promise that must never hold the tick loop. The loser of the race
 // is not cancellable — it keeps running in the background — but Promise.race
@@ -64,6 +87,12 @@ type Running = {
   stopped: boolean
   lastBackfillAttempt: number // epoch ms; 0 means never attempted
   lastPingAt: number          // epoch ms; 0 means never probed, so the first tick probes
+  // epoch ms, stamped BEFORE the read rather than after it, so a contact sync
+  // that fails (or hangs and loses a race with the next tick) waits out the
+  // window like every other throttled call here instead of re-firing — and
+  // re-logging — once a minute. 0 means never synced, but the post-backfill
+  // sync below always gets there first.
+  lastContactsSyncAt: number
   backfillSinceDays: number   // fixed at open time; retries reuse it
   // Consecutive 'other' failures of the THROTTLED (backfilled-branch, once a
   // minute) liveness probe only. Reset by any successful ping on that branch;
@@ -71,6 +100,15 @@ type Running = {
   // pre-backfill ping below never touches this counter — see the comment on
   // that branch. See handleSessionError.
   consecutiveOther: number
+}
+
+// The other half of stamping lastContactsSyncAt before the read: that stamp is
+// what a FAILED read would otherwise ride for the full six hours. Winding it
+// back leaves exactly CONTACTS_RETRY_MS on the clock — a retry, not a re-fire,
+// so the single-flight guard and the "log once, not once a tick" property both
+// survive.
+function retrySoon(running: Running): void {
+  running.lastContactsSyncAt = Date.now() - (CONTACTS_SYNC_MS - CONTACTS_RETRY_MS)
 }
 
 // A session whose ping keeps failing with 'other' is not dead (that would be
@@ -89,6 +127,11 @@ export class SessionManager {
   private running = new Map<string, Running>()            // connectionId -> open session
   private loginsInFlight = new Map<string, Promise<void>>()
   private backfillsInFlight = new Map<string, Promise<void>>()
+  // Single-flight per connection, for the same reason backfills are: the
+  // post-backfill sync and the six-hourly one can both come due at once, and
+  // two concurrent syncContacts() for the same connection would race each
+  // other's upserts for no benefit.
+  private contactSyncsInFlight = new Map<string, Promise<void>>()
   private ticking = false
   private stopping = false
   // Revoked WhatsApp rows whose auth directory this process has already tried
@@ -118,10 +161,14 @@ export class SessionManager {
     }
   }
 
-  // Awaits in-flight logins and backfills. Used by tests for determinism and
-  // by stopAll for a clean shutdown.
+  // Awaits in-flight logins, backfills and contact syncs. Used by tests for
+  // determinism and by stopAll for a clean shutdown.
   async whenIdle(): Promise<void> {
-    await Promise.all([...this.loginsInFlight.values(), ...this.backfillsInFlight.values()])
+    await Promise.all([
+      ...this.loginsInFlight.values(),
+      ...this.backfillsInFlight.values(),
+      ...this.contactSyncsInFlight.values(),
+    ])
   }
 
   // The ONE addition M4 makes to the M1 interface. The media drain needs a way
@@ -271,6 +318,12 @@ export class SessionManager {
                 await existing.session.ping()
                 existing.consecutiveOther = 0
                 await recordSync(conn.id)
+                // Only after a probe that just proved the session live, and
+                // only on its own much longer clock. Started, never awaited:
+                // a contact list is a whole-address-book RPC, and the tick
+                // loop — which every other connection's liveness and every
+                // revocation waits behind — must not hold for it.
+                this.maybeSyncContacts(conn.id, existing)
               } catch (e) {
                 await this.handleSessionError(conn.id, e, { fromPing: true })
               }
@@ -291,7 +344,8 @@ export class SessionManager {
           // stopAll can close — never an untracked, leaked session.
           const running: Running = {
             channel: conn.channel, session, backfilled: false, stopped: false,
-            lastBackfillAttempt: 0, lastPingAt: 0, backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
+            lastBackfillAttempt: 0, lastPingAt: 0, lastContactsSyncAt: 0,
+            backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
             consecutiveOther: 0,
           }
           this.running.set(conn.id, running)
@@ -391,6 +445,78 @@ export class SessionManager {
       // retrying a session that is already gone; every other error is logged
       // and retried next tick.
       await this.handleSessionError(connId, e)
+      return
+    }
+    // The archive has just filled with chats and senders; the address book is
+    // what turns those ids into a person, so read it now rather than making
+    // the owner wait out the first six-hour window. AWAITED here (unlike the
+    // tick's own call) purely so it rides this backfill promise: whenIdle()
+    // and stopAll() already await that, and a sync started after the promise
+    // resolved would be outside both. It never rejects.
+    await this.syncContactsNow(connId, running)
+  }
+
+  // Started, not awaited. Never rejects — syncContactsNow swallows everything
+  // and the terminal catch covers the write handleSessionError may attempt —
+  // so a caller inside the tick loop can drop the promise safely.
+  private maybeSyncContacts(connId: string, running: Running): void {
+    if (running.stopped) return
+    if (Date.now() - running.lastContactsSyncAt < CONTACTS_SYNC_MS) return
+    void this.syncContactsNow(connId, running)
+  }
+
+  // Reads the channel's own address book into the contact cache. Deliberately
+  // gentler than every other failure path here: a contact list that will not
+  // load is a missing convenience, not a broken archive, so a failure is
+  // logged and left for the next window — it never counts toward
+  // consecutiveOther (that counter is for the throttled liveness probe alone,
+  // and a session whose messages keep arriving is not wedged because
+  // getContacts() drew a FLOOD_WAIT), and it never stops the session. The one
+  // exception is auth_invalidated: that is not "contacts are unavailable", it
+  // is the session being gone, and a dead session is dead whichever call
+  // notices.
+  //
+  // errorShape only, and no contact ever reaches the log: this function
+  // handles every name and phone number the instance holds.
+  private async syncContactsNow(connId: string, running: Running): Promise<void> {
+    const inFlight = this.contactSyncsInFlight.get(connId)
+    if (inFlight) return inFlight
+    running.lastContactsSyncAt = Date.now()
+    const p = this.runContactSync(connId, running)
+      .finally(() => this.contactSyncsInFlight.delete(connId))
+      // Terminal, as on the login and backfill chains: runContactSync's own
+      // catch can still reach handleSessionError, whose revoke write may
+      // throw, and nothing downstream is guaranteed to await this promise.
+      .catch(e => log.error({ err: errorShape(e), connectionId: connId }, 'contact sync driver failed'))
+    this.contactSyncsInFlight.set(connId, p)
+    return p
+  }
+
+  private async runContactSync(connId: string, running: Running): Promise<void> {
+    if (running.stopped) return
+    let contacts: ChannelContact[]
+    try {
+      contacts = await withTimeout(running.session.listContacts(), CONTACTS_TIMEOUT_MS, 'listContacts')
+    } catch (e) {
+      if (e instanceof ChannelError && e.kind === 'auth_invalidated') {
+        await this.handleSessionError(connId, e)
+        return
+      }
+      log.warn({ err: errorShape(e), connectionId: connId }, 'contact sync failed')
+      retrySoon(running)
+      return
+    }
+    // Re-checked after the read: the connection may have been revoked while
+    // that RPC was in flight, and writing a torn-down connection's contacts
+    // races the cascade that is deleting them.
+    if (running.stopped) return
+    try {
+      const { upserted } = await syncContacts(connId, running.channel, contacts)
+      // A count, never a contact.
+      log.info({ connectionId: connId, upserted }, 'contacts synced')
+    } catch (e) {
+      log.error({ err: errorShape(e), connectionId: connId }, 'contact sync write failed')
+      retrySoon(running)
     }
   }
 
@@ -434,7 +560,7 @@ export class SessionManager {
     log.error({ err: errorShape(e), connectionId: connId }, 'session error; will retry next tick')
   }
 
-  // Awaits only in-flight BACKFILLS, never logins: a login can legitimately
+  // Awaits only in-flight BACKFILLS and contact syncs, never logins: a login can legitimately
   // block for the full login window waiting on a QR scan or a password, and
   // shutdown must not hang on that. Setting stopping first keeps tick() (and
   // startPendingLogins) from starting any new work while this drains.
@@ -445,7 +571,7 @@ export class SessionManager {
     // Abort in-flight backfills up front so awaiting them below returns
     // promptly instead of blocking shutdown on a slow scan.
     for (const [, r] of this.running) r.stopped = true
-    await Promise.all([...this.backfillsInFlight.values()])
+    await Promise.all([...this.backfillsInFlight.values(), ...this.contactSyncsInFlight.values()])
     for (const [, r] of this.running) await r.session.close().catch(() => {})
     this.running.clear()
   }

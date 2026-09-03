@@ -14,8 +14,8 @@ import { DEVICE_MODEL } from '@/lib/channels/device-model'
 import { errorShape, log } from '@/lib/log'
 import {
   ChannelError,
-  type BackfillOpts, type ChannelAccount, type ChannelPort, type ChannelSession,
-  type IncomingMessage, type LoginDriver,
+  type BackfillOpts, type ChannelAccount, type ChannelContact, type ChannelPort,
+  type ChannelSession, type IncomingMessage, type LoginDriver,
 } from '@/lib/channels/port'
 
 // The ONLY file in the repo allowed to import @mtcute/* (enforced by
@@ -146,6 +146,26 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     text: msg.text || null,
     media: mediaMeta(msg),
     raw: encodeTlRaw(msg.raw),
+  }
+}
+
+// One Telegram contact as the address book stores it. Pure, and exported so
+// the mapping is testable without an MTProto client: there is no fake-client
+// harness for this binding, and the two things worth pinning — the id becomes
+// a string, and a phone number becomes '+' + digits or null — are exactly what
+// getContacts() hands over.
+//
+// mtcute's User.displayName is a string, but a deleted or nameless account
+// yields an empty one; the archive stores "no name" as null, not as ''.
+export function contactFromUser(
+  u: { id: number | bigint; displayName?: string | null; phoneNumber?: string | null },
+): ChannelContact {
+  const name = u.displayName?.trim()
+  const digits = u.phoneNumber?.replace(/\D/g, '') ?? ''
+  return {
+    externalId: String(u.id),
+    displayName: name ? name : null,
+    phone: digits ? `+${digits}` : null,
   }
 }
 
@@ -385,6 +405,21 @@ class MtcuteSession implements ChannelSession {
   async logOut(): Promise<void> {
     await this.tg.withParams({ timeout: RPC_TIMEOUT_MS }).logOut()
     await this.tg.destroy()
+  }
+
+  // The owner's own contact list. contacts.getContacts is a read: it returns
+  // what the account already knows and writes nothing — the mutating contact
+  // calls (add, import, delete, note) are banned outright by
+  // tests/telegram-structure.test.ts. This runs on a manager tick like every
+  // other call here, so it is bounded by the same RPC timeout, and its errors
+  // go through classify() so a revoked session reaches the manager as one.
+  async listContacts(): Promise<ChannelContact[]> {
+    try {
+      const users = await this.tg.withParams({ timeout: RPC_TIMEOUT_MS }).getContacts()
+      return users.map(contactFromUser)
+    } catch (e) {
+      throw classify(e)
+    }
   }
 
   // A phone-side revocation does not throw anywhere in a running session

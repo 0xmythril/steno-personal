@@ -12,8 +12,9 @@ One container, one volume, one file.
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
 - **Yours only.** No sign-up, no telemetry, no analytics, no third party — one
   optional exception you switch on yourself (see Configuration).
-- **Agent-ready.** An MCP endpoint with four read tools: list chats, read a
-  chat, search, and ask which accounts are connected.
+- **Agent-ready.** An MCP endpoint with five read tools: list chats, read a
+  chat, search, list the people in your address book, and ask which accounts
+  are connected.
 
 Licensed under the GNU Affero General Public License v3.0.
 
@@ -99,8 +100,8 @@ Everything an agent sees goes through the MCP endpoint at
 token. Mint a separate key per agent in **Settings** so you can revoke one
 without disturbing the others.
 
-The tools are `list_chats`, `get_messages`, `search_messages`, and `whoami`.
-They only read. There is no tool that sends anything.
+The tools are `list_chats`, `get_messages`, `search_messages`, `list_people`,
+and `whoami`. They only read. There is no tool that sends anything.
 
 **Shortest path:** open **Settings**, create a key, and press **Copy
 instructions** under "Let the agent set itself up". Paste that block into any
@@ -173,6 +174,55 @@ The connection is read-only: it never marks anything read, never shows you as
 online, and never sends. It appears in Telegram's own device list as
 **steno-personal**, and removing it there revokes it here within a few seconds.
 Disconnect does the same from this side and keeps everything already archived.
+
+## People
+
+One person, two apps. The archive stores channel identities — a Telegram user
+id, a WhatsApp number — and **People** is the address book that groups them, so
+a chat and a transcript can say *Ada* whether she wrote from Telegram or from
+WhatsApp. It is your own annotation over the archive: nothing is sent back to
+either channel, and nothing you write here changes a message.
+
+Open **People**, add a person, and link their identities. Everyone the archive
+knows about on a channel is offered — your contact list, the other side of every
+direct chat, and anyone whose message it has archived — under the name that
+channel knows them by, with their number where there is one. An identity
+belongs to at most one person; move it by unlinking it first.
+
+**Suggestions.** The page offers pairs it thinks are the same person, and it
+never acts on one by itself — confirming is a button you press.
+
+- *Same phone number* is the strong one, and it needs the person saved in your
+  Telegram contacts with a number Telegram is willing to show you. Telegram
+  hides a contact's number unless you have each other saved or they let
+  everyone see it, and a Telegram account with no number visible cannot be
+  matched this way. A WhatsApp identity is always a number, so that side is
+  never the problem.
+- *Same name* is exact: the two display names must be the same once trimmed,
+  ignoring capitalisation. "Ada L" and "Ada Lovelace" are not offered.
+- **Dismiss** remembers your no, and that pair is never suggested again.
+
+**What your agent sees.** A chat or a message gains a `person` field —
+`{ id, name }` — when the sender or the other side of a direct chat is someone
+you have linked, and the `list_people` tool lists the address book: id, name,
+your notes, which channels are linked, and how many chats they appear in. Never
+a phone number, and never the underlying Telegram id or WhatsApp number — the id
+is this instance's own and means nothing outside it. The notes are the one field
+you write yourself and they go out verbatim, so write them for an agent to read.
+`GET /api/people` answers the same thing with the same key.
+
+Two labels come from the same contact list, and they are not gated behind a
+link. A name you saved in your contacts is used as the sender label for that
+person's messages wherever the channel sent none — in the portal and to an agent
+— and a WhatsApp chat or sender nobody has any name for shows as the phone
+number that is its identity, again in both places. Neither adds a field: they
+fill in `senderName` and a chat's title, which an access key can already read.
+
+**Removing someone.** Deleting a person deletes the links and nothing else:
+the chats, the messages and the attachments are untouched, and the names go
+back to whatever the channels call them. Deleting a *connection* clears the
+contacts read from that account, but leaves your people alone — they are yours,
+not the channel's.
 
 ## Configuration
 

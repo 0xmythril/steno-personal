@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { log } from '@/lib/log'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
+import type { ChannelContact } from '@/lib/channels/port'
 import type { IncomingMessage } from '@/lib/services/ingest'
 import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
 
@@ -13,6 +14,7 @@ type Collected = {
   messages: IncomingMessage[]
   edits: IncomingMessage[]
   deletes: Array<{ externalChatId?: string; externalMessageId: string }>
+  listContacts(): Promise<ChannelContact[]>
   close(): Promise<void>
 }
 
@@ -32,7 +34,11 @@ async function connect(name: string): Promise<Collected> {
   session.onMessage(m => messages.push(m))
   session.onEdit(m => edits.push(m))
   session.onDelete(r => deletes.push(r))
-  return { socket: h.sockets[0], messages, edits, deletes, close: () => session.close() }
+  return {
+    socket: h.sockets[0], messages, edits, deletes,
+    listContacts: () => session.listContacts(),
+    close: () => session.close(),
+  }
 }
 
 function textMessage(remoteJid: string, id: string, text: string, extra: Record<string, unknown> = {}) {
@@ -292,6 +298,89 @@ describe('protocol events', () => {
     })
     await flush(30)
     expect(c.deletes).toEqual([{ externalChatId: GROUP, externalMessageId: 'M9' }])
+    await c.close()
+  })
+})
+
+// The address book's WhatsApp side. No new call to WhatsApp: the port answers
+// out of the contacts the phone already pushes at it, keyed by the phone JID
+// because that is the identity the archive files a person under, and it is the
+// only form that carries a number (people design decision 2 and 3).
+describe('listContacts', () => {
+  it('lists a contact learned from contacts.upsert, with the number from its JID', async () => {
+    const c = await connect('contacts-upsert')
+    c.socket.emit('contacts.upsert', [{ id: DM_PN, lid: DM_LID, name: 'Bo Saved', notify: 'Bo' }])
+    await flush(20)
+    expect(await c.listContacts()).toEqual([
+      { externalId: DM_PN, displayName: 'Bo Saved', phone: '+15551230000' },
+    ])
+    await c.close()
+  })
+
+  it('lists the contacts that arrive with a history batch', async () => {
+    const c = await connect('contacts-history')
+    c.socket.emit('messaging-history.set', {
+      chats: [], messages: [], progress: 50,
+      contacts: [{ id: DM_PN, notify: 'Bo Push' }],
+      lidPnMappings: [],
+    })
+    await flush(20)
+    expect(await c.listContacts()).toEqual([
+      { externalId: DM_PN, displayName: 'Bo Push', phone: '+15551230000' },
+    ])
+    await c.close()
+  })
+
+  it('files a LID-only contact under the phone JID once the mapping is known', async () => {
+    const c = await connect('contacts-lid')
+    c.socket.emit('messaging-history.set', {
+      chats: [], messages: [], progress: 50,
+      contacts: [{ id: DM_LID, name: 'Bo Saved' }],
+      lidPnMappings: [{ lid: DM_LID, pn: DM_PN }],
+    })
+    await flush(20)
+    expect(await c.listContacts()).toEqual([
+      { externalId: DM_PN, displayName: 'Bo Saved', phone: '+15551230000' },
+    ])
+    await c.close()
+  })
+
+  // The same deferral across two events, which is how WhatsApp actually sends
+  // it: contacts.upsert names a LID, and the mapping that turns it into a
+  // number arrives in its own event later. Holding the name until then is the
+  // difference between a contact and a contact silently dropped.
+  it('files a LID-only contact when its mapping arrives in a later event', async () => {
+    const c = await connect('contacts-lid-later')
+    c.socket.emit('contacts.upsert', [{ id: DM_LID, name: 'Bo Saved' }])
+    await flush(20)
+    // Nothing to show yet: a LID is an identity with no number behind it.
+    expect(await c.listContacts()).toEqual([])
+
+    c.socket.emit('messaging-history.set', {
+      chats: [], messages: [], progress: 100,
+      contacts: [],
+      lidPnMappings: [{ lid: DM_LID, pn: DM_PN }],
+    })
+    await flush(20)
+    expect(await c.listContacts()).toEqual([
+      { externalId: DM_PN, displayName: 'Bo Saved', phone: '+15551230000' },
+    ])
+    await c.close()
+  })
+
+  it('lists neither a nameless contact nor a LID whose mapping never arrives', async () => {
+    // Both would be an identity the address book could show nothing for: a
+    // nameless row, or a LID it cannot match a phone number to.
+    const c = await connect('contacts-skipped')
+    c.socket.emit('contacts.upsert', [{ id: DM_PN }, { id: '5544332211@lid', name: 'Unknown' }])
+    await flush(20)
+    expect(await c.listContacts()).toEqual([])
+    await c.close()
+  })
+
+  it('is empty before any contact arrives', async () => {
+    const c = await connect('contacts-empty')
+    expect(await c.listContacts()).toEqual([])
     await c.close()
   })
 })

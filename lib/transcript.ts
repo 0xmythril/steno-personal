@@ -4,6 +4,10 @@ import type { MessageView } from '@/lib/services/queries'
 export type Run = {
   senderKey: string
   senderLabel: string
+  // The name the channel stored for this sender, when the address book calls
+  // them something else. Null when there is nothing extra to say — including
+  // for the owner, who is always "You".
+  rawLabel: string | null
   isMe: boolean
   messages: MessageView[]
 }
@@ -12,20 +16,33 @@ export type Run = {
 // shows the name once per burst instead of once per line. The owner's own
 // messages never merge with anyone else's, because the key carries fromOwner.
 //
-// The key is the display name, not a sender identity: MessageView deliberately
-// carries no sender id (the shared interface for M1–M5 fixes its shape, and no
-// read path exposes one). Two different people sharing a display name in a
-// group chat therefore merge into one run — the name shown above it is still
-// correct for both, so the cost is a missing visual break, not a
-// misattribution. Widening MessageView is the fix if that ever matters.
+// When the address book knows the sender, it wins: its name is what the run is
+// labelled with, and its id — this instance's own uuid — is what the run is
+// keyed by. That id is the only stable sender identity a MessageView carries,
+// so one person writing under two spellings (a rename, or the two channels
+// disagreeing) is correctly one run, and two people sharing a display name are
+// correctly two.
+//
+// Without a person there is still no sender id to key on, so the key falls
+// back to the display name: two strangers sharing one name in a group chat
+// merge into a single run. The name above it is right for both, so the cost is
+// a missing visual break, not a misattribution — and linking either of them on
+// /people fixes it.
+//
+// The owner is never relabelled: their messages key on 'me' whether or not an
+// identity of theirs has been linked to a person.
 export function groupRuns(items: MessageView[]): Run[] {
   const runs: Run[] = []
   for (const m of items) {
-    const label = m.senderName ?? 'Unknown'
-    const key = m.fromOwner ? 'me' : `them:${label}`
+    const stored = m.senderName ?? 'Unknown'
+    const person = m.fromOwner ? null : m.person
+    const key = m.fromOwner ? 'me' : person ? `person:${person.id}` : `them:${stored}`
+    const senderLabel = person ? person.name : stored
+    // Only worth showing when it says something the label does not.
+    const rawLabel = person && m.senderName && m.senderName !== person.name ? m.senderName : null
     const last = runs[runs.length - 1]
     if (last && last.senderKey === key) { last.messages.push(m); continue }
-    runs.push({ senderKey: key, senderLabel: label, isMe: m.fromOwner, messages: [m] })
+    runs.push({ senderKey: key, senderLabel, rawLabel, isMe: m.fromOwner, messages: [m] })
   }
   return runs
 }
