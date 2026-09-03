@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { existsSync, mkdirSync } from 'node:fs'
+import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { connections, chats, messages } from '@/lib/db/schema'
-import { decryptSecret } from '@/lib/services/crypto'
+import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
+import { env } from '@/lib/env'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
@@ -123,6 +126,25 @@ describe('connections service', () => {
     expect(await db.select().from(chats)).toEqual([])
     expect(await db.select().from(messages)).toEqual([])
     expect(await deleteConnection(conn.id)).toBe(false)
+  })
+
+  it('deleteConnection removes the WhatsApp auth directory named by the decrypted session string', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    const dirName = `wa-${conn.id}`
+    await db.update(connections).set({ sessionCiphertext: encryptSecret(dirName) }).where(eq(connections.id, conn.id))
+    const dirPath = path.join(env.DATA_DIR, 'whatsapp', dirName)
+    mkdirSync(dirPath, { recursive: true })
+    expect(await deleteConnection(conn.id)).toBe(true)
+    expect(existsSync(dirPath)).toBe(false)
+  })
+
+  it('deleteConnection leaves DATA_DIR untouched for a Telegram row', async () => {
+    const conn = await makeConnection({ channel: 'telegram', status: 'active' })
+    await db.update(connections).set({ sessionCiphertext: encryptSecret('some-telegram-session') }).where(eq(connections.id, conn.id))
+    const whatsappRoot = path.join(env.DATA_DIR, 'whatsapp')
+    const before = existsSync(whatsappRoot)
+    expect(await deleteConnection(conn.id)).toBe(true)
+    expect(existsSync(whatsappRoot)).toBe(before) // rm never invoked for a non-WhatsApp row
   })
 
   it('maps the partial-unique-index race to already_connected, top-level or under cause, and passes through anything else', () => {

@@ -1,8 +1,11 @@
+import { rm } from 'node:fs/promises'
+import path from 'node:path'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { chats, connections } from '@/lib/db/schema'
-import { encryptSecret } from '@/lib/services/crypto'
+import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import type { Channel } from '@/lib/channels/port'
+import { env } from '@/lib/env'
 
 // Portal-facing half of the connection lifecycle. The worker-facing half is
 // lib/services/login.ts. Nothing here returns a ciphertext column: the login
@@ -130,13 +133,33 @@ export async function revokeConnection(id: string, reason: string): Promise<bool
 
 // Delete everything: revoke first so the session is torn down and the secrets
 // are gone even if the delete below fails, then drop the row — chats, messages
-// and (from M4) media rows follow by cascade. M2 adds the WhatsApp auth-dir
-// removal here; M4 adds unlinking the media files.
+// and (from M4) media rows follow by cascade. WhatsApp's auth directory is
+// removed after the row is gone; M4 adds unlinking the media files.
 export async function deleteConnection(id: string): Promise<boolean> {
-  const [row] = await db.select({ id: connections.id }).from(connections).where(eq(connections.id, id))
+  const [row] = await db.select({
+    id: connections.id,
+    channel: connections.channel,
+    sessionCiphertext: connections.sessionCiphertext,
+  }).from(connections).where(eq(connections.id, id))
   if (!row) return false
+
+  // WhatsApp keeps its signal keys on the volume, not in the database (spec
+  // decision 9); deleting a connection must take them with it. The name is
+  // read here because revokeConnection below nulls session_ciphertext — after
+  // that this local is the only surviving copy.
+  let whatsappDir: string | null = null
+  if (row.channel === 'whatsapp' && row.sessionCiphertext) {
+    // decryptSecret returns null on a tampered or unreadable payload (M0), so
+    // guard the name before it is ever joined to a path.
+    const dir = decryptSecret(row.sessionCiphertext)
+    if (dir && /^wa-[A-Za-z0-9._-]+$/.test(dir)) whatsappDir = dir
+  }
+
   await revokeConnection(id, 'Deleted, along with everything it archived.')
   await db.delete(connections).where(eq(connections.id, id))
+  if (whatsappDir) {
+    await rm(path.join(env.DATA_DIR, 'whatsapp', whatsappDir), { recursive: true, force: true })
+  }
   return true
 }
 
