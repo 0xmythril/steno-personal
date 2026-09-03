@@ -72,9 +72,13 @@ everything away: `docker compose down -v`.
 
 ## Deploy on Railway
 
-[![Deploy on Railway](https://railway.com/button.svg)](<RAILWAY_TEMPLATE_URL>)
+<!-- Until the template is published this button opens the Railway section of
+     docs/self-hosting.md. Once it exists, replace the link target with
+     <RAILWAY_TEMPLATE_URL> — see "Fill in the button" in that document. -->
+[![Deploy on Railway](https://railway.com/button.svg)](docs/self-hosting.md#railway)
 
-One click gives you a service built from this repo's `Dockerfile`, a 5 GB
+The template is not published yet; the button above takes you to the manual
+Railway instructions until it is. Once it is, one click gives you a service built from this repo's `Dockerfile`, a 5 GB
 volume mounted at `/data`, and a generated `SECRET_KEY`. Watch the deploy log:
 your bootstrap access key is printed there exactly as above. Open the generated
 `*.up.railway.app` URL, log in with it, and mint your own key.

@@ -313,12 +313,23 @@ First publication requires `--readme-file` or `--readme`; `railway templates
 update` replaces the metadata later. Docs:
 <https://docs.railway.com/cli/templates>.
 
-**8. Fill in the button.** Copy the template URL and replace
-`<RAILWAY_TEMPLATE_URL>` in `README.md` with:
+**8. Fill in the button.** In `README.md` the button currently links to this
+section, with an HTML comment above it holding the `<RAILWAY_TEMPLATE_URL>`
+placeholder. Delete the comment and the "not published yet" sentence, and
+point the button at:
 
 ```
-https://railway.com/new/template/<template-code>?utm_medium=integration&utm_source=button&utm_campaign=steno-personal
+https://railway.com/new/template/<template-code>?referralCode=<your-code>&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
 ```
+
+`referralCode` is optional. It is the code from your workspace's referrals page
+(<https://railway.com/account/referrals>): a signup through it gets $20 in
+credits and you get 15% of their first twelve months of invoices under
+Railway's affiliate programme. That is separate from the template kickback,
+which needs no code at all: once the template is on the marketplace you earn
+15% of the usage it generates, 25% if you answer questions in your template
+queue. Docs: <https://docs.railway.com/community/affiliate-program> and
+<https://docs.railway.com/templates/kickbacks>.
 
 The button image is `https://railway.com/button.svg`. Docs:
 <https://docs.railway.com/templates/publish-and-share>.
