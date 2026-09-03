@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { chats, messages } from '@/lib/db/schema'
+import { chats, media, mediaAnalysis, messages } from '@/lib/db/schema'
 import { searchIndex } from '@/lib/db/fts'
 import type { Channel } from '@/lib/channels/port'
 import type { IncomingMessage } from '@/lib/services/ingest'
@@ -48,9 +48,9 @@ const messageSelection = {
 // database cannot answer yet.
 type MessageRow = Omit<MessageView, 'media'>
 
-// media stays null through M1: the media table and the /media/[id] route both
-// arrive in M4, which fills this in from the message's media row.
-const toView = (row: MessageRow): MessageView => ({ ...row, media: null })
+// M4 fills the second argument from mediaForMessages; it stays defaulted so
+// any caller that has no media map still gets a well-formed MessageView.
+const toView = (row: MessageRow, media: MessageView['media'] = null): MessageView => ({ ...row, media })
 
 // base64url of `${sentAt}:${id}` — opaque to the caller, and a URL cursor
 // never leaks a timestamp or an id into a log or a Referer in readable form.
@@ -108,7 +108,8 @@ export async function getMessages(chatId: string, opts: {
 
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
-  return { chat, messages: page.map(toView), nextCursor }
+  const mediaById = await mediaForMessages(page.map(r => r.id))
+  return { chat, messages: page.map(r => toView(r, mediaById.get(r.id) ?? null)), nextCursor }
 }
 
 // FTS5 treats bare words as syntax (AND, OR, NOT, NEAR, *, ^, :, quotes), so a
@@ -163,5 +164,35 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
     .orderBy(asc(sql`min(${ranked.rank})`))
     .limit(Math.max(1, Math.min(limit, MAX_LIMIT)))
 
-  return rows.map(r => ({ ...toView(r), chatId: r.chatId, chatTitle: r.chatTitle }))
+  const mediaById = await mediaForMessages(rows.map(r => r.id))
+  return rows.map(r => ({ ...toView(r, mediaById.get(r.id) ?? null), chatId: r.chatId, chatTitle: r.chatTitle }))
+}
+
+// One query for a whole page's attachments, so a 100-message transcript costs
+// two round trips rather than 101. Only `done` rows are returned — the same
+// condition /media/[id] serves under, so the transcript never renders a link
+// to bytes that are not there.
+export async function mediaForMessages(
+  messageIds: string[],
+): Promise<Map<string, NonNullable<MessageView['media']>>> {
+  const out = new Map<string, NonNullable<MessageView['media']>>()
+  if (messageIds.length === 0) return out
+  const rows = await db.select({
+    id: media.id,
+    messageId: media.messageId,
+    mimeType: media.mimeType,
+    extractedText: mediaAnalysis.extractedText,
+  })
+    .from(media)
+    .leftJoin(mediaAnalysis, eq(mediaAnalysis.mediaId, media.id))
+    .where(and(inArray(media.messageId, messageIds), eq(media.status, 'done')))
+  for (const r of rows) {
+    out.set(r.messageId, {
+      id: r.id,
+      url: `/media/${r.id}`,
+      mimeType: r.mimeType,
+      extractedText: r.extractedText ?? null,
+    })
+  }
+  return out
 }
