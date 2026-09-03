@@ -12,7 +12,7 @@ describe('settings keys page', () => {
   it('flash cookies are httpOnly and short-lived', () => {
     const actions = readFileSync('app/settings/actions.ts', 'utf8')
     const sets = actions.match(/jar\.set\([\s\S]*?\)\n/g) ?? []
-    expect(sets.length).toBe(2)
+    expect(sets.length).toBe(3)
     for (const s of sets) {
       expect(s).toMatch(/httpOnly:\s*true/)
       expect(s).toMatch(/maxAge:\s*(2|5) \* 60/)
@@ -26,6 +26,7 @@ describe('settings keys page', () => {
     const body = next === -1 ? actions.slice(start) : actions.slice(start, next)
     expect(body).toMatch(/MINTED_KEY_COOKIE/)
     expect(body).toMatch(/REVEALED_KEY_COOKIE/)
+    expect(body).toMatch(/INSTRUCTIONS_KEY_COOKIE/)
     // A raw key must not outlive the logout that revoked it.
     expect(body.indexOf('jar.delete')).toBeLessThan(body.indexOf('endSession()'))
   })

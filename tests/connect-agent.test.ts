@@ -92,10 +92,26 @@ describe('the settings section', () => {
     expect(src).toContain('agentSetupPrompt')
   })
 
-  it('is rendered from the settings page with the minted key', () => {
+  it('is rendered from the settings page with the chosen key, else the minted one', () => {
     const src = readFileSync('app/settings/page.tsx', 'utf8')
     expect(src).toContain('<ConnectAgent')
-    expect(src).toMatch(/rawKey=\{minted\?\.rawKey \?\? null\}/)
+    expect(src).toMatch(/rawKey=\{chosen\?\.rawKey \?\? minted\?\.rawKey \?\? null\}/)
+    // The chosen-key flash is dropped the moment its key is gone, like the others.
+    expect(src).toMatch(/if \(chosen && !keys\.some\(k => k\.id === chosen!\.id\)\) chosen = null/)
+  })
+
+  it('lets the user pick which key fills the snippets, through a flash cookie', () => {
+    const component = readFileSync('app/settings/connect-agent.tsx', 'utf8')
+    expect(component).toMatch(/<select name="keyId"/)
+    expect(component).toContain('useKeyForInstructionsAction')
+    expect(component).toContain('clearInstructionsKeyAction')
+    const actions = readFileSync('app/settings/actions.ts', 'utf8')
+    const start = actions.indexOf('export async function useKeyForInstructionsAction')
+    const body = actions.slice(start, actions.indexOf('export async function ', start + 1))
+    expect(body).toContain('requireSession()')
+    expect(body).toContain('revealAccessKey(keyId)')
+    expect(body).toMatch(/INSTRUCTIONS_KEY_COOKIE/)
+    expect(body).not.toMatch(/redirect\([^)]*rawKey/)
   })
 
   it('never puts the key in a URL', () => {
