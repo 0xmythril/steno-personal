@@ -37,9 +37,11 @@ function functionBody(src: string, from: number): string {
 const files = actionFiles('app')
 
 describe('server actions re-run the guard', () => {
-  it('finds the action files to check', () => {
+  it('finds every actions file', () => {
+    expect(files.length).toBeGreaterThanOrEqual(3) // login, settings, connections
     expect(files).toContain(path.join('app', 'login', 'actions.ts'))
     expect(files).toContain(path.join('app', 'settings', 'actions.ts'))
+    expect(files).toContain(path.join('app', 'connections', 'actions.ts'))
   })
 
   for (const file of files) {
