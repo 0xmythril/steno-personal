@@ -165,8 +165,9 @@ export default async function PersonPage({ params, searchParams }: {
         <h2>Merge into</h2>
         <p className="muted">
           Two rows for one person. Every identity here moves to whoever you choose, and this row is
-          removed — the other one keeps its name, unless it only has a channel name and this one
-          carries a name you typed. Chats and messages are untouched.
+          deleted for good — Hide can be undone, this cannot. The other one keeps its name, unless
+          it only has a channel name and this one carries a name you typed, and it takes these
+          notes if it has none of its own. Chats and messages are untouched.
         </p>
         {others.length === 0 ? (
           <p className="muted">Nobody else to merge into yet.</p>
@@ -182,7 +183,7 @@ export default async function PersonPage({ params, searchParams }: {
                 ))}
               </select>
             </label>{' '}
-            <button type="submit">Merge</button>
+            <button type="submit" className="danger">Merge</button>
           </form>
         )}
       </section>
