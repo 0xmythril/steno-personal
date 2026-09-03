@@ -102,8 +102,7 @@ describe('people pages', () => {
       ...[...src.matchAll(/field\(formData,\s*'([^']+)'\)/g)].map(m => m[1]),
     ]
     expect([...new Set(keys)].sort()).toEqual([
-      'channel', 'externalId', 'identityId', 'intoId', 'name', 'notes', 'personId',
-      'telegramExternalId', 'whatsappExternalId',
+      'channel', 'externalId', 'fromId', 'identityId', 'intoId', 'name', 'notes', 'personId',
     ])
   })
 
@@ -121,6 +120,20 @@ describe('people pages', () => {
     // which is exactly what stops the next contact sync recreating the person.
     expect(src).not.toMatch(/Delete this person/)
     expect(src).toMatch(/You can restore them from the People page/)
+  })
+
+  it('offers a suggestion as a merge between two people, never as a new row', () => {
+    // Auto-populate answers every identity, so the old identity-level pair has
+    // nothing left to match. What the owner sees now is two ROWS and one
+    // question about them, and Confirm merges rather than creating a third.
+    const src = readFileSync('app/people/page.tsx', 'utf8')
+    expect(src).toMatch(/listMergeSuggestions/)
+    expect(src).not.toMatch(/listSuggestions/)
+    expect(src).toMatch(/Merge \{s\.from\.name\} into \{s\.into\.name\}\?/)
+    expect(src).toMatch(/name="fromId"/)
+    // The two channel identities are what the table used to post around; a
+    // person id is this instance's own uuid and names nobody.
+    expect(src).not.toMatch(/telegramExternalId|whatsappExternalId/)
   })
 
   it('lists hidden people with a way back, and only when there are some', () => {

@@ -68,17 +68,21 @@ keeps is that it may only record what your own archive already says. A contact,
 or the other side of a direct chat, with a name becomes a person under that
 name. Two identities are joined into one person **only when their phone numbers
 are equal** — the one fact that cannot be a coincidence. An identical name is
-never enough on its own: it is offered as a suggestion, sits on the page until
-you confirm it, and dismissing one is remembered. None of this reads anything
-new, sends anything, or tells any channel that two accounts are the same person;
-it is a join over rows already on your disk.
+never enough on its own: the two get a row each, and the page asks whether to
+merge them. That question sits there until you answer it, and dismissing one is
+remembered against the two identities, so a later sync does not ask again. None
+of this reads anything new, sends anything, or tells any channel that two
+accounts are the same person; it is a join over rows already on your disk.
 
 The names stay yours. A name copied off a contact list follows that list; a name
 you type is an alias and no sync overwrites it, and "Use channel name" hands it
 back. Hiding a person takes them out of every listing and away from every agent
-and keeps their links, which is what stops the next sync recreating them; they
-sit under "Hidden" on the People page until you restore them. Merging two rows
-moves the links and nothing else. Every one of these touches your links and your
+and keeps their links, which is what stops the next sync recreating them —
+including on a channel you pair later, where their number arrives on the hidden
+row rather than on a new one. They sit under "Hidden" on the People page until
+you restore them. Merging two rows moves the links, and carries the notes over
+if the surviving row has none and the name you typed if the surviving row only
+has a channel name. Every one of these touches your links and your
 names only — the chats, the messages and the attachments are untouched, and
 every name falls back to whatever the channel calls it. Deleting a connection
 clears the contacts read from that account and leaves your people alone.

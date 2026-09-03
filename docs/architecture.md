@@ -171,8 +171,10 @@ connection.
   `channel_contacts` is the cache of what `listContacts()` last returned, keyed
   `unique(connection_id, external_id)` and cascaded away with its connection.
   `dismissed_suggestions` remembers a pair the owner said no to, by the two
-  external ids. Suggestions themselves are computed on every read, never
-  stored. The portal's Hide only sets `archived_at`; a real delete — the losing
+  external ids — a suggestion is now phrased as two PEOPLE (a Telegram-only row
+  and a WhatsApp-only row sharing a name, offered as a merge), but it is keyed
+  by their first identities so it survives the rows being rebuilt. Suggestions
+  themselves are computed on every read, never stored. The portal's Hide only sets `archived_at`; a real delete — the losing
   row of a merge — cascades to its identity rows only: `chats` and
   `messages` have no foreign key into any of this, and the lookups that put a
   person on a chat or a message are correlated subqueries on

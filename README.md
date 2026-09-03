@@ -196,8 +196,8 @@ in your contacts*.
 Two identities are joined into one person **only when their phone numbers are
 equal**. That is the one match strong enough to act on by itself, and it needs a
 number on both sides — a Telegram contact whose number Telegram will not show
-you cannot be matched this way. An identical name is never enough; it is offered
-as a suggestion and waits for you.
+you cannot be matched this way. An identical name is never enough: the two get a
+row each, and the page offers to merge them and waits for you.
 
 You can still open **People**, add a person, and link their identities yourself.
 Everyone the archive knows about on a channel is offered — your contact list,
@@ -216,18 +216,23 @@ identities to whoever you choose and removes the row you were on. The survivor
 keeps its name, unless it only has a channel name and the row you merged carries
 an alias you typed — a name a human chose outranks one copied off a phone.
 
-**Suggestions.** The page offers pairs it thinks are the same person, and it
-never acts on one by itself — confirming is a button you press.
+**Suggestions.** Because the address book fills itself in, two people who match
+already have a row each — so a suggestion is a question about those two rows:
+*Merge Ada into Ada?* It never acts on one by itself; confirming is a button you
+press.
 
-- *Same phone number* is the strong one, and it needs the person saved in your
-  Telegram contacts with a number Telegram is willing to show you. Telegram
-  hides a contact's number unless you have each other saved or they let
-  everyone see it, and a Telegram account with no number visible cannot be
-  matched this way. A WhatsApp identity is always a number, so that side is
-  never the problem.
-- *Same name* is exact: the two display names must be the same once trimmed,
-  ignoring capitalisation. "Ada L" and "Ada Lovelace" are not offered.
-- **Dismiss** remembers your no, and that pair is never suggested again.
+- A pair is offered when one row has only Telegram identities, the other only
+  WhatsApp, and the two names are the same once trimmed, ignoring
+  capitalisation. "Ada L" and "Ada Lovelace" are not offered.
+- Matching phone numbers never reach this list: those two are joined for you
+  already. A name is all that is left when Telegram will not show you a
+  contact's number — it hides one unless you have each other saved, or they let
+  everyone see it — and a name is only ever a hint.
+- **Confirm** moves every identity onto the older of the two rows and removes
+  the other, exactly as *Merge into* does on a person's page.
+- **Dismiss** remembers your no. It is remembered against the two identities,
+  not the two rows, so it holds even if the rows are rebuilt by a later sync.
+- Hidden people are never offered: hiding is already an answer.
 
 **What your agent sees.** A chat or a message gains a `person` field —
 `{ id, name }` — when the sender or the other side of a direct chat is someone

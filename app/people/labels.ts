@@ -16,7 +16,7 @@ export const PEOPLE_ERRORS: Record<string, string> = {
   length: 'A name has to be between 1 and 100 characters.',
   linked: 'That identity already belongs to someone else. Unlink it there first.',
   empty: 'Choose somebody from the list first.',
-  stale: 'That suggestion is out of date: one side is already linked to a person. The list below is current.',
+  stale: 'That suggestion is out of date: one of those two was hidden or merged away. The list below is current.',
   // Covers a person and a link alike: whichever one the action reached for,
   // the row was not there any more — hidden, merged away, or unlinked.
   gone: 'That is already gone — it was hidden, merged or unlinked while this page was open.',

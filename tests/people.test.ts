@@ -7,7 +7,7 @@ import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
   archivePerson, confirmSuggestion, createPerson, dismissSuggestion, getPerson,
-  linkIdentity, listArchivedPeople, listIdentityCandidates, listPeople, listSuggestions,
+  linkIdentity, listArchivedPeople, listIdentityCandidates, listMergeSuggestions, listPeople,
   mergePeople, personForIdentity, populatePeople, publicPeople, resetName, restorePerson,
   syncContacts, unlinkIdentity, updatePerson,
 } from '@/lib/services/people'
@@ -163,65 +163,6 @@ describe('people', () => {
     expect(candidate).toMatchObject({
       externalId: ADA_JID, displayName: null, phone: '+447700900123', kind: 'dm',
     })
-  })
-
-  it('suggests a pair by phone and by name, and never one already answered', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [
-      { externalId: '42', displayName: 'Ada', phone: '+44 7700 900123' },
-      { externalId: '7', displayName: 'Grace', phone: null },
-      { externalId: '8', displayName: 'Nobody in WhatsApp', phone: '+15550000000' },
-    ])
-    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: 'Ada Lovelace' })
-    await makeChat(wa, { kind: 'dm', externalChatId: GRACE_JID, title: ' grace ' })
-
-    const suggestions = await listSuggestions()
-    expect(suggestions.map(s => [s.telegram.externalId, s.whatsapp.externalId, s.reason])).toEqual([
-      ['42', ADA_JID, 'phone'],
-      ['7', GRACE_JID, 'name'],
-    ])
-
-    // a dismissal is remembered; the other suggestion is untouched
-    await dismissSuggestion('7', GRACE_JID)
-    await dismissSuggestion('7', GRACE_JID)
-    expect((await listSuggestions()).map(s => s.reason)).toEqual(['phone'])
-
-    // an identity that already belongs to a person has an answer
-    const { id } = await createPerson({ name: 'Ada' })
-    await linkIdentity(id, { channel: 'whatsapp', externalId: ADA_JID })
-    expect(await listSuggestions()).toEqual([])
-  })
-
-  it('confirms a suggestion into one person with both identities', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: '+447700900123' }])
-    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: 'Ada Lovelace' })
-
-    const created = await confirmSuggestion('42', ADA_JID)
-    expect(created).not.toBeNull()
-    const person = (await getPerson(created!.id))!
-    expect(person.name).toBe('Ada')
-    expect(person.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([
-      ['telegram', '42', 'phone_match'],
-      ['whatsapp', ADA_JID, 'phone_match'],
-    ])
-    expect(await listSuggestions()).toEqual([])
-
-    // a stale form post must not invent a second person
-    expect(await confirmSuggestion('42', ADA_JID)).toBeNull()
-    expect(await listPeople()).toHaveLength(1)
-  })
-
-  it('refuses to confirm a pair that does not match', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: '+447700900123' }])
-    await makeChat(wa, { kind: 'dm', externalChatId: GRACE_JID, title: 'Grace' })
-    expect(await confirmSuggestion('42', GRACE_JID)).toBeNull()
-    expect(await confirmSuggestion('nope', GRACE_JID)).toBeNull()
-    expect(await listPeople()).toEqual([])
   })
 
   it('deleting a connection drops its contact cache and keeps the person links', async () => {
@@ -410,9 +351,23 @@ describe('the self-populating address book', () => {
     await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'Ada', phone: null }])
 
     expect(await populatePeople()).toMatchObject({ created: 2, merged: 0 })
-    expect(await listPeople()).toHaveLength(2)
-    // It stays what it always was: something to offer the owner.
-    expect((await listSuggestions()).map(s => s.reason)).toEqual([])
+    const all = await listPeople()
+    expect(all).toHaveLength(2)
+    const onTelegram = all.find(p => p.identities[0].channel === 'telegram')!
+    const onWhatsapp = all.find(p => p.identities[0].channel === 'whatsapp')!
+    // The two rows are the same age to the millisecond here; pin them so the
+    // survivor is the one the rule names and not the one the clock happened to
+    // pick.
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, onWhatsapp.id))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, onTelegram.id))
+
+    // It stays what it always was: something to OFFER the owner. Two rows, and
+    // a suggestion that says so — not silence, and not a merge.
+    expect(await listMergeSuggestions()).toEqual([{
+      from: { id: onTelegram.id, name: 'Ada' },
+      into: { id: onWhatsapp.id, name: 'Ada' },
+      reason: 'name',
+    }])
   })
 
   it('a channel name follows the contact list; an alias never moves', async () => {
@@ -628,5 +583,108 @@ describe('the self-populating address book', () => {
     expect(body).toMatch(/tx\.select\(\)\.from\(people\)/)
     expect(body).not.toMatch(/\bawait\b/)
     expect(body).not.toMatch(/\bdb\.(select|update|delete|insert)\b/)
+  })
+})
+
+
+// Addendum 2, decision 12's other half. Auto-populate answers every identity,
+// so a match BETWEEN IDENTITIES is never open any more — the leftover is two
+// PEOPLE for one human, which is what the owner is now asked about.
+describe('merge suggestions between people', () => {
+  beforeEach(resetDb)
+
+  async function twoAdas(): Promise<{ telegram: string; whatsapp: string }> {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    // No phone on either side: Telegram will not show a contact's number
+    // unless you have each other saved, which is exactly when decision 12
+    // cannot fire and a name is all there is.
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: ' Ada ', phone: null }])
+    await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'ADA', phone: null }])
+    await populatePeople()
+    const all = await listPeople()
+    const telegram = all.find(p => p.identities[0].channel === 'telegram')!.id
+    const whatsapp = all.find(p => p.identities[0].channel === 'whatsapp')!.id
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, telegram))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, whatsapp))
+    return { telegram, whatsapp }
+  }
+
+  it('offers the younger row merged into the older, once, and only across channels', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    // Trimmed and case-insensitive: ' Ada ' and 'ADA' are one name.
+    expect(await listMergeSuggestions()).toEqual([{
+      from: { id: whatsapp, name: 'ADA' },
+      into: { id: telegram, name: 'Ada' },
+      reason: 'name',
+    }])
+
+    // A third row with the same name on the SAME channel is offered against
+    // the WhatsApp one — and never against the other Telegram row, because two
+    // Telegram accounts are two accounts however they are named.
+    const sameChannel = await createPerson({ name: 'Ada' })
+    await linkIdentity(sameChannel.id, { channel: 'telegram', externalId: '99' })
+    const two = await listMergeSuggestions()
+    expect(two).toHaveLength(2)
+    expect(two.every(s => [s.from.id, s.into.id].includes(whatsapp))).toBe(true)
+
+    // Somebody who already holds both channels is not half of anything…
+    const both = await createPerson({ name: 'Grace' })
+    await linkIdentity(both.id, { channel: 'telegram', externalId: '77' })
+    await linkIdentity(both.id, { channel: 'whatsapp', externalId: ADA_JID })
+    // …nor is a row with no identity at all, nor one with a different name.
+    await createPerson({ name: 'Grace' })
+    await createPerson({ name: 'Somebody else' })
+    expect(await listMergeSuggestions()).toHaveLength(2)
+  })
+
+  it('never offers a hidden person, and confirming is a merge', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    expect(await archivePerson(whatsapp)).toBe(true)
+    // Hiding is already an answer.
+    expect(await listMergeSuggestions()).toEqual([])
+    expect(await restorePerson(whatsapp)).toBe(true)
+
+    expect(await confirmSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await getPerson(whatsapp)).toBeNull()
+    const survivor = (await getPerson(telegram))!
+    expect(survivor.name).toBe('Ada')
+    expect(survivor.identities.map(i => [i.channel, i.externalId])).toEqual([
+      ['telegram', '42'], ['whatsapp', GRACE_JID],
+    ])
+    expect(await listMergeSuggestions()).toEqual([])
+    // A second post of the same form finds the row gone and moves nothing.
+    expect(await confirmSuggestion(whatsapp, telegram)).toBe(false)
+  })
+
+  it('remembers a dismissal by the identities, so a rebuilt pair stays dismissed', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    expect(await dismissSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await dismissSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await listMergeSuggestions()).toEqual([])
+
+    // The rows go and come back — hidden, restored, or in this case deleted
+    // outright and re-populated under brand new person ids. The owner's "no"
+    // was about the two humans, not about two uuids they never saw.
+    await db.delete(people)
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    const rebuilt = await listPeople()
+    expect(rebuilt).toHaveLength(2)
+    expect(rebuilt.map(p => p.id).sort()).not.toEqual([telegram, whatsapp].sort())
+    expect(await listMergeSuggestions()).toEqual([])
+  })
+
+  it('refuses to key a dismissal it cannot phrase', async () => {
+    const { telegram } = await twoAdas()
+    const both = await createPerson({ name: 'Grace' })
+    await linkIdentity(both.id, { channel: 'telegram', externalId: '77' })
+    await linkIdentity(both.id, { channel: 'whatsapp', externalId: ADA_JID })
+
+    expect(await dismissSuggestion(telegram, telegram)).toBe(false)
+    expect(await dismissSuggestion(telegram, 'no-such-person')).toBe(false)
+    // Same channel on both sides, and a person holding both channels: neither
+    // is a Telegram/WhatsApp pair the table can hold.
+    expect(await dismissSuggestion(telegram, both.id)).toBe(false)
+    expect(await listMergeSuggestions()).toHaveLength(1)
   })
 })

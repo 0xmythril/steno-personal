@@ -479,7 +479,19 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
   })
 }
 
-export type Suggestion = { telegram: IdentityCandidate; whatsapp: IdentityCandidate; reason: 'phone' | 'name' }
+// A pair of PEOPLE the owner might want to be one person.
+//
+// The address book fills itself in now, so an identity that matches another
+// identity is not the interesting case any more: the populater has already
+// given both of them a row. What is left over is two ROWS for one human — one
+// found on Telegram, one on WhatsApp, both named the same thing and with no
+// phone number to prove it. Decision 12 will not merge those by itself and
+// should not; this is where the owner is asked.
+export type MergeSuggestion = {
+  from: { id: string; name: string }
+  into: { id: string; name: string }
+  reason: 'name'
+}
 
 // A plain, printable separator. It was a literal NUL byte, which made `grep`
 // treat this whole file as binary and skip it — a file that ordinary tooling
@@ -488,22 +500,48 @@ export type Suggestion = { telegram: IdentityCandidate; whatsapp: IdentityCandid
 const pairKey = (telegramExternalId: string, whatsappExternalId: string) =>
   `${telegramExternalId}|${whatsappExternalId}`
 
-function matchReason(telegram: IdentityCandidate, whatsapp: IdentityCandidate): Suggestion['reason'] | null {
-  // The phone number is the only identifier the two channels share, so it is
-  // the only strong signal; an equal display name is a hint, and both are
-  // shown to the owner rather than acted on.
-  if (telegram.phone && telegram.phone === whatsapp.phone) return 'phone'
-  const t = nameKey(telegram.displayName)
-  if (t && t === nameKey(whatsapp.displayName)) return 'name'
-  return null
+// A dismissal outlives the two rows it was given about: merge, hide, delete and
+// re-populate, and the same two IDENTITIES come back under fresh person ids. So
+// "no" is remembered by the identities, which is what dismissed_suggestions has
+// always stored — the person a suggestion is phrased in terms of is only how it
+// is shown. The first identity is the one the person page lists first (channel,
+// then link order), so the key is stable for as long as that link exists.
+type SingleChannelPerson = {
+  id: string; name: string; createdAt: Date
+  channel: Channel; firstExternalId: string
 }
 
-// Pairs the owner might want to merge, strongest first. Never includes an
-// identity that already belongs to a person (it has an answer), nor a pair the
-// owner has dismissed (they have given one).
-export async function listSuggestions(): Promise<Suggestion[]> {
-  const telegram = (await listIdentityCandidates('telegram')).filter(c => c.personId === null)
-  const whatsapp = (await listIdentityCandidates('whatsapp')).filter(c => c.personId === null)
+async function singleChannelPeople(): Promise<SingleChannelPerson[]> {
+  const rows = await db.select({
+    id: people.id, name: people.name, createdAt: people.createdAt,
+  }).from(people).where(isNull(people.archivedAt))
+  if (rows.length === 0) return []
+  const identities = await identitiesByPerson(rows.map(r => r.id))
+
+  const out: SingleChannelPerson[] = []
+  for (const r of rows) {
+    const own = identities.get(r.id) ?? []
+    if (own.length === 0) continue
+    // Exactly one channel, or there is nothing to bridge: a person who already
+    // holds both is not half of anything.
+    const channels = new Set(own.map(i => i.channel))
+    if (channels.size !== 1) continue
+    out.push({ ...r, channel: own[0].channel, firstExternalId: own[0].externalId })
+  }
+  // Oldest first: `into` is the survivor of every pair below, and the older row
+  // is the one the owner has had longer and the one already in any bookmark.
+  return out.sort((a, b) =>
+    a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+}
+
+// Two people the owner might merge. Never acted on: an equal name is a hint and
+// nothing more (decision 12), so it waits for the button. A pair the owner has
+// dismissed is not offered again, and neither is one involving a hidden person
+// — hiding is already an answer.
+export async function listMergeSuggestions(): Promise<MergeSuggestion[]> {
+  const candidates = await singleChannelPeople()
+  const telegram = candidates.filter(c => c.channel === 'telegram')
+  const whatsapp = candidates.filter(c => c.channel === 'whatsapp')
   if (telegram.length === 0 || whatsapp.length === 0) return []
 
   const dismissed = new Set((await db.select({
@@ -511,78 +549,62 @@ export async function listSuggestions(): Promise<Suggestion[]> {
     whatsappExternalId: dismissedSuggestions.whatsappExternalId,
   }).from(dismissedSuggestions)).map(r => pairKey(r.telegramExternalId, r.whatsappExternalId)))
 
-  const byPhone = new Map<string, IdentityCandidate[]>()
-  const byName = new Map<string, IdentityCandidate[]>()
-  const bucket = (m: Map<string, IdentityCandidate[]>, key: string | null, c: IdentityCandidate) => {
-    if (!key) return
-    const list = m.get(key)
-    if (list) list.push(c)
-    else m.set(key, [c])
-  }
+  const byName = new Map<string, SingleChannelPerson[]>()
   for (const w of whatsapp) {
-    bucket(byPhone, w.phone, w)
-    bucket(byName, nameKey(w.displayName), w)
+    const key = nameKey(w.name)
+    if (!key) continue
+    const list = byName.get(key)
+    if (list) list.push(w)
+    else byName.set(key, [w])
   }
 
-  const out: Suggestion[] = []
-  const taken = new Set<string>()
-  const add = (t: IdentityCandidate, w: IdentityCandidate, reason: Suggestion['reason']) => {
-    const key = pairKey(t.externalId, w.externalId)
-    if (taken.has(key) || dismissed.has(key)) return
-    taken.add(key)
-    out.push({ telegram: t, whatsapp: w, reason })
-  }
-
-  // Phone matches first, so a pair that matches both ways is offered as the
-  // stronger one; `telegram` is already sorted by name, and that order carries.
-  for (const t of telegram) for (const w of (t.phone ? byPhone.get(t.phone) ?? [] : [])) add(t, w, 'phone')
+  const out: MergeSuggestion[] = []
   for (const t of telegram) {
-    const n = nameKey(t.displayName)
-    for (const w of (n ? byName.get(n) ?? [] : [])) add(t, w, 'name')
+    const key = nameKey(t.name)
+    for (const w of (key ? byName.get(key) ?? [] : [])) {
+      if (dismissed.has(pairKey(t.firstExternalId, w.firstExternalId))) continue
+      // Both lists came out of one oldest-first sort, so this comparison is the
+      // same one that ordered them.
+      const [into, from] = t.createdAt.getTime() === w.createdAt.getTime()
+        ? (t.id < w.id ? [t, w] : [w, t])
+        : (t.createdAt < w.createdAt ? [t, w] : [w, t])
+      out.push({
+        from: { id: from.id, name: from.name },
+        into: { id: into.id, name: into.name },
+        reason: 'name',
+      })
+    }
   }
   return out
 }
 
-export async function dismissSuggestion(
-  telegramExternalId: string, whatsappExternalId: string,
-): Promise<void> {
+// The owner's "no, those two are different people", remembered by the two
+// identities rather than by the two rows, so a re-population that rebuilds the
+// rows does not ask again. Returns false when the pair is not one this instance
+// can key — either side gone, hidden, or holding both channels already.
+export async function dismissSuggestion(fromId: string, intoId: string): Promise<boolean> {
+  if (!fromId || !intoId || fromId === intoId) return false
+  const byId = new Map((await singleChannelPeople()).map(c => [c.id, c] as const))
+  const from = byId.get(fromId)
+  const into = byId.get(intoId)
+  if (!from || !into || from.channel === into.channel) return false
+  const telegram = from.channel === 'telegram' ? from : into
+  const whatsapp = from.channel === 'whatsapp' ? from : into
   await db.insert(dismissedSuggestions)
-    .values({ telegramExternalId, whatsappExternalId })
+    .values({
+      telegramExternalId: telegram.firstExternalId,
+      whatsappExternalId: whatsapp.firstExternalId,
+    })
     .onConflictDoNothing()
+  return true
 }
 
-// The owner's yes. Creates the person and links both sides with the source
-// that names how the pair was found, so the address book records that this
-// link came from a confirmed phone (or name) match rather than a hand entry.
-// Returns null when either side has since been linked, or when the two no
-// longer match at all — a stale form post must not invent a person.
-export async function confirmSuggestion(
-  telegramExternalId: string, whatsappExternalId: string,
-): Promise<{ id: string } | null> {
-  const telegram = (await listIdentityCandidates('telegram')).find(c => c.externalId === telegramExternalId)
-  const whatsapp = (await listIdentityCandidates('whatsapp')).find(c => c.externalId === whatsappExternalId)
-  if (!telegram || !whatsapp) return null
-  if (telegram.personId !== null || whatsapp.personId !== null) return null
-
-  const reason = matchReason(telegram, whatsapp)
-  if (!reason) return null
-  const source: IdentitySource = reason === 'phone' ? 'phone_match' : 'name_match'
-
-  const name = clampName(
-    telegram.displayName ?? whatsapp.displayName ?? telegram.phone ?? whatsapp.phone ?? telegram.externalId,
-  )
-  // The name came off a contact list, not out of the owner's keyboard, so it
-  // stays a channel name and a later sync may refresh it (decision 13).
-  const { id } = await createPerson({ name, nameSource: 'channel' })
-  await linkIdentity(id, {
-    channel: 'telegram', externalId: telegram.externalId,
-    displayName: telegram.displayName, phone: telegram.phone,
-  }, source)
-  await linkIdentity(id, {
-    channel: 'whatsapp', externalId: whatsapp.externalId,
-    displayName: whatsapp.displayName, phone: whatsapp.phone,
-  }, source)
-  return { id }
+// The owner's yes. It is a merge and nothing else: mergePeople re-checks that
+// both rows are alive and unhidden inside its own transaction, so a stale form
+// post — the pair already merged in another tab, one side hidden since the page
+// rendered — moves nothing and says so.
+export async function confirmSuggestion(fromId: string, intoId: string): Promise<boolean> {
+  return mergePeople(fromId, intoId)
 }
 
 // The lookup every read path uses to put a name on a chat or a message. Id and

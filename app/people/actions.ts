@@ -160,25 +160,26 @@ export async function unlinkIdentityAction(formData: FormData): Promise<void> {
   redirect(`/people/${id}`)
 }
 
-// The owner's yes to a suggestion. confirmSuggestion returns null when the
-// pair has gone stale — either side linked since the page rendered, or the
-// match no longer holds — and a stale post must not invent a person.
+// The owner's yes to a suggestion: the two rows become one. It is the same
+// merge the person page offers, so it refuses the same way — either side
+// hidden or already merged away while this page sat open moves nothing, and
+// the owner is told rather than shown a success that did not happen.
 export async function confirmSuggestionAction(formData: FormData): Promise<void> {
   await requireSession()
-  const created = await confirmSuggestion(
-    field(formData, 'telegramExternalId'),
-    field(formData, 'whatsappExternalId'),
-  )
-  if (!created) redirect('/people?error=stale')
-  redirect(`/people/${created.id}`)
+  const fromId = field(formData, 'fromId')
+  const intoId = field(formData, 'intoId')
+  if (!fromId || !intoId) redirect('/people')
+  const merged = await confirmSuggestion(fromId, intoId)
+  if (!merged) redirect('/people?error=stale')
+  redirect(`/people/${intoId}`)
 }
 
-// The owner's no. Remembered, because the matcher would otherwise offer the
-// same pair again on the next page load.
+// The owner's no. Remembered by the two identities rather than the two rows, so
+// a re-population that rebuilds the rows does not ask again.
 export async function dismissSuggestionAction(formData: FormData): Promise<void> {
   await requireSession()
-  const telegramId = field(formData, 'telegramExternalId')
-  const whatsappId = field(formData, 'whatsappExternalId')
-  if (telegramId && whatsappId) await dismissSuggestion(telegramId, whatsappId)
+  const fromId = field(formData, 'fromId')
+  const intoId = field(formData, 'intoId')
+  if (fromId && intoId) await dismissSuggestion(fromId, intoId)
   redirect('/people')
 }

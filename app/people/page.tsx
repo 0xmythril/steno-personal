@@ -1,14 +1,14 @@
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
-import { listPeople, listArchivedPeople, listSuggestions, type PersonView } from '@/lib/services/people'
+import { listPeople, listArchivedPeople, listMergeSuggestions, type PersonView } from '@/lib/services/people'
 import { CHANNEL_LABELS } from '@/lib/format'
-import { candidateLabel, PEOPLE_ERRORS } from './labels'
+import { PEOPLE_ERRORS } from './labels'
 import { createPersonAction, confirmSuggestionAction, dismissSuggestionAction, restorePersonAction } from './actions'
 
-// The address book. Suggestions never link anything on their own: the only
-// path from a match to a row is the Confirm button below, and the owner is the
-// one who presses it.
+// The address book. Suggestions never merge anything on their own: an equal
+// name is a hint, and the only path from a hint to one row is the Confirm
+// button below, which the owner is the one to press.
 export default async function PeoplePage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
@@ -16,7 +16,7 @@ export default async function PeoplePage({ searchParams }: {
   const sp = await searchParams
   const error = typeof sp.error === 'string' ? PEOPLE_ERRORS[sp.error] : undefined
   const [people, hidden, suggestions] = await Promise.all([
-    listPeople(), listArchivedPeople(), listSuggestions(),
+    listPeople(), listArchivedPeople(), listMergeSuggestions(),
   ])
 
   // A row the address book wrote for itself: a name copied off a contact list,
@@ -42,26 +42,27 @@ export default async function PeoplePage({ searchParams }: {
         <section className="card">
           <h2>Suggestions</h2>
           <p className="muted">
-            Same phone number, or the same name written the same way. Confirm one and it becomes a
-            person with both identities linked; dismiss one and it is not offered again.
+            Two rows with the same name, one found on Telegram and one on WhatsApp. A name is only
+            ever a hint — matching phone numbers are joined for you, names are not — so nothing
+            happens until you say so. Confirm moves every identity onto the older row and removes
+            the other; dismiss and the pair is not offered again.
           </p>
           <table>
-            <thead><tr><th>Telegram</th><th>WhatsApp</th><th>Why</th><th></th></tr></thead>
+            <thead><tr><th>Suggestion</th><th>Why</th><th></th></tr></thead>
             <tbody>
               {suggestions.map(s => (
-                <tr key={`${s.telegram.externalId} ${s.whatsapp.externalId}`}>
-                  <td>{candidateLabel(s.telegram)}</td>
-                  <td>{candidateLabel(s.whatsapp)}</td>
-                  <td className="muted">{s.reason === 'phone' ? 'Same phone number' : 'Same name'}</td>
+                <tr key={`${s.from.id} ${s.into.id}`}>
+                  <td>Merge {s.from.name} into {s.into.name}?</td>
+                  <td className="muted">Same name</td>
                   <td>
                     <form action={confirmSuggestionAction} className="inline">
-                      <input type="hidden" name="telegramExternalId" value={s.telegram.externalId} />
-                      <input type="hidden" name="whatsappExternalId" value={s.whatsapp.externalId} />
+                      <input type="hidden" name="fromId" value={s.from.id} />
+                      <input type="hidden" name="intoId" value={s.into.id} />
                       <button type="submit">Confirm</button>
                     </form>{' '}
                     <form action={dismissSuggestionAction} className="inline">
-                      <input type="hidden" name="telegramExternalId" value={s.telegram.externalId} />
-                      <input type="hidden" name="whatsappExternalId" value={s.whatsapp.externalId} />
+                      <input type="hidden" name="fromId" value={s.from.id} />
+                      <input type="hidden" name="intoId" value={s.into.id} />
                       <button type="submit">Dismiss</button>
                     </form>
                   </td>
