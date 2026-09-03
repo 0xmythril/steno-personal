@@ -52,6 +52,15 @@ export async function listActiveAccessKeys() {
     .orderBy(desc(accessKeys.createdAt), desc(accessKeys.id))
 }
 
+// Whether ANY key row exists, revoked ones included. False means the instance
+// is fresh — nobody has ever been let in — which is what opens /setup to the
+// first visitor and nothing else: once a key has existed, even a revoked one,
+// the only ways back in are a key, recovery, or the host (docs/self-hosting.md).
+export async function hasAnyAccessKey(): Promise<boolean> {
+  const [row] = await db.select({ id: accessKeys.id }).from(accessKeys).limit(1)
+  return row !== undefined
+}
+
 export async function countActiveAccessKeys(): Promise<number> {
   const [row] = await db.select({ n: sql<number>`count(*)` }).from(accessKeys).where(isNull(accessKeys.revokedAt))
   return Number(row?.n ?? 0)

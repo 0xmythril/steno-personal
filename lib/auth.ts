@@ -4,7 +4,7 @@
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createSession, deleteSession, resolveSession } from '@/lib/services/sessions'
-import { verifyAccessKey } from '@/lib/services/access-keys'
+import { hasAnyAccessKey, verifyAccessKey } from '@/lib/services/access-keys'
 
 export const SESSION_COOKIE = 'sp_session'
 // The authoritative expiry is the server-side 30-day idle window in
@@ -23,10 +23,26 @@ export async function currentSession(): Promise<PortalSession | null> {
   return resolveSession(id)
 }
 
+// A fresh instance — no key has ever existed — has nothing to log in with, so
+// the session-less visitor is sent to /setup to pair a channel and receive the
+// first key. Once any key row exists (even revoked) /setup is closed and the
+// visitor goes to /login, which offers recovery.
+export async function isFreshInstance(): Promise<boolean> {
+  return !(await hasAnyAccessKey())
+}
+
 export async function requireSession(): Promise<PortalSession> {
   const s = await currentSession()
-  if (!s) redirect('/login')
+  if (!s) redirect((await isFreshInstance()) ? '/setup' : '/login')
   return s
+}
+
+// The guard for the setup pages and their server actions, in place of
+// requireSession(): they are meant to be reached without a session, but only
+// while the instance is fresh. tests/auth-structure.test.ts accepts exactly
+// this guard in exactly app/setup/actions.ts.
+export async function requireFreshInstance(): Promise<void> {
+  if (!(await isFreshInstance())) redirect('/login')
 }
 
 // Cookie `secure` follows the request: Railway terminates TLS and forwards

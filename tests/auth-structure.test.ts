@@ -6,9 +6,22 @@ import path from 'node:path'
 // exported server action must call requireSession() itself (loginAction is
 // the one exception: it is how a session comes to exist).
 //
+// Two files are reached BEFORE a session can exist and carry their own guard
+// instead, each accepted only in its own file:
+// - app/setup/actions.ts: requireFreshInstance() — open only while no key has
+//   ever existed, so the first visitor can pair a channel and receive the
+//   first key.
+// - app/login/recover/actions.ts: requireRecoveryAttempt() — bound to the
+//   httpOnly recovery cookie, so only the browser that started an attempt can
+//   drive or claim it.
+//
 // The file list is walked, not enumerated, so an actions.ts added by a later
 // milestone is covered the day it lands instead of passing CI unnoticed.
 const EXEMPT = new Set(['loginAction'])
+const FILE_GUARDS: Record<string, string> = {
+  [path.join('app', 'setup', 'actions.ts')]: 'requireFreshInstance()',
+  [path.join('app', 'login', 'recover', 'actions.ts')]: 'requireRecoveryAttempt()',
+}
 
 function actionFiles(dir: string): string[] {
   const found: string[] = []
@@ -47,10 +60,11 @@ describe('server actions re-run the guard', () => {
   for (const file of files) {
     it(`${file}`, () => {
       const src = readFileSync(file, 'utf8')
+      const guard = FILE_GUARDS[file] ?? 'requireSession()'
       const actions = [...src.matchAll(/export async function (\w+)/g)]
       expect(actions.length).toBeGreaterThan(0)
       const unguarded = actions
-        .filter(m => !EXEMPT.has(m[1]) && !functionBody(src, m.index).includes('requireSession()'))
+        .filter(m => !EXEMPT.has(m[1]) && !functionBody(src, m.index).includes(guard))
         .map(m => m[1])
       expect(unguarded).toEqual([])
     })
