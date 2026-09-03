@@ -18,7 +18,9 @@ import {
 // Vite's SSR namespaces are not writable and `db` is a lazy Proxy with only a
 // get trap, so neither can be spied on — a module mock is the way to make a
 // dependency fail on demand.
-const gate = vi.hoisted(() => ({ settingsFault: null as Error | null, updateFaults: 0 }))
+const gate = vi.hoisted(() => ({
+  settingsFault: null as Error | null, updateFaults: 0, visionFault: null as Error | null,
+}))
 
 vi.mock('@/lib/services/settings', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/services/settings')>()
@@ -27,6 +29,19 @@ vi.mock('@/lib/services/settings', async importOriginal => {
     getSettings: async () => {
       if (gate.settingsFault) throw gate.settingsFault
       return actual.getSettings()
+    },
+  }
+})
+
+// Faults the IMAGE half only, outside the per-row try — the exact shape
+// safePass exists to contain.
+vi.mock('@/lib/services/analyzers/vision', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/services/analyzers/vision')>()
+  return {
+    ...actual,
+    openRouterVisionAnalyzer: (...args: Parameters<typeof actual.openRouterVisionAnalyzer>) => {
+      if (gate.visionFault) throw gate.visionFault
+      return actual.openRouterVisionAnalyzer(...args)
     },
   }
 })
@@ -453,12 +468,35 @@ describe('runMediaAnalysis', () => {
   })
 
   it('never throws: one medium\'s fault does not take the other down', async () => {
+    // A stored model that has left the catalog does NOT do this: getSettings
+    // maps an unknown id back to the default, so that version of this test
+    // asserted nothing and safePass stayed uncovered. The fault has to be
+    // injected where the image pass actually builds its adapter — outside the
+    // per-row try, which is the only place safePass is the thing that catches.
     await updateSettings({ openrouterKey: 'sk-or-x', analyzeImages: true, analyzeAudio: true })
-    // A stored model that has left the catalog is the cheapest way to make one
-    // half fail outside the per-row try.
+    gate.visionFault = new Error('vision adapter unavailable')
+    try {
+      const res = await runMediaAnalysis()
+      expect(res.image).toEqual({
+        ran: false, reason: 'error',
+        error: { name: 'Error', code: null, message: 'vision adapter unavailable' },
+      })
+      // The other half still ran, and the pass as a whole still counts as run.
+      expect(res.audio).toMatchObject({ ran: true })
+      expect(res.ran).toBe(true)
+    } finally {
+      gate.visionFault = null
+    }
+  })
+
+  it('resolves a stored model that has left the catalog rather than reporting it unconfigured', async () => {
+    // Why there is no 'not_configured' result: getSettings sanitises the id,
+    // so the branch that used to produce one was unreachable.
+    await updateSettings({ openrouterKey: 'sk-or-x', analyzeImages: true, analyzeAudio: true })
     const { settings } = await import('@/lib/db/schema')
-    await db.update(settings).set({ visionModel: 'delisted' })
+    await db.update(settings).set({ visionModel: 'delisted', transcriptionModel: 'delisted' })
     const res = await runMediaAnalysis()
+    expect(res.image).toMatchObject({ ran: true })
     expect(res.audio).toMatchObject({ ran: true })
   })
 })

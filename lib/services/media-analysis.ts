@@ -244,7 +244,7 @@ export function errorShape(err: unknown): ErrorShape {
 }
 
 export type MediumResult =
-  | { ran: false; reason: 'no_key' | 'disabled' | 'not_configured' | 'daily_limit' }
+  | { ran: false; reason: 'no_key' | 'disabled' | 'daily_limit' }
   | { ran: false; reason: 'error'; error: ErrorShape }
   | ({ ran: true; enqueued: number } & DrainSummary)
 
@@ -302,9 +302,15 @@ async function safePass(run: () => Promise<MediumResult>): Promise<MediumResult>
   }
 }
 
+// getSettings maps a stored model id that has left the catalog back to the
+// current default, so neither lookup below can miss. There is therefore no
+// 'not_configured' result: it was unreachable, and a result variant nothing
+// can produce is a variant no caller ever handles honestly. If the invariant
+// were ever broken the throw becomes safePass's `reason: 'error'`, which is
+// what a genuinely impossible state deserves.
 async function runImagePass(modelId: string, apiKey: string, batch: number): Promise<MediumResult> {
   const entry = getVisionCatalogEntry(modelId)
-  if (!entry) return { ran: false, reason: 'not_configured' }
+  if (!entry) throw new Error(`vision model is not in the catalog: ${modelId}`)
   const analyzer = openRouterVisionAnalyzer(entry, apiKey)
   const enqueued = await enqueueMediaAnalysis('image', { batch })
   return { ran: true, enqueued, ...await processPendingAnalyses({ medium: 'image', analyzer, entry }, { batch }) }
@@ -312,7 +318,7 @@ async function runImagePass(modelId: string, apiKey: string, batch: number): Pro
 
 async function runAudioPass(modelId: string, apiKey: string, batch: number): Promise<MediumResult> {
   const entry = getTranscriptionCatalogEntry(modelId)
-  if (!entry) return { ran: false, reason: 'not_configured' }
+  if (!entry) throw new Error(`transcription model is not in the catalog: ${modelId}`)
   const transcriber = openRouterTranscriber(entry, apiKey)
   const enqueued = await enqueueMediaAnalysis('audio', { batch })
   return { ran: true, enqueued, ...await processPendingAnalyses({ medium: 'audio', transcriber, entry }, { batch }) }
