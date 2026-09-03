@@ -71,8 +71,11 @@ export async function getRecoveryAttempt(id: string): Promise<RecoveryStatus | n
   }
 }
 
+// Dated in the instance's own timezone, like every other date it renders
+// (lib/format.ts): a UTC date can be yesterday to the person reading it.
+const LABEL_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 export function recoveryKeyLabel(channel: Channel, now: Date = new Date()): string {
-  return `Recovered via ${CHANNEL_LABELS[channel]} ${now.toISOString().slice(0, 10)}`
+  return `Recovered via ${CHANNEL_LABELS[channel]}, ${LABEL_DATE.format(now)}`
 }
 
 // Worker-side verdict. Guarded like completeLogin: only a live pending
