@@ -72,12 +72,39 @@ describe('ingest', () => {
     expect(await db.select({ body: searchIndex.body }).from(searchIndex)).toEqual([{ body: 'edited' }])
   })
 
-  it('applyEdit records a message it has never seen rather than dropping it', async () => {
+  // Telegram's edit update carries the whole message, so a row built from it
+  // is the real thing.
+  it('applyEdit records a Telegram message it has never seen rather than dropping it', async () => {
     const conn = await makeConnection()
     await applyEdit(conn.id, 'telegram', msg({ externalMessageId: '7', text: 'appeared via edit' }))
     const rows = await db.select().from(messages)
     expect(rows).toHaveLength(1)
     expect(rows[0].text).toBe('appeared via edit')
+  })
+
+  // WhatsApp's does not: it is the protocol envelope, with no sender, the
+  // edit's own timestamp and a protocolMessage for `raw`. Stored under the
+  // original's id it would win first-writer-wins and suppress the real message
+  // when the history sync delivers it — which, on WhatsApp, it does minutes
+  // later while live edits are still arriving.
+  it('applyEdit drops a WhatsApp edit for a message it has never seen', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const edit = msg({
+      externalChatId: '12345-67890@g.us', externalMessageId: 'W1',
+      senderExternalId: null, senderName: null, text: 'edited text',
+      raw: { message: { protocolMessage: { type: 14 } } },
+    })
+    await applyEdit(conn.id, 'whatsapp', edit)
+    expect(await db.select().from(messages)).toEqual([])
+
+    // …and the real message still lands, in full, when history catches up.
+    await recordMessage(conn.id, 'whatsapp', msg({
+      externalChatId: '12345-67890@g.us', externalMessageId: 'W1',
+      senderExternalId: '15559990000@s.whatsapp.net', senderName: 'Ada', text: 'original text',
+    }))
+    const rows = await db.select().from(messages)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ text: 'original text', senderName: 'Ada' })
   })
 
   it('applyDelete tombstones a message scoped by chat', async () => {

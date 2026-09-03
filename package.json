@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@mtcute/node": "^0.32.1",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",

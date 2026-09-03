@@ -34,4 +34,15 @@ describe('connections page', () => {
     // the same constant the worker passes to mtcute.
     expect(src).toContain('DEVICE_MODEL')
   })
+
+  it('gates the Telegram-only training bullet on channel === telegram', () => {
+    // The training claim is a Telegram terms-of-service fact; it does not
+    // apply to WhatsApp and must not render on the WhatsApp consent screen.
+    // No @testing-library/react in this repo, so this asserts the source
+    // structure directly: the bullet's <li> sits inside a
+    // `channel === 'telegram' && (...)` conditional.
+    const src = readFileSync('app/connections/consent.tsx', 'utf8')
+    const gated = /\{channel === 'telegram' && \(\s*<li>[\s\S]*?forbid using its data to train models[\s\S]*?<\/li>\s*\)\}/
+    expect(src).toMatch(gated)
+  })
 })
