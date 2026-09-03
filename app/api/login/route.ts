@@ -9,8 +9,8 @@ import { log } from '@/lib/log'
 // build-generated server-action id to scrape. scripts/smoke.sh uses it as
 // the release gate, and it is a reasonable way to log a headless browser or
 // a test harness in. It is unauthenticated by definition, exactly as /login
-// is, and un-rate-limited for the same reason (spec section 6): 256 bits of
-// key entropy is the control.
+// is, and un-rate-limited for the same reason (see docs/threat-model.md):
+// 256 bits of key entropy is the control.
 
 const bodySchema = z.object({ key: z.string().min(1).max(200) })
 

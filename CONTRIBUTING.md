@@ -83,6 +83,12 @@ when you touch the Dockerfile, `scripts/start.mjs`, migrations or auth.
 
 If you want one of those, fork it — the AGPL lets you — and please rename it.
 
+## Releases
+
+The maintainer cuts releases; the procedure is in
+[docs/releasing.md](docs/releasing.md). A pull request never bumps the version
+or edits a released changelog section.
+
 ## Reporting a security problem
 
 Do not open a public issue. Follow [SECURITY.md](SECURITY.md).

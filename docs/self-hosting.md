@@ -94,15 +94,18 @@ WantedBy=multi-user.target
 The one-click template in the README is the short path. If you would rather wire
 it up yourself, or the template is not published yet:
 
-1. **New Project → Deploy from GitHub repo**, pick your fork.
-2. Railway reads `railway.json`: Dockerfile build, healthcheck on `/api/health`
+1. Sign in to Railway. A new account created through
+   <https://railway.com?referralCode=45_zFw> starts with $20 in credits; that is the
+   maintainer's referral link, and using it is optional.
+2. **New Project → Deploy from GitHub repo**, pick your fork.
+3. Railway reads `railway.json`: Dockerfile build, healthcheck on `/api/health`
    with a 120 s timeout, restart on failure up to 10 times.
-3. **Attach a volume** to the service with mount path `/data`. 5 GB is a
+4. **Attach a volume** to the service with mount path `/data`. 5 GB is a
    sensible start; media is what grows.
-4. Set variables: `DATA_DIR=/data`, and a `SECRET_KEY` of at least 32
+5. Set variables: `DATA_DIR=/data`, and a `SECRET_KEY` of at least 32
    characters (`openssl rand -base64 48`). Railway supplies `PORT` itself.
-5. Deploy, then **read the deploy log** for the bootstrap access key.
-6. **Generate a domain** under Settings → Networking, open it, and log in.
+6. Deploy, then **read the deploy log** for the bootstrap access key.
+7. **Generate a domain** under Settings → Networking, open it, and log in.
 
 Two Railway details worth knowing, both from
 <https://docs.railway.com/volumes>: volumes are mounted only when the container
@@ -240,8 +243,12 @@ exists.
 
 ## Publishing the Railway template (maintainers)
 
-The README's Deploy button points at `<RAILWAY_TEMPLATE_URL>` until someone
-publishes a template and fills it in. This is that procedure. It is manual on
+The template exists, unpublished, as code `1Vhm3c` (editor:
+<https://railway.com/workspace/templates/546731b9-54bf-467b-9d40-67f685511bb6>),
+generated from the `steno-personal` project in the maintainer's workspace, and
+the README button already points at it. What remains is the editor cleanup in
+step 3 to 5, the verification in step 6, and publishing. This is the whole
+procedure, kept for the day the template has to be rebuilt. It is manual on
 purpose — Railway has no committed template manifest; a template is built in the
 dashboard composer or generated from a live project, per
 <https://docs.railway.com/templates/create>. Verify against that page before you
@@ -258,6 +265,12 @@ blind.
   Template**, then confirm the settings in the composer; or
 - CLI: `railway templates create --project steno-personal --environment production`
   (`railway template` is an accepted alias; see <https://docs.railway.com/cli/templates>).
+
+The CLI clones the project's variables verbatim. Do **not** set
+`SECRET_KEY=${{secret(48)}}` on the live project first: Railway evaluates the
+function there and stores the resulting string, so the clone would hand every
+deployer the same secret. Leave `SECRET_KEY` off the project and add the
+function in the template editor (step 4).
 
 **3. Check the service in the composer.**
 
@@ -313,29 +326,31 @@ First publication requires `--readme-file` or `--readme`; `railway templates
 update` replaces the metadata later. Docs:
 <https://docs.railway.com/cli/templates>.
 
-**8. Fill in the button.** Copy the template URL and replace
-`<RAILWAY_TEMPLATE_URL>` in `README.md` with:
+**8. Check the button.** The README button points at:
 
 ```
-https://railway.com/new/template/<template-code>?utm_medium=integration&utm_source=button&utm_campaign=steno-personal
+https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
 ```
+
+If the template is ever recreated, its code changes and this URL must follow.
+
+`45_zFw` is the maintainer's code from the workspace's referrals page
+(<https://railway.com/account/referrals>): a signup through it gets $20 in
+credits and the maintainer gets 15% of their first twelve months of invoices
+under Railway's affiliate programme. The same link is offered, and labelled as
+a referral, in the README and in the Railway steps above. That is separate from the template kickback,
+which needs no code at all: once the template is on the marketplace you earn
+15% of the usage it generates, 25% if you answer questions in your template
+queue. Docs: <https://docs.railway.com/community/affiliate-program> and
+<https://docs.railway.com/templates/kickbacks>.
 
 The button image is `https://railway.com/button.svg`. Docs:
 <https://docs.railway.com/templates/publish-and-share>.
 
-**9. Re-run the invariant sweep.** It runs the other way round from what you
-might expect, and deliberately so: `tests/launch-invariants.test.ts` asserts
-that the placeholder **is** present —
-
-```
-expect(readFileSync('README.md', 'utf8')).toContain('<RAILWAY_TEMPLATE_URL>')
-```
-
-— in the test *"the Railway template URL is the only placeholder in the repo
-docs"*. It is green today, and it goes red the moment you do step 8. That is
-how you are reminded: flip that one assertion to require the real URL (e.g.
-`toContain('railway.com/new/template/')`) in the same commit that fills the URL
-into the README.
+**9. Re-run the invariant sweep.** `tests/launch-invariants.test.ts` asserts
+that the README button carries a real template URL
+(`toContain('railway.com/new/template/')`) and that no placeholder marker is
+left in any shipped document. Keep it green.
 
 ## Troubleshooting
 
