@@ -12,16 +12,19 @@ async function main() {
   const manager = new SessionManager(ports)
   log.info({ channels: [...ports.keys()] }, 'worker started')
 
+  // Shutdown is cooperative: the signal only flips the flag and wakes the
+  // sleep. stopAll() runs AFTER the loop exits, so it never overlaps an
+  // in-flight tick() on the same SessionManager state.
   let stopping = false
-  const stop = async () => {
-    if (stopping) return
+  let wake: (() => void) | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const stop = () => {
     stopping = true
-    log.info('worker stopping')
-    await manager.stopAll()
-    process.exit(0)
+    if (timer) clearTimeout(timer)
+    wake?.()
   }
-  process.on('SIGTERM', () => { void stop() })
-  process.on('SIGINT', () => { void stop() })
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
 
   let lastPurge = 0
   for (;;) {
@@ -35,10 +38,16 @@ async function main() {
       }
     } catch (e) {
       // One bad tick must never end the worker: the next one retries.
+      // errorShape strips bound query parameters from driver errors.
       log.error({ err: errorShape(e) }, 'tick failed')
     }
-    await new Promise(r => setTimeout(r, TICK_MS))
+    if (stopping) break // a signal that arrived during the tick must not wait out a sleep
+    await new Promise<void>(r => { wake = r; timer = setTimeout(r, TICK_MS) })
+    wake = null
   }
+  log.info('worker stopping')
+  await manager.stopAll()
+  process.exit(0)
 }
 
 main().catch(e => { log.error({ err: errorShape(e) }, 'worker crashed'); process.exit(1) })
