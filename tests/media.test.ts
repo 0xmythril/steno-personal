@@ -102,6 +102,18 @@ describe('media drain', () => {
     expect(after.attempts).toBe(0)
   })
 
+  it('stores the mime stripped of its parameters', async () => {
+    // M5: the analysis enqueue predicate compares media.mime_type exactly, so
+    // a stored 'audio/ogg; codecs=opus' would silently never be transcribed.
+    const { media: md } = await makeAttachment({ type: 'audio', mimeType: 'audio/ogg; codecs=opus' })
+    const { connection } = await db.select({ connection: media.connectionId })
+      .from(media).where(eq(media.id, md.id)).then(r => r[0])
+    expect(await processPendingMedia(new Map([[connection, ok('voice')]]))).toMatchObject({ done: 1 })
+    const [after] = await db.select().from(media).where(eq(media.id, md.id))
+    expect(after.mimeType).toBe('audio/ogg')
+    expect(after.storagePath).toBe(`${md.id}.ogg`)
+  })
+
   it('a dead connection\'s backlog cannot starve a live connection', async () => {
     // C1: the batch used to be selected oldest-first across ALL pending rows
     // and only then filtered against the live map, so `batch` rows on a

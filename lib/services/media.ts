@@ -19,9 +19,20 @@ const EXT: Record<string, string> = {
   'audio/mp4': 'm4a', 'audio/wav': 'wav', 'application/pdf': 'pdf',
 }
 
+// A channel-declared mime can carry parameters ('audio/ogg; codecs=opus',
+// 'image/jpeg; charset=x'). Every consumer strips them — extForMime, the
+// route's inline allowlist, sttFormatFor — except the analysis enqueue
+// predicate, which is SQL and compares the stored value exactly. So the drain
+// stores the stripped form and the predicate has nothing left to miss.
+export function normalizeMime(mime: string | null): string | null {
+  if (!mime) return null
+  return mime.split(';')[0].trim().toLowerCase() || null
+}
+
 export function extForMime(mime: string | null): string {
-  if (!mime) return 'bin'
-  return EXT[mime.split(';')[0].trim().toLowerCase()] ?? 'bin'
+  const base = normalizeMime(mime)
+  if (!base) return 'bin'
+  return EXT[base] ?? 'bin'
 }
 
 export function mediaDir(): string {
@@ -174,8 +185,9 @@ export async function processPendingMedia(
         summary.failed++
         continue
       }
-      // Ingest's declaration wins; the channel's own answer fills a gap.
-      const mime = md.mimeType ?? mimeType
+      // Ingest's declaration wins; the channel's own answer fills a gap. Stored
+      // stripped of its parameters — see normalizeMime.
+      const mime = normalizeMime(md.mimeType ?? mimeType)
       const storagePath = `${md.id}.${extForMime(mime)}`
       const finalPath = mediaFilePath(storagePath)
       // Write beside the final name, then rename — a rename within the same
