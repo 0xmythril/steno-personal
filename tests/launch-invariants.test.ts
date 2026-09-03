@@ -8,8 +8,12 @@ import path from 'node:path'
 // side, and every one of them is a single careless import or paragraph edit
 // away from being false.
 
-const SOURCE_ROOTS = ['lib', 'app', 'worker', 'scripts']
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.mjs', '.js'])
+// Everything at the top level that is not source: build output, git, the
+// working documents, and the two directories whose own content is allowed to
+// name the things banned below (a test asserting "nothing imports posthog"
+// must not be an offender itself; the docs quote package names in prose).
+const NOT_SOURCE = new Set(['node_modules', '.next', '.git', '.superpowers', 'tests', 'docs'])
 
 function walk(dir: string): string[] {
   if (!existsSync(dir)) return []
@@ -17,7 +21,7 @@ function walk(dir: string): string[] {
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry)
     if (statSync(full).isDirectory()) {
-      if (entry === 'node_modules' || entry === '.next') continue
+      if (NOT_SOURCE.has(entry)) continue
       out.push(...walk(full))
     } else if (SOURCE_EXT.has(path.extname(entry))) {
       out.push(full)
@@ -26,7 +30,15 @@ function walk(dir: string): string[] {
   return out
 }
 
-const sourceFiles = SOURCE_ROOTS.flatMap(walk)
+// Derived, not listed: a hard-coded set of roots means a file added under a
+// new top-level directory is invisible to every sweep below, which is exactly
+// the regression this file exists to catch. Every top-level directory except
+// NOT_SOURCE, plus the top-level source files themselves.
+const sourceFiles = readdirSync('.')
+  .filter(entry => !NOT_SOURCE.has(entry))
+  .flatMap(entry => (statSync(entry).isDirectory()
+    ? walk(entry)
+    : SOURCE_EXT.has(path.extname(entry)) ? [entry] : []))
 
 // Matches `import ... from 'x'`, `import 'x'`, `require('x')`, `import('x')`.
 function importedModules(src: string): string[] {
@@ -72,8 +84,20 @@ describe('the WhatsApp warning is on the front page', () => {
   })
 })
 
+// The analytics, telemetry and crash-reporting SDKs we know of, matched as a
+// prefix of an import specifier and of a package name. It is a known-names
+// list, not a general outbound-traffic guard: a bare fetch() to a telemetry
+// endpoint is not caught by it, and PRIVACY.md says so rather than claiming
+// more than this list delivers.
+const BANNED_EVERYWHERE = [
+  '@/lib/services/analytics', '@mocanetwork',
+  'posthog', 'mixpanel', '@segment/', 'analytics-node',
+  '@sentry/', '@amplitude/', '@vercel/analytics', 'plausible',
+]
+const isBanned = (name: string): boolean =>
+  BANNED_EVERYWHERE.some(b => name === b || name.startsWith(b))
+
 describe('no telemetry, no cloud identity, one importer per chat library', () => {
-  const BANNED_EVERYWHERE = ['@/lib/services/analytics', 'posthog', '@mocanetwork']
   const SCOPED = [
     { needle: 'mtcute', allowed: 'lib/channels/telegram.ts' },
     { needle: 'baileys', allowed: 'lib/channels/whatsapp.ts' },
@@ -83,11 +107,11 @@ describe('no telemetry, no cloud identity, one importer per chat library', () =>
     expect(sourceFiles.length).toBeGreaterThan(5)
   })
 
-  it('nothing imports analytics, PostHog, or Moca', () => {
+  it('nothing imports an analytics, telemetry or cloud-identity module', () => {
     const offenders: string[] = []
     for (const file of sourceFiles) {
       for (const spec of importedModules(readFileSync(file, 'utf8'))) {
-        if (BANNED_EVERYWHERE.some(b => spec.includes(b))) offenders.push(`${file} -> ${spec}`)
+        if (isBanned(spec)) offenders.push(`${file} -> ${spec}`)
       }
     }
     expect(offenders).toEqual([])
@@ -116,12 +140,8 @@ describe('dependencies', () => {
     ...Object.keys(pkg.peerDependencies ?? {}),
   ]
 
-  it('no analytics package', () => {
-    expect(names.filter(n => n.startsWith('posthog'))).toEqual([])
-  })
-
-  it('no Moca package', () => {
-    expect(names.filter(n => n.startsWith('@mocanetwork/'))).toEqual([])
+  it('no analytics, telemetry or cloud-identity package', () => {
+    expect(names.filter(isBanned)).toEqual([])
   })
 
   it('no Postgres driver', () => {
