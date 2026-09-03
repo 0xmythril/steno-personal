@@ -258,7 +258,21 @@ const DEFAULT_STALE_MS = 10 * 60_000
 // lib/Types/index.d.ts:26 (baileys 7.0.0-rc14). Copied rather than imported so
 // the values are available without loading the ESM module.
 const LOGGED_OUT = 401
+const FORBIDDEN = 403
+const CONNECTION_REPLACED = 440
 const RESTART_REQUIRED = 515
+
+// Three ways for WhatsApp to say "this device is finished": unlinked from the
+// phone (401), refused outright (403), and replaced by another session on the
+// same credentials (440). None of them heals by waiting, so a reconnect loop
+// against any of them is a loop that hammers WhatsApp until the number is
+// flagged. The session goes dead instead and the manager is told through
+// ping().
+const TERMINAL_CLOSE_CODES: ReadonlySet<number> = new Set([LOGGED_OUT, FORBIDDEN, CONNECTION_REPLACED])
+
+// A drained event chain means nothing writes after close() resolves. Bounded,
+// because shutdown may not hang on a batch that is stuck.
+const CHAIN_DRAIN_MS = 5_000
 
 export function sessionStringFor(connectionId: string): string {
   return `${SESSION_PREFIX}${connectionId}`
@@ -273,6 +287,15 @@ function closeStatus(err: unknown): number | undefined {
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+// getPNForLID answers with the DEVICE it resolved — `15551234567:0@s.whatsapp.net`
+// (lib/Signal/lid-mapping.js builds `${pnUser}@s.whatsapp.net` from a decoded
+// user that carries its device). A chat and a sender are identified by the
+// bare user JID, so the `:device` segment comes off before the value is used
+// or cached; keeping it would file the same human under one id per device.
+function stripDevice(jid: string): string {
+  return jid.replace(/:\d+(?=@)/, '')
 }
 
 // tsconfig has both "dom" and @types/node in scope, so setTimeout's return
@@ -438,10 +461,18 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
     let sock: WaSocket | null = null
     let connected = false
-    let connecting = false
     let closing = false
-    let loggedOut = false
+    // Dead = WhatsApp will not have this device back (see TERMINAL_CLOSE_CODES)
+    // or we unlinked it ourselves. Never reconnect, and tell ping().
+    let dead = false
+    let deadCode: number | null = null
+    // Two different clocks. lastEventAt is "we heard something at all"; it is
+    // deliberately NOT bumped by a close, because a socket that closes every
+    // second is the very thing staleness has to catch. lastConnectedAt is the
+    // last time the socket was actually OPEN, and it is the only input to the
+    // staleness verdict below.
     let lastEventAt = Date.now()
+    let lastConnectedAt = Date.now()
     let backoff = this.reconnectMinMs
     let retryTimer: Timer | null = null
     let openTimer: Timer | null = null
@@ -461,24 +492,53 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
     const titles = new Map<string, string>()
     const metadataTried = new Set<string>()
-    const lidToPn = new Map<string, string | null>()
+    const lidToPn = new Map<string, string>()
 
     // Every event handler runs through one chain, so two batches can never
-    // interleave and a thrown handler cannot take the socket down.
+    // interleave and a thrown handler cannot take the socket down. A batch
+    // still queued when close() starts is dropped rather than run: once the
+    // caller has closed the session it has stopped listening, and an ingest
+    // that lands after close is an ingest nobody expected.
     let chain: Promise<void> = Promise.resolve()
     const enqueue = (fn: () => Promise<void>): void => {
-      chain = chain.then(fn).catch(err => log.error({ err: errorShape(err) }, 'whatsapp event handling failed'))
+      chain = chain
+        .then(() => (closing ? undefined : fn()))
+        .catch(err => log.error({ err: errorShape(err) }, 'whatsapp event handling failed'))
     }
 
+    // Bounded so a wedged batch cannot hang a shutdown. `chain` is read at call
+    // time because enqueue() replaces it, and it never rejects.
+    const drainChain = async (): Promise<void> => {
+      let timer: Timer | null = null
+      const bail = new Promise<void>(resolve => {
+        timer = setTimeout(() => {
+          log.warn({ drainMs: CHAIN_DRAIN_MS }, 'whatsapp event chain did not drain before close')
+          resolve()
+        }, CHAIN_DRAIN_MS)
+        unref(timer)
+      })
+      try {
+        await Promise.race([chain, bail])
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    }
+
+    // The three doors out of this session. All shut the moment close() starts:
+    // a batch that was already mid-flight must not deliver into a consumer
+    // that has been told the session is gone.
     const emitMessage = (m: IncomingMessage): void => {
+      if (closing) return
       if (onMessageCb) onMessageCb(m)
       else pendingMessages.push(m)
     }
     const emitEdit = (m: IncomingMessage): void => {
+      if (closing) return
       if (onEditCb) onEditCb(m)
       else pendingEdits.push(m)
     }
     const emitDelete = (ref: { externalChatId?: string; externalMessageId: string }): void => {
+      if (closing) return
       if (onDeleteCb) onDeleteCb(ref)
       else pendingDeletes.push(ref)
     }
@@ -495,20 +555,29 @@ export class BaileysWhatsAppPort implements ChannelPort {
     }
 
     // A @lid is an opaque identity. Resolving it to the phone-number JID is
-    // what keeps one human in one chat instead of two (spec 4.3). Best-effort
-    // and cached, including the negative answer.
+    // what keeps one human in one chat instead of two (spec 4.3).
+    //
+    // Only SUCCESSFUL answers are cached. getPNForLID answers null for a
+    // mapping the device has not learned yet (lib/Signal/lid-mapping.js), and
+    // that mapping usually arrives moments later with the next stanza —
+    // caching the null would pin the chat to its @lid forever, which is the
+    // split-contact bug this exists to prevent. A thrown lookup is logged and
+    // likewise not cached.
     const canonicalJid = async (jid: string): Promise<string> => {
       if (!jid.endsWith('@lid')) return jid
-      if (!lidToPn.has(jid)) {
-        let pn: string | null = null
-        try {
-          pn = (await sock?.signalRepository.lidMapping.getPNForLID(jid)) ?? null
-        } catch (err) {
-          log.warn({ err: errorShape(err) }, 'whatsapp lid resolution failed')
-        }
-        lidToPn.set(jid, pn)
+      const cached = lidToPn.get(jid)
+      if (cached) return cached
+      let pn: string | null = null
+      try {
+        pn = (await sock?.signalRepository.lidMapping.getPNForLID(jid)) ?? null
+      } catch (err) {
+        log.warn({ err: errorShape(err) }, 'whatsapp lid resolution failed')
+        return jid
       }
-      return lidToPn.get(jid) ?? jid
+      if (!pn) return jid
+      const canonical = stripDevice(pn)
+      lidToPn.set(jid, canonical)
+      return canonical
     }
 
     // Titles come from history chats[].name and groups.upsert/update; a group
@@ -599,7 +668,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
     }
 
     const scheduleReconnect = (): void => {
-      if (closing || loggedOut || retryTimer) return
+      if (closing || dead || retryTimer) return
       const delay = backoff
       backoff = Math.min(backoff * 2, reconnectMaxMs)
       retryTimer = setTimeout(() => {
@@ -641,54 +710,66 @@ export class BaileysWhatsAppPort implements ChannelPort {
       })
 
       s.ev.on('connection.update', update => {
-        lastEventAt = Date.now()
         if (update.connection === 'open') {
+          lastEventAt = Date.now()
+          lastConnectedAt = Date.now()
           connected = true
           backoff = reconnectMinMs
           log.info('whatsapp session open')
           finishOpen()
           return
         }
-        if (update.connection !== 'close') return
+        if (update.connection !== 'close') {
+          lastEventAt = Date.now()
+          return
+        }
+        // Note the absent lastEventAt bump: a close is not a sign of life.
         connected = false
         if (closing) return
         const code = closeStatus(update.lastDisconnect?.error)
-        if (code === LOGGED_OUT) {
-          loggedOut = true
-          log.warn({ code }, 'whatsapp session logged out')
-          finishOpen(new ChannelError('whatsapp session logged out', 'auth_invalidated'))
+        if (code !== undefined && TERMINAL_CLOSE_CODES.has(code)) {
+          dead = true
+          deadCode = code
+          log.warn({ code }, 'whatsapp session ended by the server; not reconnecting')
+          finishOpen(new ChannelError(`whatsapp session ended (${code})`, 'auth_invalidated'))
           return
         }
-        log.warn({ code: code ?? null, backoffMs: backoff }, 'whatsapp disconnected; reconnecting')
+        log.warn(
+          { code: code ?? null, backoffMs: backoff, sinceLastEventMs: Date.now() - lastEventAt },
+          'whatsapp disconnected; reconnecting',
+        )
         scheduleReconnect()
       })
     }
 
     async function connect(): Promise<void> {
-      if (closing || loggedOut) return
-      connecting = true
-      try {
-        // sock.end() destroys the event emitter (lib/Socket/socket.js:506), so
-        // every reconnect is a brand-new socket, never a re-listen.
-        const s = await deps.makeSocket({ auth: state, version, syncFullHistory: historyPending })
-        // close(), logOut() or a 401 can land while makeSocket is in flight.
-        // A socket built after the session is finished belongs to nobody, and
-        // holding it would leak a live WhatsApp connection past close().
-        if (closing || loggedOut) {
-          void s.end(undefined).catch(() => {})
-          return
-        }
-        sock = s
-        wire(s)
-      } finally {
-        connecting = false
+      if (closing || dead) return
+      // sock.end() destroys the event emitter (lib/Socket/socket.js:506), so
+      // every reconnect is a brand-new socket, never a re-listen.
+      const s = await deps.makeSocket({ auth: state, version, syncFullHistory: historyPending })
+      // close(), logOut() or a terminal close can land while makeSocket is in
+      // flight. A socket built after the session is finished belongs to
+      // nobody, and holding it would leak a live WhatsApp connection past
+      // close().
+      if (closing || dead) {
+        void s.end(undefined).catch(() => {})
+        return
       }
+      sock = s
+      wire(s)
     }
 
     const teardown = async (): Promise<void> => {
+      // Set first: `closing` is what shuts the three emit doors and skips any
+      // batch still queued, so everything after this line is quiet by
+      // construction.
       closing = true
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
       if (openTimer) { clearTimeout(openTimer); openTimer = null }
+      // A batch that was already running is allowed to finish (it may still
+      // need to write the history marker) before close() resolves, so the
+      // caller never sees work land after the close it awaited.
+      await drainChain()
       try { await sock?.end(undefined) } catch (err) { log.warn({ err: errorShape(err) }, 'whatsapp socket end failed') }
       connected = false
     }
@@ -736,18 +817,24 @@ export class BaileysWhatsAppPort implements ChannelPort {
       },
 
       async ping(): Promise<void> {
-        if (loggedOut) throw new ChannelError('whatsapp session logged out', 'auth_invalidated')
+        if (dead) throw new ChannelError(`whatsapp session ended (${deadCode ?? 'logged out'})`, 'auth_invalidated')
         if (connected) return
-        if (connecting) return // a reconnect is in flight
-        if (Date.now() - lastEventAt > staleMs) {
-          throw new ChannelError('whatsapp socket closed and silent', 'other')
+        // Not connected. A reconnect loop that never reaches 'open' is the
+        // failure this has to catch — WhatsApp is answering, so `lastEventAt`
+        // keeps moving while the session archives nothing. Only the last time
+        // the socket was OPEN counts, so the manager hears about it after one
+        // stale window instead of never.
+        if (Date.now() - lastConnectedAt > staleMs) {
+          throw new ChannelError('whatsapp has not been connected for a full stale window', 'other')
         }
       },
 
       async logOut(): Promise<void> {
         closing = true
+        dead = true
         if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
         if (openTimer) { clearTimeout(openTimer); openTimer = null }
+        await drainChain()
         try {
           // lib/Socket/socket.js:572 — removes THIS companion device only.
           await sock?.logout()
@@ -756,7 +843,6 @@ export class BaileysWhatsAppPort implements ChannelPort {
         }
         try { await sock?.end(undefined) } catch { /* already closing */ }
         connected = false
-        loggedOut = true
         await rm(dir, { recursive: true, force: true })
         log.info('whatsapp device unlinked and auth state removed')
       },
