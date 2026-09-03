@@ -128,7 +128,7 @@ describe('connections service', () => {
     expect(await deleteConnection(conn.id)).toBe(false)
   })
 
-  it('deleteConnection removes the WhatsApp auth directory named by the decrypted session string', async () => {
+  it('deleteConnection removes the WhatsApp auth directory named by the connection id', async () => {
     const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
     const dirName = `wa-${conn.id}`
     await db.update(connections).set({ sessionCiphertext: encryptSecret(dirName) }).where(eq(connections.id, conn.id))
@@ -136,6 +136,45 @@ describe('connections service', () => {
     mkdirSync(dirPath, { recursive: true })
     expect(await deleteConnection(conn.id)).toBe(true)
     expect(existsSync(dirPath)).toBe(false)
+  })
+
+  // The three ordinary orders — Disconnect then Delete, a phone-side unlink,
+  // and a login that never finished — all reach delete with no ciphertext to
+  // read the directory name out of. The keys are on the volume either way.
+  it('deleteConnection removes the auth directory of an already-revoked WhatsApp row', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    await db.update(connections).set({ sessionCiphertext: encryptSecret(`wa-${conn.id}`) }).where(eq(connections.id, conn.id))
+    const dirPath = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    mkdirSync(dirPath, { recursive: true })
+
+    await revokeConnection(conn.id, 'You disconnected this channel.')
+    expect((await rowOf(conn.id)).sessionCiphertext).toBeNull()
+
+    expect(await deleteConnection(conn.id)).toBe(true)
+    expect(existsSync(dirPath)).toBe(false)
+  })
+
+  it('deleteConnection removes the auth directory of a login that failed before it stored a session', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'error' })
+    expect(conn.sessionCiphertext).toBeNull()
+    // login() creates the directory before the pairing can time out.
+    const dirPath = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    mkdirSync(dirPath, { recursive: true })
+    expect(await deleteConnection(conn.id)).toBe(true)
+    expect(existsSync(dirPath)).toBe(false)
+  })
+
+  it('deleteConnection also removes a legacy directory named by the session string', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    const legacy = 'wa-legacy-name'
+    await db.update(connections).set({ sessionCiphertext: encryptSecret(legacy) }).where(eq(connections.id, conn.id))
+    const idDir = path.join(env.DATA_DIR, 'whatsapp', `wa-${conn.id}`)
+    const legacyDir = path.join(env.DATA_DIR, 'whatsapp', legacy)
+    mkdirSync(idDir, { recursive: true })
+    mkdirSync(legacyDir, { recursive: true })
+    expect(await deleteConnection(conn.id)).toBe(true)
+    expect(existsSync(idDir)).toBe(false)
+    expect(existsSync(legacyDir)).toBe(false)
   })
 
   it('deleteConnection leaves DATA_DIR untouched for a Telegram row', async () => {

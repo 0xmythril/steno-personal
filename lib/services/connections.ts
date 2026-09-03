@@ -131,6 +131,40 @@ export async function revokeConnection(id: string, reason: string): Promise<bool
   return res.length > 0
 }
 
+// The auth directory name is deterministic: lib/channels/whatsapp.ts derives
+// it from the connection id alone (`sessionStringFor`, and SESSION_RE there is
+// the source of truth for this shape). It is re-typed rather than imported
+// because importing the port would pull the Baileys-naming module into the
+// Next.js bundle — nothing outside the worker reaches for it today.
+const WA_DIR_RE = /^wa-[A-Za-z0-9._-]+$/
+// connections.id is a randomUUID (lib/db/schema.ts), so it can never contain a
+// path separator; this says so out loud rather than trusting it.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Every auth directory this connection could own, most likely first.
+//
+// The id-derived name is the one that matters: session_ciphertext is nulled by
+// revokeConnection, and a WhatsApp row reaches delete already revoked on three
+// ordinary paths (Disconnect then Delete; a phone-side unlink caught by the
+// worker; a login that never finished and never wrote a ciphertext). Deriving
+// the name from that column left Signal identity keys — and, on the Disconnect
+// path, still-linked device credentials — on the volume forever, with no row
+// left naming them.
+//
+// The decrypted session string is still consulted, as a fallback only, so a
+// directory written under some other name by an older build is not orphaned.
+function whatsappDirsFor(id: string, sessionCiphertext: string | null): string[] {
+  const dirs: string[] = []
+  if (UUID_RE.test(id)) dirs.push(`wa-${id}`)
+  if (sessionCiphertext) {
+    // decryptSecret returns null on a tampered or unreadable payload (M0), so
+    // guard the name before it is ever joined to a path.
+    const dir = decryptSecret(sessionCiphertext)
+    if (dir && WA_DIR_RE.test(dir) && !dirs.includes(dir)) dirs.push(dir)
+  }
+  return dirs
+}
+
 // Delete everything: revoke first so the session is torn down and the secrets
 // are gone even if the delete below fails, then drop the row — chats, messages
 // and (from M4) media rows follow by cascade. WhatsApp's auth directory is
@@ -144,21 +178,15 @@ export async function deleteConnection(id: string): Promise<boolean> {
   if (!row) return false
 
   // WhatsApp keeps its signal keys on the volume, not in the database (spec
-  // decision 9); deleting a connection must take them with it. The name is
-  // read here because revokeConnection below nulls session_ciphertext — after
-  // that this local is the only surviving copy.
-  let whatsappDir: string | null = null
-  if (row.channel === 'whatsapp' && row.sessionCiphertext) {
-    // decryptSecret returns null on a tampered or unreadable payload (M0), so
-    // guard the name before it is ever joined to a path.
-    const dir = decryptSecret(row.sessionCiphertext)
-    if (dir && /^wa-[A-Za-z0-9._-]+$/.test(dir)) whatsappDir = dir
-  }
+  // decision 9); deleting a connection must take them with it. The names are
+  // read here because revokeConnection below nulls session_ciphertext.
+  const whatsappDirs = row.channel === 'whatsapp' ? whatsappDirsFor(row.id, row.sessionCiphertext) : []
 
   await revokeConnection(id, 'Deleted, along with everything it archived.')
   await db.delete(connections).where(eq(connections.id, id))
-  if (whatsappDir) {
-    await rm(path.join(env.DATA_DIR, 'whatsapp', whatsappDir), { recursive: true, force: true })
+  // TODO(M4): unlink media files
+  for (const dir of whatsappDirs) {
+    await rm(path.join(env.DATA_DIR, 'whatsapp', dir), { recursive: true, force: true })
   }
   return true
 }
