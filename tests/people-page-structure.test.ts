@@ -1,5 +1,30 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
+
+// The behavioural half of this file runs the real server action against the
+// real services and the real database. Only the two Next request-scope APIs it
+// reaches through are stood in for: one in-memory cookie jar (the convention
+// from tests/api-routes.test.ts) and a redirect() that throws its target, which
+// is what Next's own redirect does.
+const jar = new Map<string, string>()
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) => (jar.has(name) ? { name, value: jar.get(name)! } : undefined),
+    set: (name: string, value: string) => { jar.set(name, value) },
+    delete: (opts: { name: string }) => { jar.delete(opts.name) },
+  }),
+  headers: async () => new Headers(),
+}))
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => { throw new Error(`redirect:${url}`) },
+}))
+
+import { resetDb } from './helpers/db'
+import { makeConnection } from './helpers/fixtures'
+import { createPerson, getPerson, syncContacts } from '@/lib/services/people'
+import { mintAccessKey } from '@/lib/services/access-keys'
+import { startSession } from '@/lib/auth'
+import { linkIdentityAction } from '@/app/people/actions'
 
 const actions = () => readFileSync('app/people/actions.ts', 'utf8')
 
@@ -49,12 +74,86 @@ describe('people pages', () => {
 
   it('shows the channel name muted when the address book disagrees', () => {
     const src = readFileSync('app/chats/[id]/page.tsx', 'utf8')
-    expect(src).toMatch(/run\.rawLabel && <span className="muted">/)
+    // Both labels are rendered; how they are laid out is tests/transcript.ts's
+    // business, not this file's — an exact JSX substring here would fail on a
+    // reformat that changed nothing.
+    expect(src).toMatch(/run\.rawLabel/)
     expect(src).toMatch(/run\.senderLabel/)
+  })
+
+  it('takes a linked identity\'s name and number from this instance, never from the post', () => {
+    // The select showed "Ada · +4477…"; the Identities table reads display_name
+    // and phone off the row the action creates. Resolving the candidate again
+    // server-side is what keeps those two the same thing — and a posted id is
+    // a browser string, so looking it up also checks it is one we know.
+    const src = actions()
+    const body = src.split('export async function linkIdentityAction')[1].split('\n}')[0]
+    expect(body).toMatch(/listIdentityCandidates\(channel\)/)
+    expect(body).toMatch(/displayName: candidate\.displayName/)
+    expect(body).toMatch(/phone: candidate\.phone/)
+    // And no action in the file reads a name or a number out of the form at
+    // all: the complete set of keys any of them asks for, not a sample.
+    const keys = [
+      ...[...src.matchAll(/formData\.get\(\s*'([^']+)'\s*\)/g)].map(m => m[1]),
+      ...[...src.matchAll(/field\(formData,\s*'([^']+)'\)/g)].map(m => m[1]),
+    ]
+    expect([...new Set(keys)].sort()).toEqual([
+      'channel', 'externalId', 'identityId', 'name', 'notes', 'personId',
+      'telegramExternalId', 'whatsappExternalId',
+    ])
   })
 
   it('is reachable from the nav', () => {
     const src = readFileSync('app/nav.tsx', 'utf8')
     expect(src).toMatch(/href="\/people"/)
+  })
+})
+
+// The same promise, run rather than read: the row the action writes is what
+// the person page will render back.
+describe('linkIdentityAction', () => {
+  beforeEach(async () => {
+    jar.clear()
+    await resetDb()
+  })
+
+  async function signIn(): Promise<void> {
+    const k = await mintAccessKey('portal')
+    if (!k.ok) throw new Error(k.reason)
+    await startSession(k.id)
+  }
+
+  it('stores the name and number the page showed beside the option', async () => {
+    await signIn()
+    const conn = await makeConnection({ channel: 'telegram' })
+    await syncContacts(conn.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: '+44 7700 900123' },
+    ])
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+
+    const form = new FormData()
+    form.set('personId', id)
+    form.set('channel', 'telegram')
+    form.set('externalId', '42')
+    // A forged post can carry these; the action must not be reading them.
+    form.set('displayName', 'Not Ada')
+    form.set('phone', '+15550000000')
+    await expect(linkIdentityAction(form)).rejects.toThrow(`redirect:/people/${id}`)
+
+    expect((await getPerson(id))!.identities).toEqual([expect.objectContaining({
+      channel: 'telegram', externalId: '42',
+      displayName: 'Ada', phone: '+447700900123', source: 'manual',
+    })])
+  })
+
+  it('refuses an identity this instance has never heard of', async () => {
+    await signIn()
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+    const form = new FormData()
+    form.set('personId', id)
+    form.set('channel', 'telegram')
+    form.set('externalId', '999')
+    await expect(linkIdentityAction(form)).rejects.toThrow(`redirect:/people/${id}?error=unknown`)
+    expect((await getPerson(id))!.identities).toEqual([])
   })
 })

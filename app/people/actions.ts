@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import {
   createPerson, updatePerson, deletePerson,
-  linkIdentity, unlinkIdentity,
+  linkIdentity, unlinkIdentity, listIdentityCandidates,
   confirmSuggestion, dismissSuggestion,
 } from '@/lib/services/people'
 import type { Channel } from '@/lib/channels/port'
@@ -73,7 +73,19 @@ export async function linkIdentityAction(formData: FormData): Promise<void> {
   // The select opens on a placeholder option with no value; submitting it is
   // a slip, not an error worth a 500.
   if (!channel || !externalId) redirect(`/people/${id}?error=empty`)
-  const result = await linkIdentity(id, { channel, externalId })
+  // The name and the number come from THIS list, never from the form. The
+  // select rendered the candidate as "Ada · +447700900123" and the Identities
+  // table reads display_name and phone straight off the row it creates: a link
+  // that stored neither would show `no name` next to a bare id the instant the
+  // owner pressed the button, while a confirmed suggestion — which does pass
+  // them — looked right. Resolving here also proves the posted id is one this
+  // instance actually knows; the browser can put anything in that field.
+  const candidate = (await listIdentityCandidates(channel)).find(c => c.externalId === externalId)
+  if (!candidate) redirect(`/people/${id}?error=unknown`)
+  const result = await linkIdentity(id, {
+    channel, externalId,
+    displayName: candidate.displayName, phone: candidate.phone,
+  })
   if (!result.ok) {
     if (result.reason === 'no_person') redirect('/people?error=gone')
     redirect(`/people/${id}?error=linked`)

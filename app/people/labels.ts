@@ -18,6 +18,7 @@ export const PEOPLE_ERRORS: Record<string, string> = {
   empty: 'Choose someone to link first.',
   stale: 'That suggestion is out of date: one side is already linked to a person. The list below is current.',
   gone: 'That person no longer exists.',
+  unknown: 'This instance has never heard of that identity. The list below is current.',
 }
 
 export const CHANNELS: readonly Channel[] = ['telegram', 'whatsapp']
