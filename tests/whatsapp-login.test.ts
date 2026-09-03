@@ -31,11 +31,15 @@ describe('BaileysWhatsAppPort.login', () => {
     h.last().emitQr('qr-one')
     h.last().emitQr('qr-two')
     await flush()
-    h.last().emitOpen({ id: '15551234567@s.whatsapp.net', name: 'Owner' })
+    // What Baileys actually puts in creds.me.id: the paired DEVICE's jid.
+    h.last().emitOpen({ id: '15551234567:34@s.whatsapp.net', name: 'Owner' })
 
     const result = await pending
     expect(qrs).toEqual(['qr-one', 'qr-two'])
     expect(result.sessionString).toBe('wa-conn-1')
+    // The :device segment comes off, exactly as it does for every resolved
+    // LID: it changes on every re-pair, and this column is compared against
+    // the senderExternalId of the owner's own messages.
     expect(result.account).toEqual({ channel: 'whatsapp', externalAccountId: '15551234567@s.whatsapp.net', displayName: 'Owner' })
     // The password callbacks belong to Telegram's 2FA step and are never used.
     expect(calls).toEqual([])

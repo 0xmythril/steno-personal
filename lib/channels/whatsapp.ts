@@ -455,7 +455,14 @@ export class BaileysWhatsAppPort implements ChannelPort {
           await sock.end(undefined).catch(() => {})
           resolve({
             sessionString,
-            account: { channel: 'whatsapp', externalAccountId: id, displayName: sock.user?.name ?? null },
+            // sock.user.id is creds.me.id, taken from the pair-success node's
+            // deviceNode.attrs.jid (lib/Utils/validate-connection.js:139,192),
+            // so it carries a :device segment that changes on every re-pair.
+            // Every other identifier this port emits is canonicalised the same
+            // way; without this, external_account_id would be the one column
+            // that never equals the senderExternalId of the owner's own
+            // messages.
+            account: { channel: 'whatsapp', externalAccountId: stripDevice(id), displayName: sock.user?.name ?? null },
           })
         })()
       }
