@@ -5,7 +5,9 @@ import type { IncomingMessage } from '@/lib/services/ingest'
 // resolveContactIdentity) and lib/services/media.ts (reviveRawMessage), then
 // generalised from "groups only" to any remoteJid.
 //
-// NOTHING IN THIS FILE MAY IMPORT @whiskeysockets/baileys (spec invariant 2).
+// NOTHING IN THIS FILE MAY IMPORT THE BAILEYS LIBRARY (spec invariant 2 —
+// lib/channels/whatsapp.ts is the one module allowed to name the package, and
+// tests/whatsapp-structure.test.ts scans raw source text, comments included).
 // Every input is a plain object handed over by lib/channels/whatsapp.ts, which
 // is what makes all of this unit-testable without a socket.
 
