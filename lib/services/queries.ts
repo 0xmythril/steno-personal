@@ -56,9 +56,18 @@ const chatSelection = {
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
 }
 
+// WhatsApp history sync carries no push name, so almost every synced message
+// from someone else arrives nameless — but never id-less. A sender with no
+// name shows as the phone number that is their JID rather than "Unknown";
+// Telegram ids are opaque, so a nameless Telegram sender stays null.
+const senderChannel = sql`(select ${chats.channel} from ${chats} where ${chats.id} = ${messages.chatId})`
+const senderLabel = sql<string | null>`coalesce(${messages.senderName},
+  case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
+    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`
+
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
-  senderName: messages.senderName, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
+  senderName: senderLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
 }
 
