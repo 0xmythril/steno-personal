@@ -19,7 +19,9 @@ mkdir -p "$VOLUME"
 
 cleanup() {
   code=$?
-  if [ "$code" != "0" ]; then
+  # Only when there is a container to read: a build failure never created one,
+  # and the banner over an empty `docker logs` reads like a lost log.
+  if [ "$code" != "0" ] && docker inspect "$NAME" >/dev/null 2>&1; then
     echo "--- last 40 log lines (keys redacted) ---" >&2
     docker logs "$NAME" 2>&1 | tail -40 | sed -E 's/sp_[A-Za-z0-9_-]+/sp_<redacted>/g' >&2 || true
   fi
@@ -32,14 +34,14 @@ trap cleanup EXIT
 fail() { echo "SMOKE FAIL: $*" >&2; exit 1; }
 
 echo "==> build $IMAGE"
-docker build -t "$IMAGE" .
+docker build -t "$IMAGE" . || fail "docker build failed — see the build output above"
 
 echo "==> run $NAME on $VOLUME"
 docker run -d --name "$NAME" \
   -p "127.0.0.1:${PORT}:3000" \
   -v "${VOLUME}:/data" \
   -e DATA_DIR=/data \
-  "$IMAGE" >/dev/null
+  "$IMAGE" >/dev/null || fail "docker run failed — the container was never started"
 
 echo "==> wait for /api/health"
 ready=0
@@ -83,11 +85,18 @@ body="$(curl -sf -H "Authorization: Bearer ${KEY}" "${BASE}/api/chats")" \
 echo "$body" | grep -q '"chats"' || fail "bearer response has no chats: $body"
 
 echo "==> restart keeps the volume and mints no second key"
-docker restart "$NAME" >/dev/null
+docker restart "$NAME" >/dev/null || fail "docker restart failed"
+ready=0
 for _ in $(seq 1 60); do
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/health" || true)" = "200" ] && break
+  if [ "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/health" || true)" = "200" ]; then
+    ready=1; break
+  fi
   sleep 2
 done
+# Its own message: without it a container that never came back is reported
+# below as "the original key stopped working after a restart", which sends the
+# reader after the wrong thing.
+[ "$ready" = "1" ] || fail "/api/health never answered 200 within 120s after the restart"
 count="$(docker logs "$NAME" 2>&1 | grep -c 'your first access key' || true)"
 [ "$count" = "1" ] || fail "the bootstrap banner appeared $count times, expected 1"
 curl -sf -H "Authorization: Bearer ${KEY}" "${BASE}/api/chats" >/dev/null \
