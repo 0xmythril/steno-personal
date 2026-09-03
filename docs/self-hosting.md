@@ -94,15 +94,18 @@ WantedBy=multi-user.target
 The one-click template in the README is the short path. If you would rather wire
 it up yourself, or the template is not published yet:
 
-1. **New Project → Deploy from GitHub repo**, pick your fork.
-2. Railway reads `railway.json`: Dockerfile build, healthcheck on `/api/health`
+1. Sign in to Railway. A new account created through
+   <https://railway.com?referralCode=45_zFw> starts with $20 in credits; that is the
+   maintainer's referral link, and using it is optional.
+2. **New Project → Deploy from GitHub repo**, pick your fork.
+3. Railway reads `railway.json`: Dockerfile build, healthcheck on `/api/health`
    with a 120 s timeout, restart on failure up to 10 times.
-3. **Attach a volume** to the service with mount path `/data`. 5 GB is a
+4. **Attach a volume** to the service with mount path `/data`. 5 GB is a
    sensible start; media is what grows.
-4. Set variables: `DATA_DIR=/data`, and a `SECRET_KEY` of at least 32
+5. Set variables: `DATA_DIR=/data`, and a `SECRET_KEY` of at least 32
    characters (`openssl rand -base64 48`). Railway supplies `PORT` itself.
-5. Deploy, then **read the deploy log** for the bootstrap access key.
-6. **Generate a domain** under Settings → Networking, open it, and log in.
+6. Deploy, then **read the deploy log** for the bootstrap access key.
+7. **Generate a domain** under Settings → Networking, open it, and log in.
 
 Two Railway details worth knowing, both from
 <https://docs.railway.com/volumes>: volumes are mounted only when the container
@@ -319,13 +322,14 @@ placeholder. Delete the comment and the "not published yet" sentence, and
 point the button at:
 
 ```
-https://railway.com/new/template/<template-code>?referralCode=<your-code>&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
+https://railway.com/new/template/<template-code>?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
 ```
 
-`referralCode` is optional. It is the code from your workspace's referrals page
+`45_zFw` is the maintainer's code from the workspace's referrals page
 (<https://railway.com/account/referrals>): a signup through it gets $20 in
-credits and you get 15% of their first twelve months of invoices under
-Railway's affiliate programme. That is separate from the template kickback,
+credits and the maintainer gets 15% of their first twelve months of invoices
+under Railway's affiliate programme. The same link is offered, and labelled as
+a referral, in the README and in the Railway steps above. That is separate from the template kickback,
 which needs no code at all: once the template is on the marketplace you earn
 15% of the usage it generates, 25% if you answer questions in your template
 queue. Docs: <https://docs.railway.com/community/affiliate-program> and

@@ -78,8 +78,9 @@ everything away: `docker compose down -v`.
 [![Deploy on Railway](https://railway.com/button.svg)](docs/self-hosting.md#railway)
 
 The template is not published yet; the button above takes you to the manual
-Railway instructions until it is. Once it is, one click gives you a service built from this repo's `Dockerfile`, a 5 GB
-volume mounted at `/data`, and a generated `SECRET_KEY`. Watch the deploy log:
+Railway instructions until it is. Once it is, one click gives you a service
+built from this repo's `Dockerfile`, a 5 GB volume mounted at `/data`, and a
+generated `SECRET_KEY`. Watch the deploy log:
 your bootstrap access key is printed there exactly as above. Open the generated
 `*.up.railway.app` URL, log in with it, and mint your own key.
 
@@ -89,6 +90,10 @@ key — so revoke the bootstrap key as soon as you have minted your own, and rea
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
 A laptop, a Mac mini, or a Raspberry Pi at home is the safer place to run this.
+
+New to Railway? Signing up through <https://railway.com?referralCode=45_zFw> gives
+you $20 in credits. It is the maintainer's referral link — Railway pays a share
+of your first year's bills to this project — and it is entirely optional.
 
 Publishing the template yourself, or self-hosting on Railway without it, is in
 [docs/self-hosting.md](docs/self-hosting.md).
