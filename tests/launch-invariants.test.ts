@@ -173,7 +173,7 @@ describe('launch documents', () => {
     })
   }
 
-  it('the Railway template URL is the only placeholder in the repo docs', () => {
+  it('no placeholder marker survives in the repo docs, and the Railway button is real', () => {
     const docs = ['README.md', 'PRIVACY.md', 'SECURITY.md', 'CHANGELOG.md',
       'docs/architecture.md', 'docs/self-hosting.md', 'docs/threat-model.md']
     const offenders: string[] = []
@@ -184,8 +184,10 @@ describe('launch documents', () => {
       }
     }
     expect(offenders).toEqual([])
-    // The one sanctioned placeholder, and only in the README.
-    expect(readFileSync('README.md', 'utf8')).toContain('<RAILWAY_TEMPLATE_URL>')
+    // The Deploy button must point at a real template, never at a placeholder.
+    const readme = readFileSync('README.md', 'utf8')
+    expect(readme).toContain('https://railway.com/new/template/')
+    expect(readme).not.toContain('RAILWAY_TEMPLATE_URL')
   })
 
   it('SECURITY.md points at GitHub private reporting and offers no email', () => {
