@@ -57,14 +57,18 @@ export interface ChannelSession {
   onEdit(cb): void
   onDelete(cb): void
   downloadMedia(raw): Promise<{ data: Buffer; mimeType: string | null }>
+  listContacts(): Promise<ChannelContact[]>
   ping(): Promise<void>
   logOut(): Promise<void>
   close(): Promise<void>
 }
 ```
 
-Eight methods, all reads except `logOut` (which ends *our own* session on the
-channel's side) and `close`. There is no `send`, no `markRead`, no
+Nine methods, all reads except `logOut` (which ends *our own* session on the
+channel's side) and `close`. `listContacts` is the newest and the address
+book's only reason to touch a channel: Telegram answers it with a
+`contacts.getContacts` read, WhatsApp out of the contacts the phone already
+pushed, and neither writes anything back. There is no `send`, no `markRead`, no
 `setPresence`, and adding one would mean changing the interface every channel
 and every test is written against. That is the point.
 

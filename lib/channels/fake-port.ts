@@ -1,5 +1,6 @@
 import type {
-  BackfillOpts, Channel, ChannelAccount, ChannelPort, ChannelSession, IncomingMessage, LoginDriver,
+  BackfillOpts, Channel, ChannelAccount, ChannelContact, ChannelPort, ChannelSession,
+  IncomingMessage, LoginDriver,
 } from '@/lib/channels/port'
 
 type LoginResult = { sessionString: string; account: ChannelAccount }
@@ -18,6 +19,11 @@ export class FakePort implements ChannelPort {
   private logOutHangs = false
   private download: { data: Buffer; mimeType: string | null } | null = null
   private session: FakeSession | null = null
+  // The channel's address book, read live by the open session so a test can
+  // change it between manager ticks the way a real contact sync would see it
+  // change. Public rather than scripted through a setter because a contact
+  // list is plain data, not a behaviour to script.
+  contacts: ChannelContact[] = []
 
   constructor(readonly channel: Channel = 'telegram') {}
 
@@ -79,7 +85,7 @@ export class FakePort implements ChannelPort {
     this.session = new FakeSession(
       this.backfillMessages,
       () => this.backfillError, () => this.pingError, () => this.logOutError,
-      () => this.logOutHangs, () => this.download,
+      () => this.logOutHangs, () => this.download, () => this.contacts,
     )
     return this.session
   }
@@ -100,6 +106,7 @@ class FakeSession implements ChannelSession {
     private getLogOutError: () => Error | null,
     private getLogOutHangs: () => boolean,
     private getDownload: () => { data: Buffer; mimeType: string | null } | null,
+    private getContacts: () => ChannelContact[],
   ) {}
 
   async *backfill(_opts: BackfillOpts, shouldContinue: () => boolean = () => true): AsyncIterable<IncomingMessage> {
@@ -127,6 +134,10 @@ class FakeSession implements ChannelSession {
     const payload = this.getDownload()
     if (!payload) throw new Error('FakePort: downloadMedia not scripted')
     return payload
+  }
+
+  async listContacts(): Promise<ChannelContact[]> {
+    return this.getContacts()
   }
 
   async ping(): Promise<void> {

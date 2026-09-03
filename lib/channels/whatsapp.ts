@@ -4,6 +4,7 @@ import {
   ChannelError,
   type BackfillOpts,
   type ChannelAccount,
+  type ChannelContact,
   type ChannelErrorKind,
   type ChannelPort,
   type ChannelSession,
@@ -391,6 +392,15 @@ function stripDevice(jid: string): string {
   return jid.replace(/:\d+(?=@)/, '')
 }
 
+// A WhatsApp identity IS a phone number: the canonical JID is
+// <digits>@s.whatsapp.net (people design decision 3). A LID, a group JID or a
+// broadcast carries no number and must never be guessed at, so anything else
+// answers null.
+function phoneFromPnJid(jid: string): string | null {
+  const m = /^(\d+)@s\.whatsapp\.net$/.exec(jid)
+  return m ? `+${m[1]}` : null
+}
+
 // tsconfig has both "dom" and @types/node in scope, so setTimeout's return
 // type is not reliably NodeJS.Timeout. Every timer here is bookkeeping, never
 // a reason to hold the process open.
@@ -595,6 +605,12 @@ export class BaileysWhatsAppPort implements ChannelPort {
     const titles = new Map<string, string>()
     const metadataTried = new Set<string>()
     const lidToPn = new Map<string, string>()
+    // The address book, keyed by the PHONE JID — the identity key the archive
+    // files a person under, and the only form carrying a number. Filled from
+    // the contacts WhatsApp already pushes at us (history contacts[],
+    // contacts.upsert/update); listContacts() below just reads it, so this port
+    // makes no new call to WhatsApp for it (people design decision 2).
+    const contacts = new Map<string, string>()
 
     // Every event handler runs through one chain, so two batches can never
     // interleave and a thrown handler cannot take the socket down. A batch
@@ -751,8 +767,8 @@ export class BaileysWhatsAppPort implements ChannelPort {
     // business name, then the push name. Stored under both the phone JID and
     // the LID so a lookup by either form finds it, and the pairing itself
     // feeds the LID→PN map so no resolver round-trip is needed for it.
-    const rememberContacts = (contacts: Partial<WaContact>[] | undefined): void => {
-      for (const c of contacts ?? []) {
+    const rememberContacts = (incoming: Partial<WaContact>[] | undefined): void => {
+      for (const c of incoming ?? []) {
         if (!c?.id) continue
         const name = c.name || c.verifiedName || c.notify
         if (name) {
@@ -760,6 +776,14 @@ export class BaileysWhatsAppPort implements ChannelPort {
           if (c.lid) titles.set(c.lid, name)
         }
         if (c.lid && c.id.endsWith('@s.whatsapp.net')) lidToPn.set(c.lid, stripDevice(c.id))
+        if (!name) continue
+        // Filed under the phone JID only. A contact that arrives as a LID is
+        // filed once its PN is known (from this very pairing, an earlier one,
+        // or a lidPnMappings batch) and skipped until then — a LID key would
+        // be an identity the address book cannot match a phone number to.
+        const id = stripDevice(c.id)
+        const pnJid = id.endsWith('@s.whatsapp.net') ? id : lidToPn.get(c.id) ?? null
+        if (pnJid) contacts.set(pnJid, name)
       }
     }
     const rememberLidMappings = (mappings: Array<{ lid?: string; pn?: string }> | undefined): void => {
@@ -809,17 +833,17 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
       s.ev.on('groups.upsert', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
       s.ev.on('groups.update', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
-      s.ev.on('contacts.upsert', contacts => { lastEventAt = Date.now(); rememberContacts(contacts) })
-      s.ev.on('contacts.update', contacts => { lastEventAt = Date.now(); rememberContacts(contacts) })
+      s.ev.on('contacts.upsert', incoming => { lastEventAt = Date.now(); rememberContacts(incoming) })
+      s.ev.on('contacts.update', incoming => { lastEventAt = Date.now(); rememberContacts(incoming) })
 
-      s.ev.on('messaging-history.set', ({ chats, contacts, messages, progress, lidPnMappings }) => {
+      s.ev.on('messaging-history.set', ({ chats, contacts: incoming, messages, progress, lidPnMappings }) => {
         lastEventAt = Date.now()
         enqueue(async () => {
           // Names before messages, so the first message of a chat already
           // carries its title; a saved contact name outranks chats[].name.
           rememberLidMappings(lidPnMappings)
           for (const c of chats ?? []) if (c?.id && c.name) titles.set(c.id, c.name)
-          rememberContacts(contacts)
+          rememberContacts(incoming)
           for (const raw of messages ?? []) await handleRaw(raw)
           // Counts and kinds only (spec invariant 6).
           log.info({ chats: (chats ?? []).length, messages: (messages ?? []).length, progress: progress ?? null }, 'whatsapp history batch')
@@ -951,6 +975,17 @@ export class BaileysWhatsAppPort implements ChannelPort {
         } catch (err) {
           throw new ChannelError(`whatsapp media download failed: ${errText(err)}`, 'other')
         }
+      },
+
+      // Read straight out of the contacts WhatsApp pushed; no call is made and
+      // nothing is written back. Never logged: a name and a number are exactly
+      // what must not reach a log line (spec invariant 6).
+      async listContacts(): Promise<ChannelContact[]> {
+        return [...contacts].map(([externalId, displayName]) => ({
+          externalId,
+          displayName,
+          phone: phoneFromPnJid(externalId),
+        }))
       },
 
       async ping(): Promise<void> {

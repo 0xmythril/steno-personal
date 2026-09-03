@@ -77,6 +77,18 @@ describe('FakePort (test double contract)', () => {
     expect(port.sessionClosed).toBe(true)
   })
 
+  it('serves the contact list live, so it can change under an open session', async () => {
+    // A contact sync runs on a manager tick against a session opened long
+    // before it, and the address book has to see what the channel knows NOW.
+    const port = new FakePort('telegram')
+    const session = await port.open('SESS', { connectionId: 'c1' })
+    expect(await session.listContacts()).toEqual([])
+    port.contacts = [{ externalId: '777000', displayName: 'Ada', phone: '+447700900123' }]
+    expect(await session.listContacts()).toEqual([
+      { externalId: '777000', displayName: 'Ada', phone: '+447700900123' },
+    ])
+  })
+
   it('a scripted ping error surfaces from the already-open session', async () => {
     const port = new FakePort('telegram')
     const session = await port.open('SESS', { connectionId: 'c1' })

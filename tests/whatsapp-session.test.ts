@@ -61,9 +61,12 @@ describe('BaileysWhatsAppPort.open', () => {
   it('connects and hands back a read-only session', async () => {
     const { h, session } = await opened(testAuthRoot('open-ok'))
     expect(h.sockets).toHaveLength(1)
-    // Spec invariant 1: exactly the eight ChannelSession members, no test hook.
+    // Spec invariant 1: exactly the nine ChannelSession members, no test hook.
+    // Eight until the address book added listContacts() — a read of the
+    // contacts WhatsApp already pushed, not a new call (people design
+    // decision 8).
     expect(Object.keys(session).sort()).toEqual(
-      ['backfill', 'close', 'downloadMedia', 'logOut', 'onDelete', 'onEdit', 'onMessage', 'ping'].sort(),
+      ['backfill', 'close', 'downloadMedia', 'listContacts', 'logOut', 'onDelete', 'onEdit', 'onMessage', 'ping'].sort(),
     )
     await session.close()
   })

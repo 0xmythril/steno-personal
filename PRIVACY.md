@@ -34,8 +34,9 @@ when you look next year.
 ## What it can never do
 
 **It cannot send anything.** The part of the code that talks to Telegram and
-WhatsApp exposes exactly seven abilities: fetch history, receive a new message,
-receive an edit, receive a deletion, download an attachment, check the
+WhatsApp exposes exactly eight abilities: fetch history, receive a new message,
+receive an edit, receive a deletion, download an attachment, read your contact
+list — names and, where Telegram shows them to you, phone numbers — check the
 connection is alive, and log itself out. There is no send. This is not a policy
 that could be relaxed in a later version without rewriting the interface every
 channel is built against — which is why it is checked by a test.

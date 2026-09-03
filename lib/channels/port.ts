@@ -1,14 +1,20 @@
 import type { IncomingMessage } from '@/lib/services/ingest'
+import type { ChannelContact } from '@/lib/services/people'
 
 // Re-exported so a consumer of the port (the session manager, FakePort, a
 // binding) imports the DTO and the interfaces that carry it from one place.
 export type { IncomingMessage } from '@/lib/services/ingest'
+// The address book's own DTO, defined next to the service that stores it and
+// re-exported here for the same reason: a binding implementing this interface
+// has one import to reach for.
+export type { ChannelContact } from '@/lib/services/people'
 
 // The seam between the session manager and every messaging library. READ-ONLY
 // BY CONSTRUCTION: the interface exposes login, session open, history
-// backfill, update subscriptions, and attachment download — and no
-// send/mutate operation exists to call. Its implementations are the mtcute
-// binding (lib/channels/telegram.ts), the Baileys binding (M2), and FakePort.
+// backfill, update subscriptions, attachment download, and a contact-list
+// read — and no send/mutate operation exists to call. Its implementations are
+// the mtcute binding (lib/channels/telegram.ts), the Baileys binding (M2), and
+// FakePort.
 
 export type Channel = 'telegram' | 'whatsapp'
 
@@ -42,6 +48,13 @@ export interface ChannelSession {
   // Fetch one message's attachment bytes. `raw` is the IncomingMessage.raw
   // that ingest stored. Throws ChannelError('other') when unavailable.
   downloadMedia(raw: unknown): Promise<{ data: Buffer; mimeType: string | null }>
+  // The owner's own address book on that channel: the id the archive already
+  // files a person under, the saved name, and the phone number where the
+  // channel exposes one. A READ like every other method here — nothing is
+  // written back, and no contact is added, edited or removed (people design
+  // decision 2). It is what lets one human's Telegram id and WhatsApp number
+  // be recognised as the same person.
+  listContacts(): Promise<ChannelContact[]>
   // Liveness probe. A session revoked from the phone never throws on its own,
   // so the manager must actively ask each tick. Resolves for a live session;
   // throws ChannelError('auth_invalidated') for a dead one.

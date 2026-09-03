@@ -31,6 +31,10 @@ describe('the mtcute boundary', () => {
     // internal RPC that never spells `offline: false` at our call site, so the
     // call itself is banned alongside the content mutators.
     expect(code).not.toMatch(/\.sendText\(|\.sendMedia\(|\.readHistory\(|\.deleteMessages\(|\.editMessage\(|\.setTyping\(|\.setOnline\(/)
+    // The contact list is READ (getContacts) and never written: mtcute has
+    // wrappers for all four contact mutations, and listContacts() sitting next
+    // to them is exactly why they are banned by name.
+    expect(code).not.toMatch(/\.addContact\(|\.importContacts\(|\.deleteContacts\(|\.setContactNote\(/)
     // logOut() is the one sanctioned mutation: auth.logOut destroys only OUR
     // OWN access — no content, no other device, no profile data.
     expect(code).toMatch(/\.logOut\(\)/)
@@ -49,6 +53,7 @@ describe('the mtcute boundary', () => {
     expect(code).toMatch(/account\.updateStatus[\s\S]{0,80}timeout: RPC_TIMEOUT_MS/)
     expect(code).toMatch(/withParams\(\{ timeout: RPC_TIMEOUT_MS \}\)\.getMe\(\)/)
     expect(code).toMatch(/withParams\(\{ timeout: RPC_TIMEOUT_MS \}\)\.logOut\(\)/)
+    expect(code).toMatch(/withParams\(\{ timeout: RPC_TIMEOUT_MS \}\)\.getContacts\(\)/)
     // No unbounded survivor of either call.
     expect(code).not.toMatch(/(?<!withParams\(\{ timeout: RPC_TIMEOUT_MS \}\))\.getMe\(\)/)
   })
