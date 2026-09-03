@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { channelContacts, chats, connections, messages, people, personIdentities } from '@/lib/db/schema'
 import { resetDb } from './helpers/db'
@@ -406,6 +406,57 @@ describe('the self-populating address book', () => {
     // …and the owner can hand the name back to the channel.
     expect(await resetName(grace.id)).toBe(true)
     expect(await getPerson(grace.id)).toMatchObject({ name: 'Grace Hopper', nameSource: 'channel' })
+  })
+
+  // Decision 13's hard case: the worker's refresh is a SELECT, then a join,
+  // then a loop of writes, and the owner types an alias somewhere in the middle
+  // of it. A trigger is the only way to land that write at a moment a test can
+  // pin — it fires inside the loop, between the read that saw Ada as
+  // channel-named and the write that would have renamed her.
+  it('never renames a person the owner aliased while the refresh was running', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '41', displayName: 'Aaa', phone: null },
+      { externalId: '42', displayName: 'Ada', phone: null },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    const aaa = (await listPeople()).find(p => p.name === 'Aaa')!
+    const ada = (await listPeople()).find(p => p.name === 'Ada')!
+    // The loop goes oldest first, so Aaa is written before Ada is reached.
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, aaa.id))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, ada.id))
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '41', displayName: 'Aaa Two', phone: null },
+      { externalId: '42', displayName: 'Ada Lovelace', phone: null },
+    ])
+
+    // SQLite refuses bound parameters inside a trigger, so the two ids are
+    // inlined — both are uuids this test just read out of its own database.
+    await db.run(sql.raw(`create trigger owner_types_an_alias after update on people
+      when new.id = '${aaa.id}'
+      begin update people set name = 'Ada @ work', name_source = 'owner' where id = '${ada.id}'; end`))
+    try {
+      // Aaa follows the contact list; Ada's write finds a row that is no longer
+      // channel-named and does nothing, so the count is 1 rather than 2.
+      expect(await populatePeople()).toMatchObject({ renamed: 1 })
+    } finally {
+      await db.run(sql.raw('drop trigger owner_types_an_alias'))
+    }
+    expect((await getPerson(aaa.id))!.name).toBe('Aaa Two')
+    // The alias survived, and the row still says the owner chose it.
+    expect(await getPerson(ada.id)).toMatchObject({ name: 'Ada @ work', nameSource: 'owner' })
+  })
+
+  // The same read-then-blind-write shape, and the same repair: the row can be
+  // hidden while channelNamesFor's join runs.
+  it('the write guards repeat every predicate the read relied on', () => {
+    const src = readFileSync('lib/services/people.ts', 'utf8')
+    const refresh = src.split('async function refreshChannelNames')[1].split('\n}')[0]
+    const update = refresh.split('db.update(people)')[1]
+    expect(update).toMatch(/eq\(people\.nameSource, 'channel'\)/)
+    expect(update).toMatch(/isNull\(people\.archivedAt\)/)
+    const reset = src.split('export async function resetName')[1].split('\n}')[0]
+    expect(reset.split('db.update(people)')[1]).toMatch(/isNull\(people\.archivedAt\)/)
   })
 
   it('a hidden person is nobody, is never recreated, and comes back on restore', async () => {

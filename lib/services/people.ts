@@ -641,10 +641,15 @@ export async function resetName(id: string): Promise<boolean> {
     .where(and(eq(people.id, id), isNull(people.archivedAt))).limit(1)
   if (!row) return false
   const name = (await channelNamesFor([id])).get(id)
-  await db.update(people)
+  // The read above is not a lock: channelNamesFor is a join, and the owner (or
+  // another tab) can hide this person while it runs. Every predicate the SELECT
+  // relied on is repeated here, so a write that raced loses instead of
+  // resurrecting a name on somebody who is no longer there.
+  const rows = await db.update(people)
     .set({ nameSource: 'channel', name: name ?? row.name, updatedAt: new Date() })
-    .where(eq(people.id, id))
-  return true
+    .where(and(eq(people.id, id), isNull(people.archivedAt)))
+    .returning({ id: people.id })
+  return rows.length > 0
 }
 
 // Decision 15. `into` keeps its name unless it is only a channel name and
@@ -767,16 +772,34 @@ async function mergeByPhone(): Promise<number> {
   return merged
 }
 
+// Decision 13's "no sync overwrites an alias", enforced at the WRITE and not
+// only at the read. The gap between the SELECT below and each UPDATE spans a
+// join plus a loop of writes, and the web and the worker are two processes: in
+// that window the owner can type an alias on /people/<id>, and a blind
+// `where id = ?` would land on top of it and leave the row claiming the owner
+// chose the channel's name — destroyed silently and never corrected by a later
+// sync. Repeating both predicates in the WHERE makes the racing write a no-op.
 async function refreshChannelNames(): Promise<number> {
   const rows = await db.select({ id: people.id, name: people.name }).from(people)
     .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt)))
+    // Oldest first, so the loop below runs in the same order every time rather
+    // than in whatever order the planner happens to return.
+    .orderBy(asc(people.createdAt), asc(people.id))
   const names = await channelNamesFor(rows.map(r => r.id))
   let renamed = 0
   for (const r of rows) {
     const next = names.get(r.id)
     if (!next || next === r.name) continue
-    await db.update(people).set({ name: next, updatedAt: new Date() }).where(eq(people.id, r.id))
-    renamed++
+    const written = await db.update(people).set({ name: next, updatedAt: new Date() })
+      .where(and(
+        eq(people.id, r.id),
+        eq(people.nameSource, 'channel'),
+        isNull(people.archivedAt),
+      ))
+      .returning({ id: people.id })
+    // Counted from what actually landed, so a lost race is not reported as a
+    // rename that happened.
+    if (written.length > 0) renamed++
   }
   return renamed
 }
