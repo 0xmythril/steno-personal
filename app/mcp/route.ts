@@ -2,6 +2,7 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
 import { CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, NO_CONNECTION } from '@/lib/mcp/copy'
+import { archiveIsEmpty } from '@/lib/mcp/gate'
 import { verifyAccessKey } from '@/lib/services/access-keys'
 import { hasActiveConnection, listConnections } from '@/lib/services/connections'
 import { getMessages, listChats, searchMessages } from '@/lib/services/queries'
@@ -32,6 +33,13 @@ function guarded<A extends unknown[]>(
   }
 }
 
+// The content tools fall back to the one sentence only when this instance has
+// nothing to serve at all — see lib/mcp/gate.ts. Disconnecting an account does
+// not black the archive out for an agent while the portal and GET /api/chats
+// keep serving the same history.
+const nothingToServe = async (): Promise<boolean> =>
+  !(await hasActiveConnection()) && (await archiveIsEmpty())
+
 const timestamp = z.iso.datetime({ offset: true })
 const toDate = (iso: string | undefined): Date | undefined => (iso ? new Date(iso) : undefined)
 
@@ -56,7 +64,7 @@ const handler = createMcpHandler(server => {
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('list_chats', async () => {
-      if (!(await hasActiveConnection())) return text(NO_CONNECTION)
+      if (await nothingToServe()) return text(NO_CONNECTION)
       return text(await listChats())
     }),
   )
@@ -71,7 +79,7 @@ const handler = createMcpHandler(server => {
       inputSchema: getMessagesInput,
     },
     guarded('get_messages', async (args: z.infer<typeof getMessagesInput>) => {
-      if (!(await hasActiveConnection())) return text(NO_CONNECTION)
+      if (await nothingToServe()) return text(NO_CONNECTION)
       const out = await getMessages(args.chat_id, {
         cursor: args.cursor,
         limit: args.limit,
@@ -91,7 +99,7 @@ const handler = createMcpHandler(server => {
       inputSchema: searchInput,
     },
     guarded('search_messages', async (args: z.infer<typeof searchInput>) => {
-      if (!(await hasActiveConnection())) return text(NO_CONNECTION)
+      if (await nothingToServe()) return text(NO_CONNECTION)
       return text(await searchMessages(args.query, args.chat_id))
     }),
   )

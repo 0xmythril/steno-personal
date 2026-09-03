@@ -50,7 +50,7 @@ describe('whoami', () => {
   })
 })
 
-describe('content tools with nothing connected', () => {
+describe('content tools with nothing to serve', () => {
   beforeEach(resetDb)
 
   it('answer with exactly the one sentence', async () => {
@@ -64,9 +64,28 @@ describe('content tools with nothing connected', () => {
     }
   })
 
-  it('still answer with the sentence when the only connection is revoked', async () => {
+  it('still answer with the sentence when a revoked connection archived nothing', async () => {
     await seedConnection({ channel: 'telegram', status: 'revoked' })
     expect(await callTool(await agentKey(), 'list_chats')).toBe('No personal account is connected.')
+  })
+
+  it('serve the archive of a revoked connection, exactly as the portal does', async () => {
+    // Disconnecting ends the channel session; it does not retract the
+    // history. app/page.tsx keeps rendering it ("Everything already archived
+    // stays readable below.") and GET /api/chats keeps serving it to the same
+    // access key, so the agent surface must not disagree.
+    const conn = await seedConnection({ channel: 'telegram', status: 'revoked' })
+    const chat = await seedChat(conn, { title: 'Mum', kind: 'dm' })
+    await seedMessage(chat, { text: 'call me back' })
+    const key = await agentKey()
+
+    const chats = JSON.parse(await callTool(key, 'list_chats')) as Array<{ id: string; title: string | null }>
+    expect(chats.map(c => c.title)).toEqual(['Mum'])
+    const transcript = JSON.parse(await callTool(key, 'get_messages', { chat_id: chat })) as {
+      messages: Array<{ text: string | null }>
+    }
+    expect(transcript.messages.map(m => m.text)).toEqual(['call me back'])
+    expect(await callTool(key, 'search_messages', { query: 'call' })).toContain(chat)
   })
 })
 
