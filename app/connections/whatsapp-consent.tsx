@@ -1,7 +1,7 @@
 import { Consent } from './consent'
 
-// Spec decision 2 and the shared-interfaces "Consent copy" section: these
-// three sentences are VERBATIM. They are not softened, not reordered, and not
+// The consent copy. These three sentences are VERBATIM here and in the
+// README. They are not softened, not reordered, and not
 // hidden behind a disclosure — the whole point of accepting the ban risk
 // rather than gating it is that the user reads this before the QR appears.
 // tests/whatsapp-structure.test.ts pins them.

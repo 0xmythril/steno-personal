@@ -3,10 +3,10 @@
 // a decision that belongs in a diff you can read, and the prices ride along so
 // per-row cost can be computed at analysis time (media_analysis.cost_microusd).
 //
-// One provider, one key, one adapter (spec decision 10): the Steno cloud
-// catalog's Anthropic-direct entries are deliberately NOT ported — they would
-// mean a second secret, a second SDK, and a second wire format for no gain to
-// a self-hoster who already has an OpenRouter key.
+// One provider, one key, one adapter: there are deliberately no
+// direct-to-vendor entries — they would mean a second secret, a second SDK,
+// and a second wire format for no gain to a self-hoster who already has an
+// OpenRouter key.
 //
 // `provider` is the data-destination disclosure the settings picker shows:
 // switching models is switching who receives your images and voice notes.

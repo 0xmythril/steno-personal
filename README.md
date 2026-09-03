@@ -1,5 +1,8 @@
 # steno-personal
 
+[![CI](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml)
+[![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
+
 Your own Telegram and WhatsApp chats, archived read-only into one SQLite file
 on a machine you control, and readable by your agents over MCP.
 
@@ -71,7 +74,7 @@ everything away: `docker compose down -v`.
 
 ## Deploy on Railway
 
-[![Deploy on Railway](https://railway.com/button.svg)](<RAILWAY_TEMPLATE_URL>)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
 
 One click gives you a service built from this repo's `Dockerfile`, a 5 GB
 volume mounted at `/data`, and a generated `SECRET_KEY`. Open the generated
@@ -85,6 +88,10 @@ archive is an access key — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
 A laptop, a Mac mini, or a Raspberry Pi at home is the safer place to run this.
+
+New to Railway? Signing up through <https://railway.com?referralCode=45_zFw> gives
+you $20 in credits. It is the maintainer's referral link — Railway pays a share
+of your first year's bills to this project — and it is entirely optional.
 
 Publishing the template yourself, or self-hosting on Railway without it, is in
 [docs/self-hosting.md](docs/self-hosting.md).
@@ -244,6 +251,8 @@ become. Conduct is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 | [docs/self-hosting.md](docs/self-hosting.md) | Docker, bare Node, Railway, reverse proxies, backups, upgrades. |
 | [docs/architecture.md](docs/architecture.md) | How the two processes and the channel port fit together. |
 | [docs/threat-model.md](docs/threat-model.md) | What this protects against, and what it does not. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Ground rules, development setup, what the project will not become. |
+| [docs/releasing.md](docs/releasing.md) | How a release is cut. |
 | [CHANGELOG.md](CHANGELOG.md) | Releases. |
 
 ## Licence

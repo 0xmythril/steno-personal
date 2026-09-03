@@ -124,8 +124,8 @@ export const media = sqliteTable('media', {
 // Queue + result for one enriched attachment. A table of its own rather than
 // columns on `media`: media rows belong to the download drain and have their
 // own status/attempts lifecycle, and "re-analyze" is "delete this row".
-// `confidence` is spec 4.4; the shared-interfaces block omits it, and the
-// spec wins.
+// `confidence` is the model's own 0–1 estimate of its reading, kept so a
+// shaky transcript can be shown as shaky rather than as fact.
 export const mediaAnalysis = sqliteTable('media_analysis', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   mediaId: text('media_id').notNull().unique().references(() => media.id, { onDelete: 'cascade' }),
