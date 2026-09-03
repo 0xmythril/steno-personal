@@ -65,7 +65,18 @@ type Running = {
   lastBackfillAttempt: number // epoch ms; 0 means never attempted
   lastPingAt: number          // epoch ms; 0 means never probed, so the first tick probes
   backfillSinceDays: number   // fixed at open time; retries reuse it
+  // Consecutive 'other' ping failures. Reset by any successful ping; at
+  // MAX_CONSECUTIVE_OTHER the session is recycled. See handleSessionError.
+  consecutiveOther: number
 }
+
+// A session whose ping keeps failing with 'other' is not dead (that would be
+// auth_invalidated) and not healthy either: the WhatsApp port raises it after
+// a full stale window, i.e. a reconnect loop that never reaches 'open'. Left
+// alone it logs once a minute forever while the archive stops. Three in a row
+// — three minutes past the port's own 10-minute window — is a session worth
+// throwing away and rebuilding from the connection row.
+const MAX_CONSECUTIVE_OTHER = 3
 
 // One SessionManager per worker. tick() is idempotent, self-serializing (a
 // tick already in flight makes a concurrent call a no-op — never queued), and
@@ -194,9 +205,10 @@ export class SessionManager {
             // ping must not be handed to maybeStartBackfill.
             try {
               await existing.session.ping()
+              existing.consecutiveOther = 0
               this.maybeStartBackfill(conn.id, existing)
             } catch (e) {
-              await this.handleSessionError(conn.id, e)
+              await this.handleSessionError(conn.id, e, { fromPing: true })
             }
           } else {
             // A phone-side revocation never throws on its own inside a running
@@ -213,9 +225,10 @@ export class SessionManager {
               existing.lastPingAt = Date.now()
               try {
                 await existing.session.ping()
+                existing.consecutiveOther = 0
                 await recordSync(conn.id)
               } catch (e) {
-                await this.handleSessionError(conn.id, e)
+                await this.handleSessionError(conn.id, e, { fromPing: true })
               }
             }
           }
@@ -235,6 +248,7 @@ export class SessionManager {
           const running: Running = {
             channel: conn.channel, session, backfilled: false, stopped: false,
             lastBackfillAttempt: 0, lastPingAt: 0, backfillSinceDays: backfillSinceDays(conn.lastSyncAt),
+            consecutiveOther: 0,
           }
           this.running.set(conn.id, running)
           this.wireHandlers(conn.id, conn.channel, session)
@@ -313,13 +327,34 @@ export class SessionManager {
     }
   }
 
-  private async handleSessionError(connId: string, e: unknown): Promise<void> {
+  private async handleSessionError(connId: string, e: unknown, opts: { fromPing?: boolean } = {}): Promise<void> {
     if (e instanceof ChannelError && e.kind === 'auth_invalidated') {
       // Killed from the phone. Not a logOut() path: the session is already
       // gone on the channel's side — that is exactly what this error means.
       await revokeConnection(connId, 'You revoked this session from your phone.')
       const r = this.running.get(connId)
       if (r) { r.stopped = true; await r.session.close().catch(() => {}); this.running.delete(connId) }
+      return
+    }
+    // Not fatal, so the row is left alone — the connection is still active and
+    // still the owner's. But a LIVENESS PROBE that fails this way three times
+    // running is a wedged session (for WhatsApp: a reconnect loop that never
+    // reaches 'open', raised after the port's own 10-minute stale window), and
+    // "retry next tick" retries nothing — it re-pings the same wedged session
+    // forever while the archive stops. Throw it away instead; the next tick
+    // re-open()s it from the connection row, which is the only recovery
+    // available from here. No last_error write: the connection has not failed,
+    // and nothing outside revokeConnection may write that column's sentinels.
+    //
+    // Counted for pings only. A failing backfill has its own retry backoff and
+    // is not evidence that the session is unusable.
+    const kind = e instanceof ChannelError ? e.kind : 'other'
+    const r = this.running.get(connId)
+    if (opts.fromPing && kind === 'other' && r && ++r.consecutiveOther >= MAX_CONSECUTIVE_OTHER) {
+      r.stopped = true
+      await r.session.close().catch(() => {})
+      this.running.delete(connId)
+      log.warn({ connectionId: connId, consecutiveOther: r.consecutiveOther }, 'session recycled')
       return
     }
     log.error({ err: errorShape(e), connectionId: connId }, 'session error; will retry next tick')

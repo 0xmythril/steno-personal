@@ -346,6 +346,77 @@ describe('session manager', () => {
     await mgr.stopAll()
   })
 
+  // The WhatsApp port raises 'other' from ping() once it has not been
+  // CONNECTED for a full stale window — a reconnect loop that never reaches
+  // 'open'. Logging that once a minute forever leaves the archive stopped with
+  // the row still reading 'active'.
+  it('recycles a session after three consecutive other ping failures, and reopens it next tick', async () => {
+    const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    const mgr = new SessionManager(portsOf(port))
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle()      // opens and backfills
+      port.scriptPingError(new ChannelError('whatsapp has not been connected for a full stale window', 'other'))
+
+      // Three probes, each in its own throttle window. Only Date is faked, as
+      // in the throttle test above, so the real DB I/O keeps working.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        await mgr.tick()                          // failure 1
+        expect(port.sessionClosed).toBe(false)
+        vi.setSystemTime(Date.now() + 61_000)
+        await mgr.tick()                          // failure 2
+        expect(port.sessionClosed).toBe(false)
+        vi.setSystemTime(Date.now() + 61_000)
+        await mgr.tick()                          // failure 3: recycled
+      } finally {
+        vi.useRealTimers()
+      }
+
+      expect(port.pingCount).toBe(3)
+      expect(port.sessionClosed).toBe(true)
+      const recycled = warn.mock.calls.find(c => c[1] === 'session recycled')
+      expect(recycled?.[0]).toMatchObject({ connectionId: conn.id, consecutiveOther: 3 })
+
+      // The row is untouched — this is not a failure of the connection.
+      const row = await rowOf(conn.id)
+      expect(row.status).toBe('active')
+      expect(row.lastError).toBeNull()
+      expect(row.revokedAt).toBeNull()
+
+      // Dropped from `running`, so the next tick opens a fresh session.
+      port.scriptPingError(null)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.sessionClosed).toBe(false)
+    } finally {
+      warn.mockRestore()
+    }
+    await mgr.stopAll()
+  })
+
+  it('a successful ping clears the recycle counter', async () => {
+    await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      for (const err of [true, true, false, true, true]) {
+        port.scriptPingError(err ? new ChannelError('transient', 'other') : null)
+        await mgr.tick()
+        vi.setSystemTime(Date.now() + 61_000)
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+    // Two failures, a success, then two more: never three in a row.
+    expect(port.pingCount).toBe(5)
+    expect(port.sessionClosed).toBe(false)
+    await mgr.stopAll()
+  })
+
   it('probes liveness once a minute, not once a tick', async () => {
     const conn = await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
     const port = new FakePort('telegram')
