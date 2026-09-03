@@ -2,6 +2,12 @@
 body { margin: 0; max-width: 56rem; padding: 1rem 1.5rem; }
 nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: center; }
 nav a { text-decoration: none; }
+.brand { display: inline-flex; align-items: center; gap: 0.45em; font-weight: 600; color: inherit; }
+.brand svg { flex: none; }
+nav .brand { margin-right: 0.5rem; }
+.site-footer { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin-top: 3rem; padding-top: 0.75rem; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); font-size: 0.85em; }
+.site-footer .brand { font-weight: 500; }
+.hosted-cta { border-style: dashed; }
 .muted { opacity: 0.7; }
 code, pre { font-family: ui-monospace, monospace; }
 pre { overflow-x: auto; padding: 0.6rem 0.8rem; border-radius: 6px; background: color-mix(in srgb, currentColor 8%, transparent); }
