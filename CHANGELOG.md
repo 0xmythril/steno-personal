@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 - A plain-language tagline on the login page.
 
 ### Changed
+- A WhatsApp sender with no name (history-synced messages carry none) shows as their phone number instead of "Unknown".
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.
 - Transcript pages have Older / Latest links at both ends and a Back to top link at the foot.
 - WhatsApp direct chats take their name from your contacts (saved name, then business name, then push name), and one with no name at all shows its phone number instead of "Untitled chat".
