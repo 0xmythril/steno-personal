@@ -101,6 +101,20 @@ export type FakeWaHarness = {
   downloads(): unknown[]
 }
 
+// The bytes fields of a WebMessageInfo, as JSON.stringify of a protobufjs
+// message leaves them: base64 strings.
+const BYTES_FIELDS = new Set(['mediaKey', 'fileSha256', 'fileEncSha256', 'streamingSidecar', 'jpegThumbnail'])
+
+function reviveBytes(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Buffer.isBuffer(value)) return value
+  if (Array.isArray(value)) return value.map(reviveBytes)
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = BYTES_FIELDS.has(k) && typeof v === 'string' ? Buffer.from(v, 'base64') : reviveBytes(v)
+  }
+  return out
+}
+
 export function fakeWaDeps(opts: { download?: (message: unknown) => Promise<Buffer> } = {}): FakeWaHarness {
   const sockets: FakeWaSocket[] = []
   const downloaded: unknown[] = []
@@ -118,6 +132,14 @@ export function fakeWaDeps(opts: { download?: (message: unknown) => Promise<Buff
       const socket = new FakeWaSocket(socketOpts)
       sockets.push(socket)
       return socket
+    },
+    // Stands in for proto.WebMessageInfo.fromObject: protobufjs turns the
+    // base64 strings its own JSON projection produced back into byte arrays.
+    // Only the byte fields a media download needs are converted — this file
+    // may not name Baileys (spec invariant 2), so it mimics the one behaviour
+    // the port depends on rather than importing the real thing.
+    async fromObject(raw) {
+      return reviveBytes(raw) as never
     },
     async downloadMedia(message, ctx) {
       downloaded.push(message)

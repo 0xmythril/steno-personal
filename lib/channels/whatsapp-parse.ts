@@ -2,8 +2,8 @@ import type { IncomingMessage } from '@/lib/services/ingest'
 
 // Ported from the private Steno cloud repo (origin/main), lib/services/ingest.ts
 // (unwrapContent, textOf, parseProtocolEvent, parseWaMessage,
-// resolveContactIdentity) and lib/services/media.ts (reviveRawMessage), then
-// generalised from "groups only" to any remoteJid.
+// resolveContactIdentity), then generalised from "groups only" to any
+// remoteJid.
 //
 // NOTHING IN THIS FILE MAY IMPORT THE BAILEYS LIBRARY (spec invariant 2 —
 // lib/channels/whatsapp.ts is the one module allowed to name the package, and
@@ -245,31 +245,4 @@ export function toIncoming(p: ParsedWaMessage, ctx: ToIncomingCtx): IncomingMess
     media: p.media,
     raw: p.raw,
   }
-}
-
-// messages.raw is stored as JSON, and JSON.stringify destroys the proto byte
-// fields (mediaKey, fileSha256, …) that a media download needs. Revive both
-// shapes JSON leaves behind before handing the message to Baileys.
-export function reviveRawMessage(raw: unknown): unknown {
-  if (raw === null || typeof raw !== 'object') return raw
-  if (Buffer.isBuffer(raw) || raw instanceof Uint8Array) return raw
-  if (Array.isArray(raw)) return raw.map(reviveRawMessage)
-  const obj = raw as Record<string, unknown>
-  // {type:'Buffer',data:[...]} — JSON.stringify(Buffer) shape
-  if (obj.type === 'Buffer' && Array.isArray(obj.data) && obj.data.every(n => typeof n === 'number'))
-    return Buffer.from(obj.data as number[])
-  // {"0":n,"1":n,...} — JSON.stringify(Uint8Array) shape. Key order is not
-  // guaranteed after a round-trip, so index explicitly.
-  const keys = Object.keys(obj)
-  if (keys.length > 0 && keys.every(k => /^\d+$/.test(k) && typeof obj[k] === 'number')) {
-    const idx = keys.map(Number)
-    if (Math.max(...idx) === keys.length - 1 && new Set(idx).size === keys.length) {
-      const bytes = new Array<number>(keys.length)
-      for (const k of keys) bytes[Number(k)] = obj[k] as number
-      return Buffer.from(bytes)
-    }
-  }
-  const out: Record<string, unknown> = {}
-  for (const k of keys) out[k] = reviveRawMessage(obj[k])
-  return out
 }

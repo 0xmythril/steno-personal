@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   chatKindForJid, parseProtocolEvent, parseWaMessage, phoneFromPnJid,
-  resolveContactIdentity, reviveRawMessage, textOf, toIncoming, tsToDate, unwrapContent,
+  resolveContactIdentity, textOf, toIncoming, tsToDate, unwrapContent,
 } from '@/lib/channels/whatsapp-parse'
 
 const GROUP = '12345-67890@g.us'
@@ -185,23 +185,5 @@ describe('toIncoming', () => {
       media: null,
       raw: p.raw,
     })
-  })
-})
-
-describe('reviveRawMessage', () => {
-  it('turns both JSON buffer shapes back into buffers', () => {
-    const revived = reviveRawMessage({
-      message: {
-        imageMessage: {
-          mediaKey: { type: 'Buffer', data: [1, 2, 3] },
-          fileSha256: { '0': 9, '1': 8 },
-          url: 'https://example.invalid/x',
-        },
-      },
-    }) as { message: { imageMessage: { mediaKey: Buffer; fileSha256: Buffer; url: string } } }
-    expect(Buffer.isBuffer(revived.message.imageMessage.mediaKey)).toBe(true)
-    expect([...revived.message.imageMessage.mediaKey]).toEqual([1, 2, 3])
-    expect([...revived.message.imageMessage.fileSha256]).toEqual([9, 8])
-    expect(revived.message.imageMessage.url).toBe('https://example.invalid/x')
   })
 })

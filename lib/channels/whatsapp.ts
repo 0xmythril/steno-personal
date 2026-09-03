@@ -15,7 +15,6 @@ import {
   chatKindForJid,
   parseProtocolEvent,
   parseWaMessage,
-  reviveRawMessage,
   toIncoming,
   tsToDate,
   type ParsedWaMessage,
@@ -113,10 +112,35 @@ export type WaSocketSeamCheck = {
 export type WaAuth = { state: unknown; saveCreds: () => Promise<void> }
 export type WaSocketOpts = { auth: unknown; version: WaVersion | undefined; syncFullHistory: boolean }
 
+/** Baileys' WAMessage — what downloadMediaMessage takes. */
+export type WaMessage = WAMessageLike
+
 export type WaDeps = {
   useAuthState(dir: string): Promise<WaAuth>
   fetchVersion(): Promise<WaVersion | undefined>
   makeSocket(opts: WaSocketOpts): Promise<WaSocket>
+  /**
+   * Rebuild a WAMessage from what came back out of `messages.raw`.
+   *
+   * Baileys emits messages as protobufjs `proto.WebMessageInfo` instances
+   * (lib/Socket/messages-recv.js:337, lib/Utils/messages.js:616), and drizzle's
+   * `mode: 'json'` column stores them through JSON.stringify — which for a
+   * protobufjs message means its JSON projection: `util.toJSONOptions =
+   * { longs: String, enums: String, bytes: String }`, so every bytes field
+   * (mediaKey, fileSha256, fileEncSha256, …) comes back as a BASE64 STRING and
+   * every long as a decimal string.
+   *
+   * `proto.WebMessageInfo.fromObject` is the inverse protobufjs already ships,
+   * so the download path uses that rather than guessing at field names. It
+   * matters beyond the happy path: getMediaKeys tolerates a base64 string
+   * (lib/Utils/messages-media.js:74), but the expired-URL reupload path —
+   * updateMediaMessage → encryptMediaRetryRequest → getMediaRetryKey
+   * (messages-media.js:701) — feeds the value straight into hkdf with no
+   * conversion, and that is exactly the path M4's drain hits on older media.
+   *
+   * Async only because the library is reachable through one dynamic import().
+   */
+  fromObject(raw: unknown): Promise<WaMessage>
   downloadMedia(message: unknown, ctx: { reuploadRequest: (m: unknown) => Promise<unknown> }): Promise<Buffer>
 }
 
@@ -253,6 +277,13 @@ export function baileysDeps(): WaDeps {
         logger: waLogger(),
       })
       return sock as unknown as WaSocket
+    },
+    async fromObject(raw) {
+      // WAProto/index.d.ts:13675 — the generated protobufjs class.
+      const { proto } = await loadBaileys()
+      return proto.WebMessageInfo.fromObject(
+        (raw ?? {}) as { [k: string]: unknown },
+      ) as unknown as WaMessage
     },
     async downloadMedia(message, ctx) {
       // lib/Utils/messages.d.ts:87 — unwraps ephemeral/viewOnce itself, and
@@ -844,7 +875,9 @@ export class BaileysWhatsAppPort implements ChannelPort {
         // WhatsApp right now" rather than a specific fatal kind, since a
         // reconnect can still bring the session back.
         if (closing || !connected || !s) throw new ChannelError('no live WhatsApp socket', 'other')
-        const message = reviveRawMessage(raw)
+        // `raw` is protobufjs' JSON projection of a WebMessageInfo (bytes as
+        // base64 strings); fromObject is protobufjs' own inverse. See WaDeps.
+        const message = await deps.fromObject(raw)
         try {
           const data = await deps.downloadMedia(message, { reuploadRequest: m => s.updateMediaMessage(m) })
           return { data, mimeType: parseWaMessage(message)?.media?.mimeType ?? null }

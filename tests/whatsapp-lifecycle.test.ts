@@ -20,20 +20,40 @@ async function connect(name: string, over: { staleMs?: number; reconnectMinMs?: 
 }
 
 describe('downloadMedia', () => {
-  it('revives the JSON buffers, wires reuploadRequest, and reports the mime type', async () => {
+  // The shape messages.raw actually holds: protobufjs' JSON projection of a
+  // WebMessageInfo, so every bytes field is a base64 STRING and every long a
+  // decimal string. Baileys' reupload path (getMediaRetryKey → hkdf) does no
+  // string→bytes conversion of its own, so the port must hand over real bytes.
+  it('revives the base64 bytes fields, wires reuploadRequest, and reports the mime type', async () => {
     const c = await connect('media-ok', { download: async () => Buffer.from('jpeg-bytes') })
     const raw = {
       key: { remoteJid: '12345-67890@g.us', id: 'M1', fromMe: false, participant: '15559990000@s.whatsapp.net' },
-      messageTimestamp: 1_700_000_000,
-      message: { imageMessage: { mimetype: 'image/jpeg', mediaKey: { type: 'Buffer', data: [1, 2, 3] } } },
+      messageTimestamp: '1700000000',
+      message: {
+        imageMessage: {
+          mimetype: 'image/jpeg',
+          fileLength: '2048',
+          mediaKey: 'AQID',           // [1, 2, 3]
+          fileSha256: 'CQg=',         // [9, 8]
+          fileEncSha256: 'BwY=',      // [7, 6]
+        },
+      },
     }
 
     const result = await c.session.downloadMedia(raw)
     expect(result.mimeType).toBe('image/jpeg')
     expect(result.data.toString()).toBe('jpeg-bytes')
 
-    const handed = c.h.downloads()[0] as { message: { imageMessage: { mediaKey: Buffer } } }
-    expect(Buffer.isBuffer(handed.message.imageMessage.mediaKey)).toBe(true)
+    const handed = c.h.downloads()[0] as {
+      message: { imageMessage: { mediaKey: Uint8Array; fileSha256: Uint8Array; fileEncSha256: Uint8Array } }
+    }
+    const img = handed.message.imageMessage
+    for (const field of [img.mediaKey, img.fileSha256, img.fileEncSha256]) {
+      expect(field).toBeInstanceOf(Uint8Array)
+    }
+    expect([...img.mediaKey]).toEqual([1, 2, 3])
+    expect([...img.fileSha256]).toEqual([9, 8])
+    expect([...img.fileEncSha256]).toEqual([7, 6])
     // The port hands Baileys sock.updateMediaMessage as the reupload path.
     expect(c.socket().reuploaded).toHaveLength(1)
     await c.session.close()
