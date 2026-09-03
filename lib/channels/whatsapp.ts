@@ -134,12 +134,38 @@ function loadBaileys(): Promise<BaileysModule> {
 // checked against the real shape instead of being cast into place.
 type WaILogger = NonNullable<MakeWASocketConfig['logger']>
 
+// Spec invariant 6, the half that dropping the bound object does not cover:
+// Baileys writes identifiers into its own MESSAGE STRINGS and into the
+// messages of the errors it throws. Verified in 7.0.0-rc14 —
+// lib/Signal/lid-mapping.js:22 (`Invalid LID-PN mapping: ${lid}, ${pn}`), :112,
+// :132, :153; lib/Socket/chats.js:291 (`Unable to resolve PN JID for LID:
+// ${jid}`), :299, :307; lib/Signal/libsignal.js:315 — and the chats.js strings
+// reach us as thrown errors through this file's own catch blocks, on the LID
+// path this port drives for every @lid chat.
+//
+// Two shapes cover what those strings carry: a JID (a long numeric user, an
+// optional :device, then a server), and a bare phone number.
+const JID_RE = /\d{5,}(?::\d+)?@[a-z0-9.]+/gi
+const LONG_DIGITS_RE = /\+?\d{7,}/g
+
+export function scrubIdentifiers(text: string): string {
+  return text.replace(JID_RE, '[redacted]').replace(LONG_DIGITS_RE, '[redacted]')
+}
+
+// errorShape() with the message scrubbed. EVERY log site in this file uses
+// this instead of errorShape, so a Baileys error message can never be
+// forwarded verbatim.
+export function waErrorShape(err: unknown): ReturnType<typeof errorShape> {
+  const shape = errorShape(err)
+  return { ...shape, message: scrubIdentifiers(shape.message) }
+}
+
 // Pull an error out of a Baileys log bag, and nothing else.
 function errFrom(obj: unknown): ReturnType<typeof errorShape> | null {
   if (!obj || typeof obj !== 'object') return null
   const bag = obj as { err?: unknown; error?: unknown }
   const raw = bag.err ?? bag.error
-  return raw === undefined || raw === null ? null : errorShape(raw)
+  return raw === undefined || raw === null ? null : waErrorShape(raw)
 }
 
 // Spec invariant 6. Handing Baileys our pino logger would hand it the right to
@@ -175,7 +201,7 @@ class RedactingWaLogger implements WaILogger {
 
   // Baileys calls both pino shapes: (msg) and (bindings, msg).
   private emit(level: 'warn' | 'error', obj?: unknown, msg?: string): void {
-    const message = typeof obj === 'string' ? obj : (msg ?? '')
+    const message = scrubIdentifiers(typeof obj === 'string' ? obj : (msg ?? ''))
     const err = errFrom(obj)
     if (err) this.sink[level]({ err }, message)
     else this.sink[level](message)
@@ -289,8 +315,10 @@ function closeStatus(err: unknown): number | undefined {
   return typeof raw === 'number' ? raw : undefined
 }
 
+// Scrubbed, because these strings end up inside a ChannelError message that
+// the SessionManager logs (and, for a login failure, nothing else scrubs).
 function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  return scrubIdentifiers(err instanceof Error ? err.message : String(err))
 }
 
 // getPNForLID answers with the DEVICE it resolved — `15551234567:0@s.whatsapp.net`
@@ -390,7 +418,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
         void (async () => {
           // pair-success emits creds.update just before open; make sure it is
           // on disk before the socket goes away.
-          try { await saveCreds() } catch (err) { log.error({ err: errorShape(err) }, 'whatsapp creds save failed') }
+          try { await saveCreds() } catch (err) { log.error({ err: waErrorShape(err) }, 'whatsapp creds save failed') }
           // The SessionManager owns the live socket. login hands back a
           // session string and closes its own.
           await sock.end(undefined).catch(() => {})
@@ -413,14 +441,14 @@ export class BaileysWhatsAppPort implements ChannelPort {
         held.sock = sock
 
         sock.ev.on('creds.update', () => {
-          void saveCreds().catch(err => log.error({ err: errorShape(err) }, 'whatsapp creds save failed'))
+          void saveCreds().catch(err => log.error({ err: waErrorShape(err) }, 'whatsapp creds save failed'))
         })
 
         sock.ev.on('connection.update', update => {
           if (update.qr) {
             // The portal renders it; a QR is a short-lived pairing token, not
             // an identifier, but it is still never logged.
-            void driver.publishQr(update.qr).catch(err => log.error({ err: errorShape(err) }, 'whatsapp qr publish failed'))
+            void driver.publishQr(update.qr).catch(err => log.error({ err: waErrorShape(err) }, 'whatsapp qr publish failed'))
           }
           if (update.connection === 'open') {
             const id = sock.user?.id
@@ -507,7 +535,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
     const enqueue = (fn: () => Promise<void>): void => {
       chain = chain
         .then(() => (closing ? undefined : fn()))
-        .catch(err => log.error({ err: errorShape(err) }, 'whatsapp event handling failed'))
+        .catch(err => log.error({ err: waErrorShape(err) }, 'whatsapp event handling failed'))
     }
 
     // Bounded so a wedged batch cannot hang a shutdown. `chain` is read at call
@@ -553,7 +581,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       try {
         await writeFile(markerPath, new Date().toISOString(), 'utf8')
       } catch (err) {
-        log.error({ err: errorShape(err) }, 'whatsapp history marker write failed')
+        log.error({ err: waErrorShape(err) }, 'whatsapp history marker write failed')
         historyPending = true
       }
     }
@@ -575,7 +603,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       try {
         pn = (await sock?.signalRepository.lidMapping.getPNForLID(jid)) ?? null
       } catch (err) {
-        log.warn({ err: errorShape(err) }, 'whatsapp lid resolution failed')
+        log.warn({ err: waErrorShape(err) }, 'whatsapp lid resolution failed')
         return jid
       }
       if (!pn) return jid
@@ -596,7 +624,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
           const meta = await s.groupMetadata(chatId)
           if (meta?.subject) { titles.set(chatId, meta.subject); return meta.subject }
         } catch (err) {
-          log.warn({ err: errorShape(err) }, 'whatsapp group metadata lookup failed')
+          log.warn({ err: waErrorShape(err) }, 'whatsapp group metadata lookup failed')
         }
       }
       // A DM has no subject of its own. The counterparty's push name is the
@@ -678,7 +706,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       retryTimer = setTimeout(() => {
         retryTimer = null
         connect().catch(err => {
-          log.error({ err: errorShape(err) }, 'whatsapp reconnect failed')
+          log.error({ err: waErrorShape(err) }, 'whatsapp reconnect failed')
           scheduleReconnect()
         })
       }, delay)
@@ -688,7 +716,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
     const wire = (s: WaSocket): void => {
       s.ev.on('creds.update', () => {
         lastEventAt = Date.now()
-        void saveCreds().catch(err => log.error({ err: errorShape(err) }, 'whatsapp creds save failed'))
+        void saveCreds().catch(err => log.error({ err: waErrorShape(err) }, 'whatsapp creds save failed'))
       })
 
       s.ev.on('groups.upsert', groups => { lastEventAt = Date.now(); rememberTitles(groups) })
@@ -774,7 +802,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       // need to write the history marker) before close() resolves, so the
       // caller never sees work land after the close it awaited.
       await drainChain()
-      try { await sock?.end(undefined) } catch (err) { log.warn({ err: errorShape(err) }, 'whatsapp socket end failed') }
+      try { await sock?.end(undefined) } catch (err) { log.warn({ err: waErrorShape(err) }, 'whatsapp socket end failed') }
       connected = false
       sock = null
     }
@@ -848,7 +876,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
           // lib/Socket/socket.js:572 — removes THIS companion device only.
           await sock?.logout()
         } catch (err) {
-          log.warn({ err: errorShape(err) }, 'whatsapp unlink call failed; removing local auth state anyway')
+          log.warn({ err: waErrorShape(err) }, 'whatsapp unlink call failed; removing local auth state anyway')
         }
         try { await sock?.end(undefined) } catch { /* already closing */ }
         connected = false

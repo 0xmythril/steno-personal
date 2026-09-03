@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { log } from '@/lib/log'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { IncomingMessage } from '@/lib/services/ingest'
 import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
@@ -120,6 +121,32 @@ describe('live message flow', () => {
     })
     await flush(20)
     expect(c.messages[0].externalChatId).toBe(DM_LID)
+    await c.close()
+  })
+
+  // Baileys throws with the JID inside the message (lib/Socket/chats.js:291),
+  // and this catch block is where it lands. Spec invariant 6.
+  it('scrubs the JID out of a failed LID lookup before logging it', async () => {
+    const c = await connect('msg-lid-throws')
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => log)
+    try {
+      c.socket.signalRepository.lidMapping.getPNForLID = async () => {
+        throw new Error(`Unable to resolve PN JID for LID: ${DM_LID}`)
+      }
+      c.socket.emit('messages.upsert', {
+        messages: [{ key: { remoteJid: DM_LID, id: 'D9', fromMe: false }, messageTimestamp: 1_700_000_000, message: { conversation: 'hi' } }],
+        type: 'notify',
+      })
+      await flush(20)
+      const call = warn.mock.calls.find(c2 => c2[1] === 'whatsapp lid resolution failed')
+      expect(call).toBeDefined()
+      const payload = JSON.stringify(call![0])
+      expect(payload).not.toContain('9988776655')
+      expect(payload).not.toContain('@lid')
+      expect(payload).toContain('Unable to resolve PN JID for LID')
+    } finally {
+      warn.mockRestore()
+    }
     await c.close()
   })
 

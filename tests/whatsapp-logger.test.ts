@@ -67,6 +67,31 @@ describe('the logger handed to Baileys', () => {
     expect(logger.level).toBe('warn')
   })
 
+  // Baileys puts the identifiers in the message string itself —
+  // lib/Signal/lid-mapping.js:22 builds exactly this one — so dropping the
+  // bound object is not enough.
+  it('scrubs JIDs and phone numbers out of the message string', () => {
+    const cap = captureSink()
+    waLogger().warn('Invalid LID-PN mapping: 99887766554@lid, 15551234567@s.whatsapp.net')
+    const out = cap.text()
+    expect(out).not.toContain('15551234567')
+    expect(out).not.toContain('99887766554')
+    expect(out).not.toContain('@s.whatsapp.net')
+    expect(out).not.toContain('@lid')
+    expect(out).toContain('Invalid LID-PN mapping')
+  })
+
+  it('scrubs them out of the error message too', () => {
+    const cap = captureSink()
+    // lib/Socket/chats.js:291, as a Boom this port hands straight to the logger.
+    waLogger().error({ err: new Error('Unable to resolve PN JID for LID: 99887766554:12@lid') }, 'lookup failed')
+    const out = cap.text()
+    expect(out).not.toContain('99887766554')
+    expect(out).not.toContain('@lid')
+    expect(out).toContain('Unable to resolve PN JID for LID')
+    expect(out).toContain('lookup failed')
+  })
+
   it('carries no bindings across child()', () => {
     const cap = captureSink()
     const child = waLogger().child({ jid: 'x@s.whatsapp.net', pn: '+15551234567' })
