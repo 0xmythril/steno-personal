@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
+import type { WaDeps } from '@/lib/channels/whatsapp'
 import { ChannelError } from '@/lib/channels/port'
 import type { LoginDriver } from '@/lib/channels/port'
 import { fakeWaDeps, flush, testAuthRoot } from './helpers/fake-wa-socket'
@@ -89,6 +90,8 @@ describe('BaileysWhatsAppPort.login', () => {
 
     await expect(pending).rejects.toBeInstanceOf(ChannelError)
     await expect(pending).rejects.toMatchObject({ kind: 'auth_invalidated' })
+    await flush()
+    expect(h.sockets[0].endCalls).toBe(1)
   })
 
   it('times out', async () => {
@@ -98,6 +101,45 @@ describe('BaileysWhatsAppPort.login', () => {
 
     await expect(port.login(driver, { timeoutMs: 20, connectionId: 'conn-5' }))
       .rejects.toMatchObject({ kind: 'timed_out' })
+    // A socket the timeout orphaned is closed, not left open.
+    await flush()
+    expect(h.last().endCalls).toBe(1)
+  })
+
+  it('closes a socket that finished connecting after the timeout fired', async () => {
+    const h = fakeWaDeps()
+    // makeSocket outlives the timeout, so the socket lands on a promise that
+    // has already rejected.
+    const slow: WaDeps = { ...h.deps, async makeSocket(o) { await flush(40); return await h.deps.makeSocket(o) } }
+    const port = new BaileysWhatsAppPort({ authRoot: testAuthRoot('login-late-socket'), deps: slow })
+    const { driver } = recordingDriver()
+
+    await expect(port.login(driver, { timeoutMs: 10, connectionId: 'conn-8' }))
+      .rejects.toMatchObject({ kind: 'timed_out' })
+
+    await flush(80)
+    expect(h.sockets).toHaveLength(1)
+    expect(h.sockets[0].endCalls).toBe(1)
+  })
+
+  it('persists creds the pairing socket emits', async () => {
+    const h = fakeWaDeps()
+    const port = new BaileysWhatsAppPort({ authRoot: testAuthRoot('login-creds'), deps: h.deps })
+    const { driver } = recordingDriver()
+
+    const pending = port.login(driver, { timeoutMs: 5_000, connectionId: 'conn-7' })
+    await flush()
+    expect(h.saveCredsCalls()).toBe(0)
+
+    // pair-success emits creds.update; those keys are the whole session.
+    h.last().emit('creds.update', {})
+    await flush()
+    expect(h.saveCredsCalls()).toBe(1)
+
+    h.last().emitOpen()
+    await pending
+    // And once more on the way out, before the socket goes away.
+    expect(h.saveCredsCalls()).toBe(2)
   })
 
   it('refuses a session string that is not ours', async () => {

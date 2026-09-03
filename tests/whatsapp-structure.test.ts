@@ -49,6 +49,13 @@ describe('the WhatsApp port sends nothing', () => {
   it('keeps emitOwnEvents on so the owner’s own messages archive', () => {
     expect(src()).toContain('emitOwnEvents: true')
   })
+
+  // getWebInfo (lib/Utils/validate-connection.js:35) only promotes
+  // webSubPlatform when browser[1] === 'Desktop'; drop the tuple and
+  // syncFullHistory silently stops buying full history.
+  it('keeps the desktop browser tuple that gates full history', () => {
+    expect(src()).toContain("'Desktop'")
+  })
 })
 
 // Filled in by Task 6 and Task 7. Guarded so this file is green in between.

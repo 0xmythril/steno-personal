@@ -102,11 +102,60 @@ function loadBaileys(): Promise<BaileysModule> {
   return (baileysModule ??= import('@whiskeysockets/baileys'))
 }
 
-// Baileys logs at 'info' and is extremely chatty. 'warn' keeps that off our
-// stdout while still surfacing real problems. Its ILogger
-// (lib/Utils/logger.d.ts) is structurally satisfied by pino.
-function waLogger(): unknown {
-  return log.child({ mod: 'baileys' }, { level: 'warn' })
+// Baileys' ILogger, lib/Utils/logger.d.ts. Named here so the wrapper below is
+// checked against the real shape instead of being cast into place.
+type WaILogger = NonNullable<MakeWASocketConfig['logger']>
+
+// Pull an error out of a Baileys log bag, and nothing else.
+function errFrom(obj: unknown): ReturnType<typeof errorShape> | null {
+  if (!obj || typeof obj !== 'object') return null
+  const bag = obj as { err?: unknown; error?: unknown }
+  const raw = bag.err ?? bag.error
+  return raw === undefined || raw === null ? null : errorShape(raw)
+}
+
+// Spec invariant 6. Handing Baileys our pino logger would hand it the right to
+// log its own bound objects, and those carry exactly what may never be
+// written: phone numbers ('pn'), JIDs ('jid', 'fromJid', 'participant') and
+// raw binary nodes ('node', 'fullErrorNode', 'reasonNode'), at warn and error
+// level. So the library never gets a real logger — it gets this, which
+// forwards the level, the message string, and at most one errorShape()'d
+// error. Bindings passed to child() are dropped for the same reason.
+//
+// Baileys is also extremely chatty below warn, so trace/debug/info are no-ops:
+// that is the 'warn' effective level, enforced here rather than by a level
+// string the library is free to read and ignore.
+class RedactingWaLogger implements WaILogger {
+  readonly level = 'warn'
+  private readonly sink = log.child({ mod: 'baileys' })
+
+  child(): RedactingWaLogger {
+    return this
+  }
+
+  trace(): void {}
+  debug(): void {}
+  info(): void {}
+
+  warn(obj?: unknown, msg?: string): void {
+    this.emit('warn', obj, msg)
+  }
+
+  error(obj?: unknown, msg?: string): void {
+    this.emit('error', obj, msg)
+  }
+
+  // Baileys calls both pino shapes: (msg) and (bindings, msg).
+  private emit(level: 'warn' | 'error', obj?: unknown, msg?: string): void {
+    const message = typeof obj === 'string' ? obj : (msg ?? '')
+    const err = errFrom(obj)
+    if (err) this.sink[level]({ err }, message)
+    else this.sink[level](message)
+  }
+}
+
+export function waLogger(): WaILogger {
+  return new RedactingWaLogger()
 }
 
 export function baileysDeps(): WaDeps {
@@ -143,7 +192,7 @@ export function baileysDeps(): WaDeps {
         // WhatsApp sends recent history and nothing more.
         syncFullHistory: opts.syncFullHistory,
         browser: ['Mac OS', 'Desktop', '14.4.1'],
-        logger: waLogger() as MakeWASocketConfig['logger'],
+        logger: waLogger(),
       })
       return sock as unknown as WaSocket
     },
@@ -157,10 +206,7 @@ export function baileysDeps(): WaDeps {
         {},
         {
           reuploadRequest: ctx.reuploadRequest as (m: WAMessageLike) => Promise<WAMessageLike>,
-          // DownloadMediaMessageContext.logger is a required ILogger, while
-          // the socket config's is optional (UserFacingSocketConfig is a
-          // Partial), hence the NonNullable here but not above.
-          logger: waLogger() as NonNullable<MakeWASocketConfig['logger']>,
+          logger: waLogger(),
         },
       )
     },
@@ -302,6 +348,13 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
       async function connect(): Promise<void> {
         const sock = await deps.makeSocket({ auth: state, version, syncFullHistory: true })
+        // The timeout can fire while this await is in flight. A socket built
+        // after we have already settled belongs to nobody, so close it here
+        // rather than leaving it open on a promise that will never resolve.
+        if (settled) {
+          void sock.end(undefined).catch(() => {})
+          return
+        }
         held.sock = sock
 
         sock.ev.on('creds.update', () => {
@@ -327,7 +380,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
               // (lib/Socket/socket.js, CB:iq,,pair-success -> 515). Exactly one
               // reopen; a second 515 is a loop, not a handshake.
               restarted = true
-              log.info('whatsapp pairing needs one restart; reopening')
+              log.debug('whatsapp pairing needs one restart; reopening')
               connect().catch(err => fail(`whatsapp reopen failed: ${errText(err)}`, 'other'))
               return
             }
