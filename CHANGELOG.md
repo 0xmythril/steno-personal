@@ -8,15 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - DESIGN.md: the Steno design system for this edition. Tokens live in `app/globals.css`; `tests/design-tokens.test.ts` checks contrast on both palettes, that theme blocks only redefine tokens, and that fonts never load from Google at runtime.
+- Release procedure in `docs/releasing.md`, repository metadata in `package.json`, and CI and licence badges in the README.
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
 - Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
 - A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
 - A one-line footer on every page with the GitHub and X links.
 - A plain-language tagline on the login page.
 
+### Fixed
+- The Docker image builds on Railway: the Dockerfile no longer declares a `VOLUME`, which Railway's builder rejects. Compose and the Railway template mount `/data` themselves, so nothing changes for Docker at home.
+
 ### Changed
 - Every page is restyled on the steno pad: green-tinted paper, Instrument Serif headings, a 64px time margin against a rule in transcripts, status chips, and a nav that shows the session's key label. Light and dark follow the system setting. Instrument Serif, Instrument Sans and IBM Plex Mono are bundled at build time with next/font.
 - The Chats page filters by chip, the nav reads "Steno · Personal", and the footer carries the licence, the source links and the Steno Cloud pointer.
+- A WhatsApp sender with no name (history-synced messages carry none) shows as their phone number instead of "Unknown".
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.
 - Transcript pages have Older / Latest links at both ends and a Back to top link at the foot.
 - WhatsApp direct chats take their name from your contacts (saved name, then business name, then push name), and one with no name at all shows its phone number instead of "Untitled chat".
@@ -25,6 +30,9 @@ All notable changes to this project are documented here. The format follows
 - The MCP server is registered as `steno-personal` (was `steno`) in every snippet.
 - Settings gains "Let the agent set itself up": a copy-paste block for any agent that can edit its own MCP config.
 - The WhatsApp pending screen no longer shows Telegram-only copy.
+
+### Fixed
+- `npm run build` on a fresh clone (no `./data` yet) no longer fails with `SqliteError: database is locked`: the chat list's message-count subquery touched the database at import time, so Next's parallel page-data workers each created and WAL-switched a brand-new `data/steno.db` at once. Importing the app now opens nothing; only the first query does, and a build no longer leaves a `data/` directory behind.
 
 ## [0.1.0] — 2026-09-03
 
