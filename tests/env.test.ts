@@ -14,6 +14,13 @@ describe('env schema', () => {
     expect(e.PORT).toBe(3000)
     expect(e.LOG_LEVEL).toBe('info')
   })
+  it('accepts silent as a log level, and nothing outside pino\'s set', () => {
+    // The test run sets LOG_LEVEL=silent; if the enum rejected it every suite
+    // would fail at env parse time rather than here.
+    expect(envSchema.parse({ DATA_DIR: '/tmp/x', LOG_LEVEL: 'silent' }).LOG_LEVEL).toBe('silent')
+    expect(() => envSchema.parse({ DATA_DIR: '/tmp/x', LOG_LEVEL: 'quiet' })).toThrow()
+  })
+
   it('rejects a short SECRET_KEY', () => {
     expect(() => envSchema.parse({ DATA_DIR: '/tmp/x', SECRET_KEY: 'short' })).toThrow()
   })

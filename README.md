@@ -70,6 +70,12 @@ micro-dollars. `ANALYSIS_DAILY_LIMIT` (default 500) caps billed analyses per
 rolling day and `ANALYSIS_BACKFILL_BATCH` (default 20) paces the backfill of
 media you already have.
 
+The daily limit is a ceiling, not an exact quota: it is checked once at the
+start of each pass, so a pass that begins just under the limit still runs a
+full batch of each medium. Expect it to stop within
+`2 x ANALYSIS_BACKFILL_BATCH - 1` analyses of the number you set — 39 rows at
+the defaults.
+
 ## Licence
 
 AGPL-3.0. See LICENSE.
