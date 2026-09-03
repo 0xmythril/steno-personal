@@ -150,6 +150,11 @@ export class SessionManager {
       const message = kind === 'timed_out' ? 'Login timed out — please try again.'
         : kind === 'auth_invalidated' ? 'Login was rejected. Please try again.'
         : 'Login failed — please try again.'
+      // The row only ever gets one of those three sentences, which is all the
+      // owner needs and nothing an operator can debug from. Without this line
+      // a login that fails identically every time is invisible in the logs.
+      // The error only — never the driver payload, never a QR.
+      log.warn({ err: errorShape(e), connectionId: connId, kind }, 'login failed')
       await failLogin(connId, message)
     }
   }

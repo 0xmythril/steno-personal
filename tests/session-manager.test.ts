@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
+import { log } from '@/lib/log'
 import { connections, messages } from '@/lib/db/schema'
 import { encryptSecret } from '@/lib/services/crypto'
 import { resetDb } from './helpers/db'
@@ -63,6 +64,29 @@ describe('session manager', () => {
     expect(row.status).toBe('error')
     expect(row.lastError).toMatch(/timed out/i)
     expect(row.revokedAt).toBeNull()
+  })
+
+  // The row gets one of three fixed sentences, so the logs are the only place
+  // a login that fails the same way every time can be diagnosed from.
+  it('logs why a login failed', async () => {
+    await makeConnection({ status: 'pending' })
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {})
+    try {
+      const port = new FakePort('telegram')
+      port.scriptLoginError(new ChannelError('whatsapp closed during pairing (428)', 'other'))
+      const mgr = new SessionManager(portsOf(port))
+      await mgr.tick(); await mgr.whenIdle()
+
+      const call = warn.mock.calls.find(c => c[1] === 'login failed')
+      expect(call).toBeDefined()
+      const bag = call![0] as { err: { message: string }; kind: string; connectionId: string }
+      expect(bag.kind).toBe('other')
+      expect(bag.err.message).toMatch(/428/)
+      // Never the driver payload, never a QR.
+      expect(Object.keys(bag).sort()).toEqual(['connectionId', 'err', 'kind'])
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('fails a pending login older than the timeout instead of re-driving it forever', async () => {
