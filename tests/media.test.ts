@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { media } from '@/lib/db/schema'
@@ -7,7 +7,7 @@ import { resetDb } from './helpers/db'
 import { makeAttachment, makeConnection, makeChat, makeMessage, makeMedia } from './helpers/media-fixtures'
 import {
   MAX_MEDIA_BYTES, coalesceRuns, enqueueMedia, extForMime, getServableMedia,
-  mediaFilePath, processPendingMedia, type Downloader,
+  mediaDir, mediaFilePath, processPendingMedia, type Downloader,
 } from '@/lib/services/media'
 
 const ok = (bytes: string, mimeType: string | null = null): Downloader =>
@@ -51,6 +51,30 @@ describe('media drain', () => {
     expect(after.storagePath).toBe(`${md.id}.jpg`)
     expect(after.sizeBytes).toBe(15)
     expect(readFileSync(mediaFilePath(after.storagePath!)).toString()).toBe('fake-jpeg-bytes')
+  })
+
+  it('writes atomically: no .tmp file is left behind after a successful drain', async () => {
+    const { connection, media: md } = await makeAttachment({ mimeType: 'image/jpeg' })
+    const out = await processPendingMedia(new Map([[connection.id, ok('fake-jpeg-bytes')]]))
+    expect(out).toEqual({ done: 1, failed: 0, skipped: 0 })
+    const files = readdirSync(mediaDir())
+    expect(files.some(f => f.endsWith('.tmp'))).toBe(false)
+    expect(files).toContain(`${md.id}.jpg`)
+  })
+
+  it('leaves the row un-done and cleans up the temp file when the rename fails', async () => {
+    const { connection, media: md } = await makeAttachment({ mimeType: 'image/jpeg' })
+    // Pre-create a directory AT the final path: renaming a file onto an
+    // existing directory always fails (EISDIR), so this exercises a real
+    // rename failure without mocking fs.
+    mkdirSync(mediaFilePath(`${md.id}.jpg`), { recursive: true })
+    const out = await processPendingMedia(new Map([[connection.id, ok('fake-jpeg-bytes')]]), { maxAttempts: 3 })
+    expect(out).toEqual({ done: 0, failed: 0, skipped: 0 })
+    const [after] = await db.select().from(media)
+    expect(after.status).not.toBe('done')
+    expect(after.storagePath).toBeNull()
+    const files = readdirSync(mediaDir())
+    expect(files.some(f => f.endsWith('.tmp'))).toBe(false)
   })
 
   it('takes the downloader mime when ingest declared none', async () => {

@@ -3,7 +3,7 @@ import { media, messages } from '@/lib/db/schema'
 import { env } from '@/lib/env'
 import type { IncomingMessage } from '@/lib/services/ingest'
 import { and, asc, eq, isNull } from 'drizzle-orm'
-import { mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 // One media payload is buffered whole — by the worker's download and by the
@@ -110,6 +110,11 @@ export async function processPendingMedia(
   for (const { md, raw } of pending) {
     const download = downloaders.get(md.connectionId)
     if (!download) { summary.skipped++; continue }
+    // Tracked outside the try so the catch block can clean up a partial
+    // write: a crash or a thrown error between the temp write and the
+    // rename must never leave a `.tmp` file behind, and must never leave a
+    // half-written file sitting at the FINAL path either.
+    let tmpPath: string | null = null
     try {
       // The sender-declared length, checked BEFORE buffering — the OOM this
       // cap exists to prevent. Attacker-controllable, so it can only skip a
@@ -130,12 +135,23 @@ export async function processPendingMedia(
       // Ingest's declaration wins; the channel's own answer fills a gap.
       const mime = md.mimeType ?? mimeType
       const storagePath = `${md.id}.${extForMime(mime)}`
-      writeFileSync(mediaFilePath(storagePath), data)
+      const finalPath = mediaFilePath(storagePath)
+      // Write beside the final name, then rename — a rename within the same
+      // directory is atomic, so a reader (or a retry of this same row) never
+      // observes a partially-written file at the final path.
+      tmpPath = `${finalPath}.tmp`
+      writeFileSync(tmpPath, data)
+      renameSync(tmpPath, finalPath)
+      tmpPath = null // renamed: nothing left at tmpPath to clean up
       await db.update(media)
-        .set({ status: 'done', storagePath, mimeType: mime, sizeBytes: statSync(mediaFilePath(storagePath)).size })
+        .set({ status: 'done', storagePath, mimeType: mime, sizeBytes: statSync(finalPath).size })
         .where(eq(media.id, md.id))
       summary.done++
     } catch {
+      // Best-effort: the write or the rename may have failed before any
+      // file existed at all, so a missing tmp file here is expected, not an
+      // error worth surfacing.
+      if (tmpPath) { try { rmSync(tmpPath, { force: true }) } catch {} }
       // Deliberately swallowed: the error carries a URL, a filename, or a
       // channel diagnostic, and none of those may reach a log line. The
       // attempts counter IS the record that this row is failing.
