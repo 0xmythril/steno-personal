@@ -17,6 +17,12 @@ One container, one volume, one file.
 
 Licensed under the GNU Affero General Public License v3.0.
 
+## Need it for a team?
+
+For teams, or if you don't want to connect your own account, go to
+[Steno.chat](https://steno.chat) for our hosted solution. It archives shared
+group chats through its own number, so nothing of yours is linked.
+
 ## The WhatsApp risk, in one paragraph
 
 WhatsApp connects here as a linked device on your own number, through an
@@ -241,3 +247,8 @@ This project is licensed under the GNU Affero General Public License v3.0; see
 [LICENSE](LICENSE) for the full text. Because it is the AGPL, if you modify it
 and let other people use your modified version over a network, you have to offer
 them your source too.
+
+## Follow along
+
+Source lives at <https://github.com/0xmythril/steno-personal>. Releases and
+changes are announced on X at <https://x.com/stenochat>.

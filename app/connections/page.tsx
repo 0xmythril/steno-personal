@@ -1,5 +1,6 @@
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
+import { HostedCta } from '@/app/hosted-cta'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { formatRelativeTime } from '@/lib/format'
@@ -84,6 +85,7 @@ export default async function ConnectionsPage() {
     <main>
       <Nav label={session.label} />
       <h1>Connections</h1>
+      <HostedCta />
       <ChannelCard channel="telegram" live={liveOf('telegram')} />
       <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
 

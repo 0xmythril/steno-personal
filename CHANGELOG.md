@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
+- A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
+- A one-line footer on every page with the GitHub and X links.
+- A plain-language tagline on the login page.
+
 ### Changed
 - The MCP server is registered as `steno-personal` (was `steno`) in every snippet.
 - Settings gains "Let the agent set itself up": a copy-paste block for any agent that can edit its own MCP config.
