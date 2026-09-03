@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import {
-  createPerson, updatePerson, deletePerson,
+  createPerson, updatePerson, archivePerson,
   linkIdentity, unlinkIdentity, listIdentityCandidates,
   confirmSuggestion, dismissSuggestion,
 } from '@/lib/services/people'
@@ -60,13 +60,14 @@ export async function updatePersonAction(formData: FormData): Promise<void> {
   redirect(`/people/${id}`)
 }
 
-// Deletes the person and its links. Chats and messages are untouched — the
-// address book is an annotation over the archive, never a part of it.
+// Hides the person. Their links stay, so the contact sync never offers to
+// create them again, and chats and messages are untouched — the address book
+// is an annotation over the archive, never a part of it.
 export async function deletePersonAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
-  const deleted = id ? await deletePerson(id) : true
-  if (!deleted) redirect('/people?error=gone')
+  const archived = id ? await archivePerson(id) : true
+  if (!archived) redirect('/people?error=gone')
   redirect('/people')
 }
 

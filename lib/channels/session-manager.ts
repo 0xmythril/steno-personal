@@ -7,7 +7,7 @@ import {
 import { removeWhatsappAuthDirs, revokedWhatsappConnectionIds, revokeConnection } from '@/lib/services/connections'
 import { completeRecovery } from '@/lib/services/recovery'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
-import { syncContacts } from '@/lib/services/people'
+import { populatePeople, syncContacts } from '@/lib/services/people'
 import { enqueueMedia, type Downloader } from '@/lib/services/media'
 import {
   ChannelError,
@@ -564,6 +564,19 @@ export class SessionManager {
     } catch (e) {
       log.error({ err: errorShape(e), connectionId: connId }, 'contact sync write failed')
       retrySoon(running)
+      return
+    }
+    // The address book fills itself from what that sync just wrote (people
+    // design addendum 2, decision 11). Its own try, so a populate that fails
+    // is not reported as the contact write failing and does not re-run a read
+    // that succeeded: the cache is correct either way, and the next window
+    // populates from it again. Counts only, never a name or a number.
+    if (running.stopped) return
+    try {
+      const { created, merged, renamed } = await populatePeople()
+      log.info({ connectionId: connId, created, merged, renamed }, 'address book populated')
+    } catch (e) {
+      log.error({ err: errorShape(e), connectionId: connId }, 'address book populate failed')
     }
   }
 

@@ -30,4 +30,5 @@ export const SOURCE_LABELS = {
   manual: 'you linked it',
   phone_match: 'confirmed phone match',
   name_match: 'confirmed name match',
+  auto: 'from your contacts',
 } as const

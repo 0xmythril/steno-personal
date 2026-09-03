@@ -15,12 +15,23 @@ import type { Channel } from '@/lib/channels/port'
 // load. A suggestion never links anything on its own — confirmSuggestion is
 // the only path from a match to a row, and the owner is the one who calls it.
 //
+// populatePeople (bottom of the file) does write without being asked, and the
+// line it keeps is the same one: it may only record what the archive already
+// says — this contact has this name — and may only claim two channels are one
+// person when their phone numbers are equal (addendum 2, decisions 11–12). A
+// name match is still nothing but a suggestion.
+//
 // Phone numbers live in this file and in the database, never in a log
 // (invariant: log through lib/log with errorShape only) and never in an agent
 // response (that mapping is Task 6's).
 
 export type IdentityRef = { channel: Channel; externalId: string }
-export type IdentitySource = 'manual' | 'phone_match' | 'name_match'
+// 'auto' is the populater's own source (decision 11); the rest record an
+// answer the owner gave.
+export type IdentitySource = 'manual' | 'phone_match' | 'name_match' | 'auto'
+// Who chose the name. 'channel' follows the contact list on every later sync;
+// 'owner' is an alias the owner typed and no sync overwrites it (decision 13).
+export type NameSource = 'channel' | 'owner'
 
 // What a channel binding hands back from listContacts(). `phone` is +digits
 // or null; syncContacts normalises anything looser.
@@ -30,6 +41,8 @@ export type PersonView = {
   id: string
   name: string
   notes: string | null
+  nameSource: NameSource
+  archivedAt: Date | null
   identities: Array<{
     id: string; channel: Channel; externalId: string
     displayName: string | null; phone: string | null; source: IdentitySource
@@ -149,14 +162,29 @@ async function toViews(rows: Array<typeof people.$inferSelect>): Promise<PersonV
   const [identities, counts] = [await identitiesByPerson(ids), await chatCountsByPerson(ids)]
   return rows.map(r => ({
     id: r.id, name: r.name, notes: r.notes,
+    nameSource: r.nameSource, archivedAt: r.archivedAt,
     identities: identities.get(r.id) ?? [], chatCount: counts.get(r.id) ?? 0,
   }))
 }
 
+// lower() so 'ada' and 'Ada' sort together; SQLite's default byte order puts
+// every capital before every lower-case letter, which reads as random.
+const byName = [asc(sql`lower(${people.name})`), asc(people.id)] as const
+
+// An archived person is invisible everywhere a person can be read — this
+// listing, getPerson, publicPeople and the two identity joins in queries.ts
+// (decision 14). Their identity rows stay, so the populater counts those
+// identities as answered and never offers to create them again.
 export async function listPeople(): Promise<PersonView[]> {
-  // lower() so 'ada' and 'Ada' sort together; SQLite's default byte order puts
-  // every capital before every lower-case letter, which reads as random.
-  const rows = await db.select().from(people).orderBy(asc(sql`lower(${people.name})`), asc(people.id))
+  const rows = await db.select().from(people)
+    .where(isNull(people.archivedAt)).orderBy(...byName)
+  return toViews(rows)
+}
+
+// The "Hidden" half of the People page. The only read that returns them.
+export async function listArchivedPeople(): Promise<PersonView[]> {
+  const rows = await db.select().from(people)
+    .where(isNotNull(people.archivedAt)).orderBy(...byName)
   return toViews(rows)
 }
 
@@ -189,14 +217,24 @@ export async function publicPeople(): Promise<PublicPerson[]> {
 }
 
 export async function getPerson(id: string): Promise<PersonView | null> {
-  const rows = await db.select().from(people).where(eq(people.id, id)).limit(1)
+  const rows = await db.select().from(people)
+    .where(and(eq(people.id, id), isNull(people.archivedAt))).limit(1)
   if (rows.length === 0) return null
   return (await toViews(rows))[0]
 }
 
-export async function createPerson(input: { name: string; notes?: string | null }): Promise<{ id: string }> {
+// nameSource defaults to 'owner' because the caller of this function is the
+// owner's own New person form: a name they typed is an alias from the moment
+// they type it. populatePeople and confirmSuggestion, which copy a name off a
+// contact list, pass 'channel' so a later sync may refresh it.
+export async function createPerson(
+  input: { name: string; notes?: string | null; nameSource?: NameSource },
+): Promise<{ id: string }> {
   const [row] = await db.insert(people)
-    .values({ name: cleanName(input.name), notes: cleanText(input.notes) })
+    .values({
+      name: cleanName(input.name), notes: cleanText(input.notes),
+      nameSource: input.nameSource ?? 'owner',
+    })
     .returning({ id: people.id })
   return { id: row.id }
 }
@@ -204,26 +242,45 @@ export async function createPerson(input: { name: string; notes?: string | null 
 // Absent field = leave alone, `notes: null` = clear it. Returns false when
 // there is no such person, so a caller acting on a stale page gets a "gone"
 // rather than a silent success.
+// Naming a person is aliasing them: the name the owner types outranks every
+// contact list forever after (decision 13), so any write that carries a name
+// stamps name_source='owner'. An archived person is not there to update.
 export async function updatePerson(
   id: string, input: { name?: string; notes?: string | null },
 ): Promise<boolean> {
+  const alive = and(eq(people.id, id), isNull(people.archivedAt))
   const values: Partial<typeof people.$inferInsert> = {}
-  if (input.name !== undefined) values.name = cleanName(input.name)
+  if (input.name !== undefined) {
+    values.name = cleanName(input.name)
+    values.nameSource = 'owner'
+  }
   if ('notes' in input) values.notes = cleanText(input.notes)
   if (Object.keys(values).length === 0) {
-    const rows = await db.select({ id: people.id }).from(people).where(eq(people.id, id)).limit(1)
+    const rows = await db.select({ id: people.id }).from(people).where(alive).limit(1)
     return rows.length > 0
   }
   values.updatedAt = new Date()
-  const rows = await db.update(people).set(values).where(eq(people.id, id)).returning({ id: people.id })
+  const rows = await db.update(people).set(values).where(alive).returning({ id: people.id })
   return rows.length > 0
 }
 
-// Deletes the person and, by cascade, its identity rows. Chats and messages
-// are untouched: the address book is an annotation over the archive, never a
-// part of it (people design decision 7).
-export async function deletePerson(id: string): Promise<boolean> {
-  const rows = await db.delete(people).where(eq(people.id, id)).returning({ id: people.id })
+// What "delete" now means (decision 14). The person disappears from every
+// listing, every read path and every agent, and its identity rows stay: they
+// are the record of the owner's "not this one", and without them the populater
+// would create the person again on the next contact sync. Chats and messages
+// are untouched either way — the address book is an annotation over the
+// archive, never a part of it (people design decision 7).
+export async function archivePerson(id: string): Promise<boolean> {
+  const rows = await db.update(people).set({ archivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(people.id, id), isNull(people.archivedAt)))
+    .returning({ id: people.id })
+  return rows.length > 0
+}
+
+export async function restorePerson(id: string): Promise<boolean> {
+  const rows = await db.update(people).set({ archivedAt: null, updatedAt: new Date() })
+    .where(and(eq(people.id, id), isNotNull(people.archivedAt)))
+    .returning({ id: people.id })
   return rows.length > 0
 }
 
@@ -488,7 +545,9 @@ export async function confirmSuggestion(
   const name = clampName(
     telegram.displayName ?? whatsapp.displayName ?? telegram.phone ?? whatsapp.phone ?? telegram.externalId,
   )
-  const { id } = await createPerson({ name })
+  // The name came off a contact list, not out of the owner's keyboard, so it
+  // stays a channel name and a later sync may refresh it (decision 13).
+  const { id } = await createPerson({ name, nameSource: 'channel' })
   await linkIdentity(id, {
     channel: 'telegram', externalId: telegram.externalId,
     displayName: telegram.displayName, phone: telegram.phone,
@@ -509,7 +568,239 @@ export async function personForIdentity(ref: IdentityRef): Promise<{ id: string;
   const [row] = await db.select({ id: people.id, name: people.name })
     .from(personIdentities)
     .innerJoin(people, eq(people.id, personIdentities.personId))
-    .where(and(eq(personIdentities.channel, ref.channel), eq(personIdentities.externalId, externalId)))
+    .where(and(
+      eq(personIdentities.channel, ref.channel),
+      eq(personIdentities.externalId, externalId),
+      // An archived person is nobody: their identity stays linked, but it
+      // resolves to no name anywhere (decision 14).
+      isNull(people.archivedAt),
+    ))
     .limit(1)
   return row ?? null
+}
+
+// ---------------------------------------------------------------------------
+// The self-populating half (people design addendum 2, decisions 11–13).
+//
+// Everything below runs unattended, after a contact sync, so it is deliberately
+// timid about the one thing it cannot take back: deciding that two channel
+// identities are the same human. Creating a person from a contact is
+// bookkeeping — the name and the identity are already in the database, and the
+// row only saves the owner from typing them. Merging two channels into one
+// person is a claim about the world, so it needs the one identifier the two
+// channels share (an equal phone number, decision 12). An equal NAME stays a
+// suggestion, exactly as before.
+// ---------------------------------------------------------------------------
+
+// The name a channel currently gives a person, for every person at once: the
+// contact cache is the only source (a chat title is a room's name, not a
+// person's), and the identity that was linked first wins so the answer does
+// not flip between two contact lists that disagree.
+async function channelNamesFor(personIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (personIds.length === 0) return out
+  const rows = await db.select({
+    personId: personIdentities.personId,
+    displayName: channelContacts.displayName,
+    syncedAt: channelContacts.syncedAt,
+    channel: personIdentities.channel,
+    createdAt: personIdentities.createdAt,
+    identityId: personIdentities.id,
+  }).from(personIdentities)
+    .innerJoin(channelContacts, and(
+      eq(channelContacts.channel, personIdentities.channel),
+      eq(channelContacts.externalId, personIdentities.externalId),
+      isNotNull(channelContacts.displayName),
+    ))
+    .where(inArray(personIdentities.personId, personIds))
+
+  // Same precedence as the identity list on the person page — channel, then
+  // link order — and the most recent sync inside one identity.
+  const sorted = [...rows].sort((a, b) =>
+    a.channel.localeCompare(b.channel)
+    || a.createdAt.getTime() - b.createdAt.getTime()
+    || a.identityId.localeCompare(b.identityId)
+    || b.syncedAt.getTime() - a.syncedAt.getTime())
+  for (const r of sorted) {
+    const name = r.displayName?.trim()
+    if (name && !out.has(r.personId)) out.set(r.personId, clampName(name))
+  }
+  return out
+}
+
+// The owner's "no, use whatever the channel calls them". Sets the name back to
+// following the contact list (decision 13) and applies it now rather than at
+// the next sync, because a button that does nothing until the next six-hour
+// window reads as a broken button.
+export async function resetName(id: string): Promise<boolean> {
+  const [row] = await db.select().from(people)
+    .where(and(eq(people.id, id), isNull(people.archivedAt))).limit(1)
+  if (!row) return false
+  const name = (await channelNamesFor([id])).get(id)
+  await db.update(people)
+    .set({ nameSource: 'channel', name: name ?? row.name, updatedAt: new Date() })
+    .where(eq(people.id, id))
+  return true
+}
+
+// Decision 15. `into` keeps its name unless it is only a channel name and
+// `from` carries the owner's alias, in which case the alias — the one name a
+// human chose — survives the merge. Notes are carried over only into an empty
+// box: `from` is hard-deleted here, and silently dropping something the owner
+// wrote would be the one irreversible thing on this page.
+//
+// Nothing can collide: unique(channel, external_id) is on the identity, not on
+// the pair, so re-pointing a person's identities never meets a duplicate.
+export async function mergePeople(fromId: string, intoId: string): Promise<boolean> {
+  if (!fromId || !intoId || fromId === intoId) return false
+  const rows = await db.select().from(people)
+    .where(and(inArray(people.id, [fromId, intoId]), isNull(people.archivedAt)))
+  const from = rows.find(r => r.id === fromId)
+  const into = rows.find(r => r.id === intoId)
+  if (!from || !into) return false
+
+  await db.update(personIdentities).set({ personId: intoId })
+    .where(eq(personIdentities.personId, fromId))
+
+  const values: Partial<typeof people.$inferInsert> = { updatedAt: new Date() }
+  if (into.nameSource === 'channel' && from.nameSource === 'owner') {
+    values.name = from.name
+    values.nameSource = 'owner'
+  }
+  if (!into.notes && from.notes) values.notes = from.notes
+  await db.update(people).set(values).where(eq(people.id, intoId))
+  await db.delete(people).where(eq(people.id, fromId))
+  return true
+}
+
+// An identity's own copy of the name and the number goes stale the moment the
+// owner renames a contact on their phone. Refreshed from the cache, never
+// cleared by it: a contact list that has stopped reporting a number is a
+// missing read, not a deletion.
+//
+// This is also what eventually makes decision 12 fire for a link made before
+// the contact sync that first learned the number.
+async function refreshIdentities(): Promise<void> {
+  const rows = await db.select({
+    identityId: personIdentities.id,
+    displayName: personIdentities.displayName,
+    phone: personIdentities.phone,
+    contactName: channelContacts.displayName,
+    contactPhone: channelContacts.phone,
+    syncedAt: channelContacts.syncedAt,
+  }).from(personIdentities)
+    .innerJoin(channelContacts, and(
+      eq(channelContacts.channel, personIdentities.channel),
+      eq(channelContacts.externalId, personIdentities.externalId),
+    ))
+
+  const latest = new Map<string, typeof rows[number]>()
+  for (const r of rows) {
+    const seen = latest.get(r.identityId)
+    if (!seen || r.syncedAt.getTime() > seen.syncedAt.getTime()) latest.set(r.identityId, r)
+  }
+  for (const r of latest.values()) {
+    const values: Partial<typeof personIdentities.$inferInsert> = {}
+    const name = cleanText(r.contactName)
+    if (name && name !== r.displayName) values.displayName = name
+    if (r.contactPhone && r.contactPhone !== r.phone) values.phone = r.contactPhone
+    if (Object.keys(values).length === 0) continue
+    await db.update(personIdentities).set(values).where(eq(personIdentities.id, r.identityId))
+  }
+}
+
+// Decision 12, and the only automatic claim in this file: two identities on
+// DIFFERENT channels carrying the same phone number are the same human, so the
+// people holding them become one. The older person survives — they are the one
+// the owner has had longer, and their id is the one already written into any
+// bookmark — and mergePeople keeps an alias over a channel name.
+//
+// An archived person takes no part: their "no" holds, and merging their
+// identity away would quietly undo it.
+async function mergeByPhone(): Promise<number> {
+  const rows = await db.select({
+    personId: personIdentities.personId,
+    channel: personIdentities.channel,
+    phone: personIdentities.phone,
+    createdAt: people.createdAt,
+  }).from(personIdentities)
+    .innerJoin(people, eq(people.id, personIdentities.personId))
+    .where(and(isNotNull(personIdentities.phone), isNull(people.archivedAt)))
+
+  type Group = { telegram: Set<string>; whatsapp: Set<string> }
+  const groups = new Map<string, Group>()
+  const born = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.phone) continue
+    let g = groups.get(r.phone)
+    if (!g) groups.set(r.phone, g = { telegram: new Set(), whatsapp: new Set() })
+    g[r.channel].add(r.personId)
+    born.set(r.personId, r.createdAt.getTime())
+  }
+
+  let merged = 0
+  for (const g of groups.values()) {
+    // Both channels, or there is nothing to bridge: two Telegram accounts
+    // sharing a number is not what decision 12 is about.
+    if (g.telegram.size === 0 || g.whatsapp.size === 0) continue
+    const ids = [...new Set([...g.telegram, ...g.whatsapp])]
+    if (ids.length < 2) continue
+    ids.sort((a, b) => (born.get(a) ?? 0) - (born.get(b) ?? 0) || a.localeCompare(b))
+    const [survivor, ...rest] = ids
+    for (const id of rest) if (await mergePeople(id, survivor)) merged++
+  }
+  return merged
+}
+
+async function refreshChannelNames(): Promise<number> {
+  const rows = await db.select({ id: people.id, name: people.name }).from(people)
+    .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt)))
+  const names = await channelNamesFor(rows.map(r => r.id))
+  let renamed = 0
+  for (const r of rows) {
+    const next = names.get(r.id)
+    if (!next || next === r.name) continue
+    await db.update(people).set({ name: next, updatedAt: new Date() }).where(eq(people.id, r.id))
+    renamed++
+  }
+  return renamed
+}
+
+export type PopulateResult = { created: number; merged: number; renamed: number }
+
+// Decision 11, called by the worker after every contact sync. Idempotent: the
+// second run over an unchanged archive creates nothing, merges nothing and
+// renames nothing.
+//
+// Only `contact` and `dm` identities become people. A `sender` is someone who
+// spoke in a group the owner is in — a name in a room, not a correspondent —
+// and turning every one of them into an address book entry would bury the
+// people the owner actually talks to. They stay linkable by hand.
+export async function populatePeople(): Promise<PopulateResult> {
+  const channels: Channel[] = ['telegram', 'whatsapp']
+  let created = 0
+  for (const channel of channels) {
+    for (const c of await listIdentityCandidates(channel)) {
+      // personId is set for an ARCHIVED person's identity too, which is
+      // exactly why "hidden" stays hidden across syncs (decision 14).
+      if (c.personId !== null || c.kind === 'sender') continue
+      const name = c.displayName?.trim()
+      if (!name) continue
+      const { id } = await createPerson({ name: clampName(name), nameSource: 'channel' })
+      const linked = await linkIdentity(
+        id, { channel, externalId: c.externalId, displayName: c.displayName, phone: c.phone }, 'auto',
+      )
+      // Lost a race with another writer for this identity. The person we just
+      // made has nothing in it, so it goes rather than sitting there empty.
+      if (!linked.ok) {
+        await db.delete(people).where(eq(people.id, id))
+        continue
+      }
+      created++
+    }
+  }
+  await refreshIdentities()
+  const merged = await mergeByPhone()
+  const renamed = await refreshChannelNames()
+  return { created, merged, renamed }
 }
