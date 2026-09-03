@@ -2,7 +2,7 @@ import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
-import { formatRelativeTime } from '@/lib/format'
+import { CHANNEL_LABELS, formatRelativeTime } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { Consent } from './consent'
 import { WhatsAppConsent } from './whatsapp-consent'
@@ -10,7 +10,6 @@ import { ConnectPanel } from './connect-panel'
 import { ConnectButton } from './connect-button'
 import { disconnectAction, deleteEverythingAction } from './actions'
 
-const CHANNEL_LABELS: Record<Channel, string> = { telegram: 'Telegram', whatsapp: 'WhatsApp' }
 
 // The panel's own error copy owns the password case; showing the raw sentinel
 // anywhere else would put a machine token in front of a person.

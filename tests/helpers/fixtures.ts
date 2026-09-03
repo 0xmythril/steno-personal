@@ -25,12 +25,12 @@ export async function makeConnection(opts: {
 }
 
 export async function makeChat(connection: { id: string; channel: 'telegram' | 'whatsapp' }, opts: {
-  kind?: 'dm' | 'group' | 'channel'; title?: string; externalChatId?: string; lastMessageAt?: Date
+  kind?: 'dm' | 'group' | 'channel'; title?: string | null; externalChatId?: string; lastMessageAt?: Date
 } = {}) {
   const [row] = await db.insert(chats).values({
     connectionId: connection.id, channel: connection.channel,
     externalChatId: opts.externalChatId ?? randomUUID(),
-    kind: opts.kind ?? 'dm', title: opts.title ?? 'Chat', lastMessageAt: opts.lastMessageAt,
+    kind: opts.kind ?? 'dm', title: opts.title === undefined ? 'Chat' : opts.title, lastMessageAt: opts.lastMessageAt,
   }).returning()
   return row
 }

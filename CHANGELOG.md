@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- Chats page shows each chat's channel, with Telegram / WhatsApp filter links; `GET /api/chats?channel=` filters the same way.
+- A direct chat is named after the person on the other side: when its stored title is missing or is your own display name, the latest counterparty's name is shown instead.
 - The MCP server is registered as `steno-personal` (was `steno`) in every snippet.
 - Settings gains "Let the agent set itself up": a copy-paste block for any agent that can edit its own MCP config.
 - The WhatsApp pending screen no longer shows Telegram-only copy.

@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
+import { db } from '@/lib/db/client'
+import { connections } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 describe('listChats', () => {
   beforeEach(resetDb)
@@ -15,6 +18,46 @@ describe('listChats', () => {
     expect(out.map(c => c.id)).toEqual([newer.id, older.id])
     expect(out.map(c => c.messageCount)).toEqual([0, 1])
     expect(out[1]).toMatchObject({ channel: 'telegram', kind: 'dm', title: 'Old' })
+  })
+
+  it('filters by channel when asked, and lists everything otherwise', async () => {
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { title: 'TG' })
+    const wa = await makeChat(await makeConnection({ channel: 'whatsapp' }), { title: 'WA' })
+    expect((await listChats()).map(c => c.id).sort()).toEqual([tg.id, wa.id].sort())
+    expect((await listChats({ channel: 'whatsapp' })).map(c => c.id)).toEqual([wa.id])
+    expect((await listChats({ channel: 'telegram' })).map(c => c.id)).toEqual([tg.id])
+  })
+
+  it('names a direct chat after the person on the other side', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    await db.update(connections).set({ displayName: 'Me Myself' }).where(eq(connections.id, conn.id))
+    // No title at all: the latest non-owner sender names it.
+    const untitled = await makeChat(conn, { title: null })
+    await addMessage(untitled, { senderName: 'Me Myself', fromOwner: true, sentAt: new Date('2026-01-03T00:00:00Z') })
+    await addMessage(untitled, { senderName: 'Old Name', sentAt: new Date('2026-01-01T00:00:00Z') })
+    await addMessage(untitled, { senderName: 'Bob', sentAt: new Date('2026-01-02T00:00:00Z') })
+    await addMessage(untitled, { senderName: 'Deleted Person', sentAt: new Date('2026-01-04T00:00:00Z'), deletedAt: new Date() })
+    // Titled with the owner's own name: same fallback.
+    const mine = await makeChat(conn, { title: 'Me Myself' })
+    await addMessage(mine, { senderName: 'Carol' })
+    // A real counterparty title stays.
+    const named = await makeChat(conn, { title: 'Dave (saved contact)' })
+    await addMessage(named, { senderName: 'dave push name' })
+    // Only the owner has ever spoken: nothing better than the stored title.
+    const oneSided = await makeChat(conn, { title: null })
+    await addMessage(oneSided, { senderName: 'Me Myself', fromOwner: true })
+    // Groups keep a null subject rather than borrowing a member's name.
+    const group = await makeChat(conn, { kind: 'group', title: null })
+    await addMessage(group, { senderName: 'Erin' })
+
+    const byId = new Map((await listChats()).map(c => [c.id, c.title]))
+    expect(byId.get(untitled.id)).toBe('Bob')
+    expect(byId.get(mine.id)).toBe('Carol')
+    expect(byId.get(named.id)).toBe('Dave (saved contact)')
+    expect(byId.get(oneSided.id)).toBeNull()
+    expect(byId.get(group.id)).toBeNull()
+    // The transcript header agrees with the list.
+    expect((await getMessages(untitled.id))?.chat.title).toBe('Bob')
   })
 
   it('falls back to created_at for a chat that has never had a message', async () => {
