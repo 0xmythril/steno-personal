@@ -185,6 +185,8 @@ means unset.
 | `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
 | `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
 | `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
+| `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](docs/self-hosting.md#lost-access). |
+| `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 
 **The one optional third party.** Image text extraction and voice-note
 transcription are off until you save an OpenRouter key in **Settings**. Once you

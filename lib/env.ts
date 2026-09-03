@@ -29,6 +29,12 @@ export const envSchema = z.object({
   // api_id of 0 and an empty hash both read as "unset" to the worker.
   TELEGRAM_API_ID: blank(z.coerce.number().int().nonnegative().optional()).default(TELEGRAM_DEFAULT_API_ID),
   TELEGRAM_API_HASH: blank(z.string().optional()).default(TELEGRAM_DEFAULT_API_HASH),
+  // Host-operator operations, each performed by scripts/boot.ts once per value
+  // (lib/services/boot-ops.ts). Whoever can set these already owns the volume.
+  // STENO_RESET empties DATA_DIR; STENO_MINT_KEY mints a key with that label
+  // and prints it to the log — the only place a key is ever printed.
+  STENO_RESET: blank(z.string().optional()),
+  STENO_MINT_KEY: blank(z.string().optional()),
 })
 
 export type Env = z.infer<typeof envSchema>
