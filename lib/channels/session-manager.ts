@@ -41,6 +41,17 @@ const PING_EVERY_MS = 60_000
 // is time-critical: a person linked from a contact saved an hour ago is still
 // linked correctly an hour later.
 const CONTACTS_SYNC_MS = 6 * 3_600_000
+// What a FAILED read waits instead. Six hours is the cadence for an address
+// book that is already cached; a read that never landed has nothing cached at
+// all, and the People page stays full of bare ids until one does. Ten minutes
+// is long enough to ride out a FLOOD_WAIT and short enough that a first
+// pairing is not spent looking at numbers.
+const CONTACTS_RETRY_MS = 10 * 60_000
+// The contact read is the one call in this file with no binding-level bound of
+// its own guaranteed: mtcute caps its RPC and WhatsApp answers from a map, but
+// stopAll() awaits contactSyncsInFlight, so a future binding that hangs here
+// would wedge shutdown. Same treatment as logOut().
+const CONTACTS_TIMEOUT_MS = 30_000
 
 // Bounds a promise that must never hold the tick loop. The loser of the race
 // is not cancellable — it keeps running in the background — but Promise.race
@@ -89,6 +100,15 @@ type Running = {
   // pre-backfill ping below never touches this counter — see the comment on
   // that branch. See handleSessionError.
   consecutiveOther: number
+}
+
+// The other half of stamping lastContactsSyncAt before the read: that stamp is
+// what a FAILED read would otherwise ride for the full six hours. Winding it
+// back leaves exactly CONTACTS_RETRY_MS on the clock — a retry, not a re-fire,
+// so the single-flight guard and the "log once, not once a tick" property both
+// survive.
+function retrySoon(running: Running): void {
+  running.lastContactsSyncAt = Date.now() - (CONTACTS_SYNC_MS - CONTACTS_RETRY_MS)
 }
 
 // A session whose ping keeps failing with 'other' is not dead (that would be
@@ -476,13 +496,14 @@ export class SessionManager {
     if (running.stopped) return
     let contacts: ChannelContact[]
     try {
-      contacts = await running.session.listContacts()
+      contacts = await withTimeout(running.session.listContacts(), CONTACTS_TIMEOUT_MS, 'listContacts')
     } catch (e) {
       if (e instanceof ChannelError && e.kind === 'auth_invalidated') {
         await this.handleSessionError(connId, e)
         return
       }
       log.warn({ err: errorShape(e), connectionId: connId }, 'contact sync failed')
+      retrySoon(running)
       return
     }
     // Re-checked after the read: the connection may have been revoked while
@@ -495,6 +516,7 @@ export class SessionManager {
       log.info({ connectionId: connId, upserted }, 'contacts synced')
     } catch (e) {
       log.error({ err: errorShape(e), connectionId: connId }, 'contact sync write failed')
+      retrySoon(running)
     }
   }
 
