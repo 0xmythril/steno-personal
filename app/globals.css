@@ -6,7 +6,9 @@ nav a { text-decoration: none; }
 code, pre { font-family: ui-monospace, monospace; }
 pre { overflow-x: auto; padding: 0.6rem 0.8rem; border-radius: 6px; background: color-mix(in srgb, currentColor 8%, transparent); }
 .card { border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
-.danger { color: #b00020; }
+.danger { color: #c62828; }
+/* The light-scheme red vanishes into a dark background; give dark its own. */
+@media (prefers-color-scheme: dark) { .danger { color: #ff7b72; } }
 form.inline { display: inline; }
 table { border-collapse: collapse; width: 100%; }
 td, th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
