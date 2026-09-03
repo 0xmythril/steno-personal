@@ -167,6 +167,34 @@ function whatsappDirsFor(id: string, sessionCiphertext: string | null): string[]
   return dirs
 }
 
+// Removes every auth directory this WhatsApp connection could own. Idempotent
+// (`force: true`, so a directory already gone is not an error) and it never
+// throws: the worker calls this from inside its tick, where one stubborn
+// directory must not stop the other connections converging. The path itself is
+// never logged — Node's own fs messages embed it — so only name/code go out.
+export async function removeWhatsappAuthDirs(id: string, sessionCiphertext: string | null): Promise<void> {
+  for (const dir of whatsappDirsFor(id, sessionCiphertext)) {
+    try {
+      await rm(path.join(env.DATA_DIR, 'whatsapp', dir), { recursive: true, force: true })
+    } catch (err) {
+      const { name, code } = errorShape(err)
+      log.error({ connectionId: id, err: { name, code } }, 'failed to remove a WhatsApp auth directory')
+    }
+  }
+}
+
+// Revoked WhatsApp rows whose signal keys may still be on the volume. The
+// worker sweeps these every tick, which is what makes "Disconnect removes the
+// WhatsApp auth files once the worker has run" true even for a Disconnect
+// performed while the worker was down. revokeConnection has already nulled
+// session_ciphertext by then, so the id-derived name is all there is to go on
+// — which is exactly why whatsappDirsFor derives it from the id first.
+export async function revokedWhatsappConnectionIds(): Promise<string[]> {
+  const rows = await db.select({ id: connections.id }).from(connections)
+    .where(and(eq(connections.channel, 'whatsapp'), eq(connections.status, 'revoked')))
+  return rows.map(r => r.id)
+}
+
 // Delete everything: revoke first so the session is torn down and the secrets
 // are gone even if the delete below fails, then drop the row — chats, messages
 // and media rows follow by cascade. WhatsApp's auth directory is removed
@@ -180,9 +208,10 @@ export async function deleteConnection(id: string): Promise<boolean> {
   if (!row) return false
 
   // WhatsApp keeps its signal keys on the volume, not in the database (spec
-  // decision 9); deleting a connection must take them with it. The names are
-  // read here because revokeConnection below nulls session_ciphertext.
-  const whatsappDirs = row.channel === 'whatsapp' ? whatsappDirsFor(row.id, row.sessionCiphertext) : []
+  // decision 9); deleting a connection must take them with it. The ciphertext
+  // is read here because revokeConnection below nulls session_ciphertext.
+  const whatsappCiphertext = row.channel === 'whatsapp' ? row.sessionCiphertext : null
+  const isWhatsapp = row.channel === 'whatsapp'
 
   await revokeConnection(id, 'Deleted, along with everything it archived.')
 
@@ -217,9 +246,7 @@ export async function deleteConnection(id: string): Promise<boolean> {
   }
 
   await db.delete(connections).where(eq(connections.id, id))
-  for (const dir of whatsappDirs) {
-    await rm(path.join(env.DATA_DIR, 'whatsapp', dir), { recursive: true, force: true })
-  }
+  if (isWhatsapp) await removeWhatsappAuthDirs(row.id, whatsappCiphertext)
   return true
 }
 
