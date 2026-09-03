@@ -44,6 +44,26 @@ describe('downloadMedia', () => {
     await expect(c.session.downloadMedia({ message: {} })).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
     await c.session.close()
   })
+
+  it('rejects after close() — there is no live socket to download from', async () => {
+    const c = await connect('media-after-close')
+    await c.session.close()
+    await expect(c.session.downloadMedia({ message: {} })).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
+  })
+
+  it('rejects during a reconnect gap, then succeeds again once the reconnect opens', async () => {
+    const c = await connect('media-reconnect-gap', { reconnectMinMs: 5 })
+    c.socket().emitClose(500) // non-terminal: a reconnect gets scheduled, socket is down
+    await expect(c.session.downloadMedia({ message: {} })).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
+
+    await flush(30)
+    expect(c.h.sockets.length).toBeGreaterThan(1) // the reconnect actually happened
+    c.socket().emitOpen()
+
+    const result = await c.session.downloadMedia({ message: {} })
+    expect(result.data.toString()).toBe('media-bytes')
+    await c.session.close()
+  })
 })
 
 describe('ping', () => {
@@ -104,10 +124,31 @@ describe('logOut and close', () => {
     expect(existsSync(dir)).toBe(false)
   })
 
+  it('delivers nothing once logOut() has been called', async () => {
+    const c = await connect('logout-message-gate')
+    const got: unknown[] = []
+    c.session.onMessage(m => got.push(m))
+
+    await c.session.logOut()
+    c.socket().emit('messages.upsert', {
+      messages: [{
+        key: { remoteJid: '7777@lid', id: 'M1', fromMe: false },
+        messageTimestamp: 1_700_000_000,
+        pushName: 'Someone',
+        message: { conversation: 'hi' },
+      }],
+    })
+    await flush(20)
+    expect(got).toEqual([])
+  })
+
   it('close ends the socket and stops reconnecting', async () => {
     const c = await connect('close', { reconnectMinMs: 5 })
     await c.session.close()
     expect(c.h.sockets[0].endCalls).toBe(1)
+    // close() is teardown only: no unlink call, and the auth dir survives.
+    expect(c.h.sockets[0].logoutCalls).toBe(0)
+    expect(existsSync(path.join(c.authRoot, 'wa-c1'))).toBe(true)
 
     c.h.sockets[0].emitClose(500)
     await flush(30)

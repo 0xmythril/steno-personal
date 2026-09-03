@@ -772,6 +772,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       await drainChain()
       try { await sock?.end(undefined) } catch (err) { log.warn({ err: errorShape(err) }, 'whatsapp socket end failed') }
       connected = false
+      sock = null
     }
 
     try {
@@ -806,7 +807,11 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
       async downloadMedia(raw: unknown): Promise<{ data: Buffer; mimeType: string | null }> {
         const s = sock
-        if (!s) throw new ChannelError('whatsapp socket is not open', 'other')
+        // No live socket: closed, mid-reconnect (sock stale/not yet
+        // replaced), or never opened. All of these read as "can't reach
+        // WhatsApp right now" rather than a specific fatal kind, since a
+        // reconnect can still bring the session back.
+        if (closing || !connected || !s) throw new ChannelError('no live WhatsApp socket', 'other')
         const message = reviveRawMessage(raw)
         try {
           const data = await deps.downloadMedia(message, { reuploadRequest: m => s.updateMediaMessage(m) })
