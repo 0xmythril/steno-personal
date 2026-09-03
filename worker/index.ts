@@ -1,32 +1,44 @@
+import { env } from '@/lib/env'
 import { log, errorShape } from '@/lib/log'
 import { purgeExpiredSessions } from '@/lib/services/sessions'
+import { SessionManager } from '@/lib/channels/session-manager'
+import { buildPorts } from '@/lib/channels/ports'
 
-const TICK_MS = 60_000
+const TICK_MS = 3000
+const SESSION_PURGE_EVERY_MS = 60_000
 
 async function main() {
-  log.info('worker started (no channels yet)')
+  const ports = buildPorts({ apiId: env.TELEGRAM_API_ID, apiHash: env.TELEGRAM_API_HASH })
+  const manager = new SessionManager(ports)
+  log.info({ channels: [...ports.keys()] }, 'worker started')
+
   let stopping = false
-  let wake: (() => void) | null = null
-  let timer: ReturnType<typeof setTimeout> | undefined
-  // The sleep between ticks is a promise we can resolve early (and a timer
-  // we can clear), not a bare await-setTimeout, so SIGTERM/SIGINT wakes the
-  // loop immediately instead of waiting up to TICK_MS and blowing past
-  // Docker's stop grace period.
-  const stop = () => {
+  const stop = async () => {
+    if (stopping) return
     stopping = true
-    if (timer) clearTimeout(timer)
-    wake?.()
+    log.info('worker stopping')
+    await manager.stopAll()
+    process.exit(0)
   }
-  process.on('SIGTERM', stop); process.on('SIGINT', stop)
+  process.on('SIGTERM', () => { void stop() })
+  process.on('SIGINT', () => { void stop() })
+
+  let lastPurge = 0
   for (;;) {
     if (stopping) break
     try {
-      const purged = await purgeExpiredSessions()
-      if (purged) log.info({ purged }, 'expired sessions purged')
-    } catch (e) { log.error({ err: errorShape(e) }, 'tick failed') }
-    await new Promise<void>(r => { wake = r; timer = setTimeout(r, TICK_MS) })
+      await manager.tick()
+      if (Date.now() - lastPurge > SESSION_PURGE_EVERY_MS) {
+        lastPurge = Date.now()
+        const purged = await purgeExpiredSessions()
+        if (purged) log.info({ purged }, 'expired sessions purged')
+      }
+    } catch (e) {
+      // One bad tick must never end the worker: the next one retries.
+      log.error({ err: errorShape(e) }, 'tick failed')
+    }
+    await new Promise(r => setTimeout(r, TICK_MS))
   }
-  process.exit(0)
 }
 
 main().catch(e => { log.error({ err: errorShape(e) }, 'worker crashed'); process.exit(1) })
