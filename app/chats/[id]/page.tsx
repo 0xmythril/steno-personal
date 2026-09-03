@@ -4,11 +4,11 @@ import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { getMessages } from '@/lib/services/queries'
-import { groupRuns, groupByDate } from '@/lib/transcript'
+import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
 import { formatTime } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
 
-const PAGE_SIZE = 100
+const PAGE_SIZE = 50
 
 // Read-only by construction: there is no reply box and nowhere to type,
 // because the connection physically cannot send. A structural test asserts the
@@ -84,7 +84,11 @@ export default async function ChatPage({ params, searchParams }: {
                         </p>
                         {run.messages.map(m => (
                           <div key={m.id} className="msg-body">
-                            {m.text ?? <span className="kind">({m.type})</span>}
+                            {m.text === null
+                              ? <span className="kind">({m.type})</span>
+                              : linkify(m.text).map((seg, i) => seg.kind === 'link'
+                                ? <a key={i} href={seg.href} target="_blank" rel="noopener noreferrer nofollow">{seg.value}</a>
+                                : <Fragment key={i}>{seg.value}</Fragment>)}
                             {m.editedAt && <span className="edited">edited</span>}
                             {m.media && <MediaAttachment media={m.media} />}
                           </div>

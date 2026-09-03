@@ -58,3 +58,40 @@ export function groupByDate(items: MessageView[], tz?: string): Array<{ dateLabe
   }
   return groups
 }
+
+export type TextSegment = { kind: 'text'; value: string } | { kind: 'link'; value: string; href: string }
+
+// Splits message text into plain runs and links. Only http(s) URLs and bare
+// www. hosts become links, and www. is always sent to https; anything else a
+// message contains (javascript:, data:, custom schemes) stays text, because
+// the text is whatever a stranger typed. Trailing punctuation that is almost
+// never part of a URL is left outside the link.
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi
+const TRAILING = /^[.,;:!?\]}'"]$/
+
+export function linkify(text: string): TextSegment[] {
+  const out: TextSegment[] = []
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    let raw = m[0]
+    // Peel trailing punctuation one character at a time. A ")" comes off only
+    // when unbalanced: "(see https://x.y/a)" keeps ")" out, while
+    // "https://en.wikipedia.org/wiki/A_(b)" keeps it in.
+    for (;;) {
+      const ch = raw[raw.length - 1]
+      if (ch === ')') {
+        const opens = (raw.match(/\(/g) ?? []).length
+        const closes = (raw.match(/\)/g) ?? []).length
+        if (closes <= opens) break
+      } else if (!TRAILING.test(ch ?? '')) break
+      raw = raw.slice(0, -1)
+    }
+    if (!raw) continue
+    const start = m.index ?? 0
+    if (start > last) out.push({ kind: 'text', value: text.slice(last, start) })
+    out.push({ kind: 'link', value: raw, href: /^https?:\/\//i.test(raw) ? raw : `https://${raw}` })
+    last = start + raw.length
+  }
+  if (last < text.length) out.push({ kind: 'text', value: text.slice(last) })
+  return out
+}

@@ -626,6 +626,34 @@ describe('session manager', () => {
     await mgr.stopAll()
   })
 
+  it('re-reads the address book every five minutes during the first hour, then every six hours', async () => {
+    await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [{ externalId: '5', displayName: 'Bob', phone: null }]
+    const mgr = new SessionManager(portsOf(port))
+    await mgr.tick(); await mgr.whenIdle()
+    expect(port.listContactsCount).toBe(1)
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      // WhatsApp delivers push names minutes after open: a warm-up read.
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1_000)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.listContactsCount).toBe(2)
+      // A tick that arrives late fires the overdue read, and once the hour is
+      // over the next one is six hours out: two hours later one read, four
+      // hours later none.
+      vi.setSystemTime(Date.now() + 2 * 3_600_000)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.listContactsCount).toBe(3)
+      vi.setSystemTime(Date.now() + 2 * 3_600_000)
+      await mgr.tick(); await mgr.whenIdle()
+      expect(port.listContactsCount).toBe(3)
+    } finally {
+      vi.useRealTimers()
+    }
+    await mgr.stopAll()
+  })
+
   it('re-reads the address book every six hours, not every tick', async () => {
     await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
     const port = new FakePort('telegram')

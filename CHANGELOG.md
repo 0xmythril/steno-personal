@@ -26,6 +26,8 @@ All notable changes to this project are documented here. The format follows
 - The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
+- Transcript pages show 50 messages per page (was 100), and http(s) links in messages are clickable (opening in a new tab; no other scheme is ever linked).
+- The worker re-reads a channel's contacts every five minutes for the first hour after a session opens, so WhatsApp push names reach the archive minutes after pairing rather than six hours later.
 - A message whose channel sent no sender name is labelled with the name you saved in your contacts, in the portal and to an agent alike; a WhatsApp sender nobody has a name for (history-synced messages carry none) shows as their phone number instead of "Unknown".
 - Every page is restyled on the steno pad: green-tinted paper, Instrument Serif headings, a 64px time margin against a rule in transcripts, status chips, and a nav that shows the session's key label. Light and dark follow the system setting. Instrument Serif, Instrument Sans and IBM Plex Mono are bundled at build time with next/font.
 - The Chats page filters by chip, the nav reads "Steno · Personal", and the footer carries the licence, the source links and the Steno Cloud pointer.
