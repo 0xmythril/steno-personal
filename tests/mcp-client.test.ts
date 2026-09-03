@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { Client, SdkHttpError, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { resetDb } from './helpers/db'
 import { seedChat, seedConnection, seedMessage } from './helpers/archive'
 import { mintAccessKey } from '@/lib/services/access-keys'
@@ -56,6 +56,13 @@ describe('an MCP client reads a chat through a bearer key', () => {
   })
 
   it('refuses to connect without a valid key', async () => {
-    await expect(connect('sp_not_a_real_key')).rejects.toThrow()
+    // mcp-handler's withMcpAuth throws the same generic "No authorization
+    // provided" OAuthError for a missing token AND an unrecognised one, so the
+    // thrown message carries no distinguishing "401"/"unauthorized" text to
+    // match on. The transport surfaces the response as an SdkHttpError with
+    // the real HTTP status attached, so assert on that instead.
+    const err: unknown = await connect('sp_not_a_real_key').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(SdkHttpError)
+    expect((err as SdkHttpError).status).toBe(401)
   })
 })
