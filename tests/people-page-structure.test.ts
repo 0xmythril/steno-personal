@@ -24,7 +24,9 @@ import { makeConnection } from './helpers/fixtures'
 import { createPerson, getPerson, syncContacts } from '@/lib/services/people'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { startSession } from '@/lib/auth'
-import { linkIdentityAction } from '@/app/people/actions'
+import {
+  linkIdentityAction, updatePersonAction, deletePersonAction, unlinkIdentityAction,
+} from '@/app/people/actions'
 
 const actions = () => readFileSync('app/people/actions.ts', 'utf8')
 
@@ -144,6 +146,27 @@ describe('linkIdentityAction', () => {
       channel: 'telegram', externalId: '42',
       displayName: 'Ada', phone: '+447700900123', source: 'manual',
     })])
+  })
+
+  // Every action that can act on a row someone else has already deleted says
+  // so, rather than reporting a success that did nothing.
+  it('reports a stale person or link as gone instead of silently succeeding', async () => {
+    await signIn()
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+    const form = (extra: Record<string, string> = {}) => {
+      const f = new FormData()
+      f.set('personId', id)
+      for (const [k, v] of Object.entries(extra)) f.set(k, v)
+      return f
+    }
+    // Deleted out from under all three, exactly as a second tab would.
+    await expect(deletePersonAction(form())).rejects.toThrow(/^redirect:\/people$/)
+
+    await expect(updatePersonAction(form({ name: 'Ada L', notes: '' })))
+      .rejects.toThrow('redirect:/people?error=gone')
+    await expect(deletePersonAction(form())).rejects.toThrow('redirect:/people?error=gone')
+    await expect(unlinkIdentityAction(form({ identityId: 'no-such-identity' })))
+      .rejects.toThrow(`redirect:/people/${id}?error=gone`)
   })
 
   it('refuses an identity this instance has never heard of', async () => {

@@ -17,7 +17,9 @@ export const PEOPLE_ERRORS: Record<string, string> = {
   linked: 'That identity already belongs to someone else. Unlink it there first.',
   empty: 'Choose someone to link first.',
   stale: 'That suggestion is out of date: one side is already linked to a person. The list below is current.',
-  gone: 'That person no longer exists.',
+  // Covers a person and a link alike: whichever one the action reached for,
+  // the row was not there any more.
+  gone: 'That is already gone — it was deleted while this page was open.',
   unknown: 'This instance has never heard of that identity. The list below is current.',
 }
 

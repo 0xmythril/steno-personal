@@ -44,14 +44,19 @@ export async function updatePersonAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
   if (!id) redirect('/people')
+  let updated: boolean
   try {
     // An empty notes box means "clear the notes", which is what the service
     // does with a blank string. The name box is required by the form.
-    await updatePerson(id, { name: field(formData, 'name'), notes: field(formData, 'notes') })
+    updated = await updatePerson(id, { name: field(formData, 'name'), notes: field(formData, 'notes') })
   } catch (err) {
     if (err instanceof RangeError) redirect(`/people/${id}?error=length`)
     throw err
   }
+  // The service says "no such row" when the person was deleted while this page
+  // sat open — another tab, or the Delete button below it. Saying so beats
+  // redirecting to a 404 that looks like the save itself broke.
+  if (!updated) redirect('/people?error=gone')
   redirect(`/people/${id}`)
 }
 
@@ -60,7 +65,8 @@ export async function updatePersonAction(formData: FormData): Promise<void> {
 export async function deletePersonAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
-  if (id) await deletePerson(id)
+  const deleted = id ? await deletePerson(id) : true
+  if (!deleted) redirect('/people?error=gone')
   redirect('/people')
 }
 
@@ -97,8 +103,9 @@ export async function unlinkIdentityAction(formData: FormData): Promise<void> {
   await requireSession()
   const id = field(formData, 'personId')
   const identityId = field(formData, 'identityId')
-  if (identityId) await unlinkIdentity(identityId)
+  const unlinked = identityId ? await unlinkIdentity(identityId) : true
   if (!id) redirect('/people')
+  if (!unlinked) redirect(`/people/${id}?error=gone`)
   redirect(`/people/${id}`)
 }
 
