@@ -10,6 +10,9 @@ All notable changes to this project are documented here. The format follows
 - Release procedure in `docs/releasing.md`, repository metadata in `package.json`, and CI and licence badges in the README.
 - CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
 
+### Fixed
+- The Docker image builds on Railway: the Dockerfile no longer declares a `VOLUME`, which Railway's builder rejects. Compose and the Railway template mount `/data` themselves, so nothing changes for Docker at home.
+
 ### Changed
 - Warning and Revoke text uses a lighter red in dark mode so it is readable.
 - Transcript pages have Older / Latest links at both ends and a Back to top link at the foot.

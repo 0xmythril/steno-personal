@@ -16,6 +16,7 @@ COPY --from=build /app ./
 RUN npm prune --omit=dev
 # No `USER node`: Railway mounts volumes root-owned, so a non-root process
 # could not create secret.key or the database on /data.
-VOLUME ["/data"]
+# No VOLUME instruction either: Railway's builder rejects it, and both
+# docker-compose.yml and the Railway template mount /data explicitly.
 EXPOSE 3000
 CMD ["node", "scripts/start.mjs"]
