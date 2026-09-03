@@ -519,6 +519,62 @@ describe('the self-populating address book', () => {
       .toEqual({ id: ada.id, name: 'Ada' })
   })
 
+  // PRIVACY says hiding someone "keeps their links, which is what stops the
+  // next sync recreating them". Their links only cover the channels they were
+  // on: pair the second one later and their number arrives attached to no
+  // person at all, and mergeByPhone excludes archived people by design, so
+  // nothing downstream could repair it.
+  it('keeps someone hidden when a second channel finds them later', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: '+447700900123' },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    const [ada] = await listPeople()
+    expect(await archivePerson(ada.id)).toBe(true)
+
+    // Weeks later: WhatsApp is paired and reports the same number.
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(wa.id, 'whatsapp', [
+      { externalId: ADA_JID, displayName: 'Ada', phone: '+44 7700 900123' },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 0 })
+
+    expect(await listPeople()).toEqual([])
+    expect(await publicPeople()).toEqual([])
+    const [stillHidden] = await listArchivedPeople()
+    expect(stillHidden.id).toBe(ada.id)
+    expect(stillHidden.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([
+      ['telegram', '42', 'auto'],
+      ['whatsapp', ADA_JID, 'auto'],
+    ])
+    // Both sides resolve to nobody while she is hidden…
+    expect(await personForIdentity({ channel: 'whatsapp', externalId: ADA_JID })).toBeNull()
+    // …and restoring brings back one person holding both.
+    expect(await restorePerson(ada.id)).toBe(true)
+    const [back] = await listPeople()
+    expect(back.identities.map(i => i.channel)).toEqual(['telegram', 'whatsapp'])
+    expect(await personForIdentity({ channel: 'whatsapp', externalId: ADA_JID }))
+      .toEqual({ id: ada.id, name: 'Ada' })
+  })
+
+  // The number is the only identifier the two channels share, so nothing
+  // weaker may reach an archived row: a name match must still make a new,
+  // visible person rather than quietly joining someone the owner hid.
+  it('does not attach a name-only match to a hidden person', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: null }])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    const [ada] = await listPeople()
+    await archivePerson(ada.id)
+
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'Ada', phone: null }])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada'])
+    expect((await listArchivedPeople())[0].identities).toHaveLength(1)
+  })
+
   it('merging moves the identities and deletes the merged-from person outright', async () => {
     const from = await createPerson({ name: 'Ada on Telegram', notes: 'met at work' })
     await linkIdentity(from.id, { channel: 'telegram', externalId: '42' })

@@ -826,6 +826,37 @@ async function refreshChannelNames(): Promise<number> {
   return renamed
 }
 
+// Decision 14, on the channel the owner had not paired yet. Hiding someone
+// keeps their identity links, and that is what stops the next sync recreating
+// them — but only on the channels they were already linked on. Pair WhatsApp
+// weeks after hiding a Telegram-only person and their JID arrives with no
+// person at all, so the populater would make a fresh, VISIBLE row and their
+// "no" would be undone through a door they did not know existed. mergeByPhone
+// cannot repair it afterwards: it excludes archived people by design.
+//
+// So the same phone number that would have merged the two people is used one
+// step earlier, to decide the new identity belongs to the hidden person. The
+// number is the only identifier the two channels share (decision 12); nothing
+// weaker is allowed to reach an archived row.
+async function archivedPeopleByPhone(): Promise<Map<string, string>> {
+  const rows = await db.select({
+    personId: personIdentities.personId,
+    phone: personIdentities.phone,
+    createdAt: people.createdAt,
+  }).from(personIdentities)
+    .innerJoin(people, eq(people.id, personIdentities.personId))
+    .where(and(isNotNull(personIdentities.phone), isNotNull(people.archivedAt)))
+
+  const out = new Map<string, string>()
+  // Oldest first, so a number two hidden people somehow share resolves the
+  // same way on every run.
+  for (const r of [...rows].sort((a, b) =>
+    a.createdAt.getTime() - b.createdAt.getTime() || a.personId.localeCompare(b.personId))) {
+    if (r.phone && !out.has(r.phone)) out.set(r.phone, r.personId)
+  }
+  return out
+}
+
 export type PopulateResult = { created: number; merged: number; renamed: number }
 
 // Decision 11, called by the worker after every contact sync. Idempotent: the
@@ -838,6 +869,7 @@ export type PopulateResult = { created: number; merged: number; renamed: number 
 // people the owner actually talks to. They stay linkable by hand.
 export async function populatePeople(): Promise<PopulateResult> {
   const channels: Channel[] = ['telegram', 'whatsapp']
+  const hiddenByPhone = await archivedPeopleByPhone()
   let created = 0
   for (const channel of channels) {
     for (const c of await listIdentityCandidates(channel)) {
@@ -846,6 +878,16 @@ export async function populatePeople(): Promise<PopulateResult> {
       if (c.personId !== null || c.kind === 'sender') continue
       const name = c.displayName?.trim()
       if (!name) continue
+      // Somebody the owner hid, arriving on a second channel. Their "no" meant
+      // the person, not the account, so the identity joins them where they are
+      // rather than becoming a visible row of their own.
+      const hidden = c.phone ? hiddenByPhone.get(c.phone) : undefined
+      if (hidden) {
+        await linkIdentity(
+          hidden, { channel, externalId: c.externalId, displayName: c.displayName, phone: c.phone }, 'auto',
+        )
+        continue
+      }
       const { id } = await createPerson({ name: clampName(name), nameSource: 'channel' })
       const linked = await linkIdentity(
         id, { channel, externalId: c.externalId, displayName: c.displayName, phone: c.phone }, 'auto',
