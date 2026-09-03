@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireSession, endSession, isHttps } from '@/lib/auth'
 import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
-import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE } from '@/lib/services/keys-flash'
+import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
 
 export async function mintKeyAction(formData: FormData) {
@@ -51,6 +51,30 @@ export async function hideRevealedKeyAction() {
   revalidatePath('/settings')
 }
 
+// Fill an existing key into the "Connect your agent" snippets. Same shape as
+// reveal: the raw key rides an httpOnly flash to the next render, never a URL.
+export async function useKeyForInstructionsAction(formData: FormData) {
+  await requireSession()
+  const keyId = String(formData.get('keyId') ?? '')
+  const rawKey = await revealAccessKey(keyId)
+  if (!rawKey) {
+    const stillActive = (await listActiveAccessKeys()).some(k => k.id === keyId)
+    redirect(stillActive ? `/settings?instructionsError=${encodeURIComponent(keyId)}` : '/settings')
+  }
+  const jar = await cookies()
+  jar.set(INSTRUCTIONS_KEY_COOKIE, JSON.stringify({ id: keyId, rawKey }), {
+    httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: 5 * 60, path: '/settings',
+  })
+  redirect('/settings')
+}
+
+export async function clearInstructionsKeyAction() {
+  await requireSession()
+  const jar = await cookies()
+  jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
+  redirect('/settings')
+}
+
 export async function revokeKeyAction(formData: FormData) {
   const session = await requireSession()
   const keyId = String(formData.get('keyId') ?? '')
@@ -58,6 +82,7 @@ export async function revokeKeyAction(formData: FormData) {
   const jar = await cookies()
   jar.delete({ name: REVEALED_KEY_COOKIE, path: '/settings' })
   jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   // Revoking the key this browser logged in with ends this session too.
   if (keyId === session.keyId) { await endSession(); redirect('/login') }
   revalidatePath('/settings')
@@ -71,6 +96,7 @@ export async function revokeAllKeysAction() {
   const jar = await cookies()
   jar.delete({ name: REVEALED_KEY_COOKIE, path: '/settings' })
   jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   await endSession()
   redirect('/login')
 }
