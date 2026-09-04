@@ -30,11 +30,13 @@ export type IncomingMessage = {
   senderName: string | null
   fromOwner: boolean
   sentAt: Date
-  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
+  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
   text: string | null
   // Set when the message carries a downloadable attachment. M1 stores it on
   // the message row (has_media); M4 enqueues a media row from it.
   media: { mimeType: string | null; sizeBytes: number | null; isVoiceNote: boolean | null; durationSeconds: number | null } | null
+  // The channel's id of the message this one replies to, when it is one.
+  replyToExternalId?: string | null
   raw: unknown
   // Only on an edit, and only from a port that has to prove authorship.
   actor?: MessageActor
@@ -77,7 +79,8 @@ export async function recordMessage(connectionId: string, channel: Channel, m: I
   const inserted = await db.insert(messages).values({
     chatId, externalMessageId: m.externalMessageId,
     senderExternalId: m.senderExternalId, senderName: m.senderName, fromOwner: m.fromOwner,
-    sentAt: m.sentAt, type: m.type, text: m.text, hasMedia: m.media !== null, raw: m.raw,
+    sentAt: m.sentAt, type: m.type, text: m.text, hasMedia: m.media !== null,
+    replyToExternalId: m.replyToExternalId ?? null, raw: m.raw,
   }).onConflictDoNothing({ target: [messages.chatId, messages.externalMessageId] })
     .returning({ id: messages.id })
   if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true }

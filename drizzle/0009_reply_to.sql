@@ -1,0 +1,1 @@
+ALTER TABLE `messages` ADD `reply_to_external_id` text;

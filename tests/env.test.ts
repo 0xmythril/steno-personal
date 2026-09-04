@@ -57,6 +57,15 @@ describe('env schema', () => {
     expect(e.TELEGRAM_API_ID).toBe(12345)
     expect(e.TELEGRAM_API_HASH).toBe('abc')
   })
+
+  it('refuses half a pair, which would otherwise mix a deployer’s value with the project’s', () => {
+    expect(() => envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '12345' })).toThrow(/set together/)
+    expect(() => envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '12345', TELEGRAM_API_HASH: '' })).toThrow(/set together/)
+    expect(() => envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_HASH: 'abc' })).toThrow(/set together/)
+    // The opt-out needs no hash, and a hash beside it is ignored.
+    expect(envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '0' }).TELEGRAM_API_ID).toBe(0)
+    expect(envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '0', TELEGRAM_API_HASH: 'abc' }).TELEGRAM_API_ID).toBe(0)
+  })
 })
 
 describe('env proxy', () => {

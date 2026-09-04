@@ -1,10 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
-import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
-import { archivePerson, createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
+import { listChats, getMessages, recentMessages, searchMessages } from '@/lib/services/queries'
+import { archivePerson, createPerson, linkIdentity, ownerPerson, populatePeople, syncContacts, unlinkIdentity } from '@/lib/services/people'
+import { personIdentities } from '@/lib/db/schema'
+
+// Every identity a person holds, unlinked — a test helper, so a row that
+// only exists to be in the way can be taken out of it.
+async function unlinkIdentityOf(personId: string) {
+  const rows = await db.select({ id: personIdentities.id }).from(personIdentities).where(eq(personIdentities.personId, personId))
+  for (const r of rows) await unlinkIdentity(r.id)
+}
 import { db } from '@/lib/db/client'
-import { channelContacts, connections } from '@/lib/db/schema'
+import { channelContacts, connections, messages } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 describe('listChats', () => {
@@ -89,7 +97,7 @@ describe('getMessages', () => {
     expect(waNames).toEqual(['+15551230000', 'Ada'])
     expect((await getMessages(tg.id))!.messages[0].senderName).toBeNull()
     // The same rule reaches search results.
-    expect((await searchMessages('synced'))[0].senderName).toBe('+15551230000')
+    expect(((await searchMessages('synced')).hits)[0].senderName).toBe('+15551230000')
   })
 
   it('reads newest-first with a working cursor and returns the chat alongside', async () => {
@@ -136,6 +144,79 @@ describe('getMessages', () => {
   })
 })
 
+describe('replies', () => {
+  beforeEach(resetDb)
+
+  it('resolves a reply to the quoted message in the same chat, and to nothing once that is deleted', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
+    const quoted = await addMessage(chat, { text: 'the deck is attached', senderName: 'Bob', externalMessageId: 'WA0', sentAt: new Date(1000) })
+    const reply = await addMessage(chat, { text: 'I refer to here', externalMessageId: 'WA1', replyToExternalId: 'WA0', sentAt: new Date(2000) })
+    // Same external id in ANOTHER chat is another message.
+    const other = await makeChat(conn, { kind: 'group', title: 'Other' })
+    await addMessage(other, { text: 'unrelated', externalMessageId: 'WA0' })
+    await addMessage(other, { text: 'dangling', externalMessageId: 'WA2', replyToExternalId: 'WA-missing' })
+
+    const page = (await getMessages(chat.id))!.messages
+    expect(page.find(m => m.id === reply.id)!.replyTo).toEqual({ id: quoted.id, senderName: 'Bob', text: 'the deck is attached' })
+    expect(page.find(m => m.id === quoted.id)!.replyTo).toBeNull()
+    expect((await getMessages(other.id))!.messages.every(m => m.replyTo === null)).toBe(true)
+    expect(((await searchMessages('refer')).hits)[0].replyTo).toMatchObject({ id: quoted.id })
+
+    await db.update(messages).set({ deletedAt: new Date() }).where(eq(messages.id, quoted.id))
+    expect((await getMessages(chat.id))!.messages[0].replyTo).toBeNull()
+  })
+})
+
+describe('mentions', () => {
+  beforeEach(resetDb)
+
+  it('rewrites a WhatsApp @digits mention to the name the archive knows, and leaves the rest alone', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
+    // A LID-addressed sender, known only by the push name on their own message.
+    await addMessage(chat, { text: 'hi', senderExternalId: '155500000001@lid', senderName: 'Grace Hopper', sentAt: new Date(1000) })
+    // A phone-addressed contact in the owner's contact list.
+    await syncContacts(conn.id, 'whatsapp', [{ externalId: '15559990000@s.whatsapp.net', displayName: 'Saved Ada', phone: null }])
+    const m = await addMessage(chat, {
+      text: '@155500000001 can you confirm with @15559990000? @999 too, and ada@example.com',
+      sentAt: new Date(2000),
+    })
+    const page = (await getMessages(chat.id))!.messages
+    expect(page.find(x => x.id === m.id)!.text)
+      .toBe('@Grace Hopper can you confirm with @Saved Ada? @999 too, and ada@example.com')
+    // The inbox and search rewrite the same way.
+    expect((await recentMessages()).messages[0].text).toContain('@Grace Hopper')
+    expect(((await searchMessages('confirm')).hits)[0].text).toContain('@Saved Ada')
+
+    // The address book outranks both once the person is linked.
+    const p = await createPerson({ name: 'Grace H.' })
+    await linkIdentity(p.id, { channel: 'whatsapp', externalId: '155500000001@lid' })
+    expect((await getMessages(chat.id))!.messages[0].text).toContain('@Grace H. can')
+
+    // Telegram text is never touched: its mentions are @usernames, and a
+    // number after @ there is somebody's handle.
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
+    await addMessage(tg, { text: '@155500000001 hi' })
+    expect((await getMessages(tg.id))!.messages[0].text).toBe('@155500000001 hi')
+  })
+})
+
+describe('search cursors', () => {
+  beforeEach(resetDb)
+
+  it('a malformed cursor starts at the top rather than returning nothing', async () => {
+    const chat = await makeChat(await makeConnection())
+    await addMessage(chat, { text: 'dentist one' })
+    await addMessage(chat, { text: 'dentist two' })
+    const b64 = (raw: string) => Buffer.from(raw, 'utf8').toString('base64url')
+    for (const cursor of [b64('r::x'), b64('t::x'), b64('r:abc:x'), b64('r:1:'), 'garbage']) {
+      expect((await searchMessages('dentist', { cursor })).hits, cursor).toHaveLength(2)
+      expect((await searchMessages('dentist', { cursor, order: 'newest' })).hits, cursor).toHaveLength(2)
+    }
+  })
+})
+
 describe('searchMessages', () => {
   beforeEach(resetDb)
 
@@ -145,10 +226,10 @@ describe('searchMessages', () => {
     const b = await makeChat(conn, { title: 'B' })
     await addMessage(a, { text: 'the dentist appointment is monday' })
     await addMessage(b, { text: 'dentist bills again' })
-    const all = await searchMessages('dentist')
+    const all = (await searchMessages('dentist')).hits
     expect(all).toHaveLength(2)
     expect(all.every(h => h.chatTitle === 'A' || h.chatTitle === 'B')).toBe(true)
-    const scoped = await searchMessages('dentist', { chatId: a.id })
+    const scoped = (await searchMessages('dentist', { chatId: a.id })).hits
     expect(scoped).toHaveLength(1)
     expect(scoped[0].text).toContain('monday')
     expect(scoped[0].chatId).toBe(a.id)
@@ -157,9 +238,9 @@ describe('searchMessages', () => {
   it('matches every token, and returns nothing for a miss', async () => {
     const chat = await makeChat(await makeConnection())
     await addMessage(chat, { text: 'ring the dentist on monday' })
-    expect(await searchMessages('dentist monday')).toHaveLength(1)
-    expect(await searchMessages('dentist tuesday')).toEqual([])
-    expect(await searchMessages('zebra')).toEqual([])
+    expect((await searchMessages('dentist monday')).hits).toHaveLength(1)
+    expect((await searchMessages('dentist tuesday')).hits).toEqual([])
+    expect((await searchMessages('zebra')).hits).toEqual([])
   })
 
   it('treats FTS operators as literal text instead of syntax', async () => {
@@ -167,21 +248,21 @@ describe('searchMessages', () => {
     await addMessage(chat, { text: 'dentist appointment' })
     // A bare "OR"/"NEAR"/quote from a person's search box must not become an
     // FTS expression — or, worse, a syntax error thrown at the reader.
-    expect(await searchMessages('dentist OR zebra')).toEqual([])
-    expect(await searchMessages('"dentist')).toHaveLength(1)
-    expect(await searchMessages('   ')).toEqual([])
+    expect((await searchMessages('dentist OR zebra')).hits).toEqual([])
+    expect((await searchMessages('"dentist')).hits).toHaveLength(1)
+    expect((await searchMessages('   ')).hits).toEqual([])
   })
 
   it('never returns a deleted message', async () => {
     const chat = await makeChat(await makeConnection())
     await addMessage(chat, { text: 'unsent secret', deletedAt: new Date() })
-    expect(await searchMessages('unsent')).toEqual([])
+    expect((await searchMessages('unsent')).hits).toEqual([])
   })
 
   it('honours the limit', async () => {
     const chat = await makeChat(await makeConnection())
     for (let i = 0; i < 5; i++) await addMessage(chat, { text: `dentist ${i}` })
-    expect(await searchMessages('dentist', { limit: 2 })).toHaveLength(2)
+    expect((await searchMessages('dentist', { limit: 2 })).hits).toHaveLength(2)
   })
 })
 
@@ -193,6 +274,36 @@ describe('people on chats and messages', () => {
   beforeEach(resetDb)
 
   const ADA = '15551230000@s.whatsapp.net'
+
+  it('names one sender the same in every chat: the address book first, then any push name they ever carried', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const live = await makeChat(conn, { kind: 'group', title: 'Air Asia' })
+    const synced = await makeChat(conn, { kind: 'group', title: 'Old group' })
+    // A live message carries the push name; a history-synced one never does.
+    // The reader must not meet "Bob" in one chat and "+1555…" in the next.
+    await addMessage(live, { text: 'slide attached', senderExternalId: ADA, senderName: 'Bob', sentAt: new Date(2000) })
+    await addMessage(synced, { text: 'older', senderExternalId: ADA, senderName: null, sentAt: new Date(1000) })
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Bob')
+    // A push name on the other channel is somebody else's.
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
+    await addMessage(tg, { text: 'tg', senderExternalId: ADA, senderName: null })
+    expect((await getMessages(tg.id))!.messages[0].senderName).toBeNull()
+
+    // What the owner wrote in the address book outranks every channel name,
+    // the same rule a direct chat's title already follows.
+    const p = await createPerson({ name: 'Bob Kane' })
+    await linkIdentity(p.id, { channel: 'whatsapp', externalId: ADA })
+    expect((await getMessages(live.id))!.messages[0].senderName).toBe('Bob Kane')
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Bob Kane')
+    // The sender filter matches what is shown AND what the channel called
+    // them: an agent that learned a name from an older transcript can still
+    // filter by it after the owner named the person differently.
+    expect(((await searchMessages('older', { sender: 'kane' })).hits).map(m => m.text)).toEqual(['older'])
+    expect(((await searchMessages('slide', { sender: 'bob' })).hits).map(m => m.text)).toEqual(['slide attached'])
+    // channelName is the name without the address book: what the channel showed.
+    expect((await getMessages(live.id))!.messages[0].channelName).toBe('Bob')
+    expect((await getMessages(synced.id))!.messages[0].channelName).toBe('Bob')
+  })
 
   it('names a direct chat after the linked person, ahead of every other rule', async () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
@@ -225,22 +336,34 @@ describe('people on chats and messages', () => {
     expect(row).toMatchObject({ title: '+15551230000', person: null })
   })
 
-  it('puts the person on a message by its sender identity, and never on the owner\'s own', async () => {
-    const conn = await makeConnection({ channel: 'telegram' })
+  it('puts the person on a message by its sender identity, and the owner’s own person on the owner’s lines', async () => {
+    const conn = await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '987654321' })
     const group = await makeChat(conn, { kind: 'group', title: 'Team' })
     await addMessage(group, { senderName: 'Ada', senderExternalId: '123456789', text: 'from ada' })
     await addMessage(group, { senderName: 'Me', senderExternalId: '987654321', fromOwner: true, text: 'from me' })
 
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'telegram', externalId: '123456789' })
-    // Even an owner identity that IS in the address book stays anonymous on
-    // the owner's own lines: from_owner is the archive's answer to "who".
-    const me = await createPerson({ name: 'The Owner' })
-    await linkIdentity(me.id, { channel: 'telegram', externalId: '987654321' })
+    // A contact row that happens to hold the owner's id is NOT who the
+    // owner's lines belong to: from_owner is the archive's answer to "who",
+    // and it resolves to the owner's own row, once there is one.
+    const impostor = await createPerson({ name: 'Saved As Me' })
+    await linkIdentity(impostor.id, { channel: 'telegram', externalId: '987654321' })
+    const before = new Map((await getMessages(group.id))!.messages.map(m => [m.text, m.person]))
+    expect(before.get('from ada')).toEqual({ id: ada.id, name: 'Ada Lovelace' })
+    expect(before.get('from me')).toBeNull()
 
-    const byText = new Map((await getMessages(group.id))!.messages.map(m => [m.text, m.person]))
-    expect(byText.get('from ada')).toEqual({ id: ada.id, name: 'Ada Lovelace' })
-    expect(byText.get('from me')).toBeNull()
+    await unlinkIdentityOf(impostor.id)
+    await populatePeople()
+    const me = (await ownerPerson())!
+    const after = (await getMessages(group.id))!.messages
+    const mine = after.find(m => m.text === 'from me')!
+    expect(mine.person).toEqual({ id: me.id, name: 'Casey' })
+    expect(mine.senderName).toBe('Casey')
+    expect(after.find(m => m.text === 'from ada')!.person).toEqual({ id: ada.id, name: 'Ada Lovelace' })
+    // Hidden, the owner is nobody here too.
+    await archivePerson(me.id)
+    expect((await getMessages(group.id))!.messages.find(m => m.text === 'from me')!.person).toBeNull()
   })
 
   it('does not cross a telegram identity with a whatsapp one that spells the same id', async () => {
@@ -311,7 +434,7 @@ describe('people on chats and messages', () => {
     await addMessage(group, { senderName: null, senderExternalId: ADA, text: 'the dentist appointment' })
     expect((await getMessages(group.id))!.messages[0].senderName).toBe('This Connection')
     // The same expression, through the other read path.
-    expect((await searchMessages('dentist'))[0].senderName).toBe('This Connection')
+    expect(((await searchMessages('dentist')).hits)[0].senderName).toBe('This Connection')
   })
 
   // A search hit and the chat list are two views of the same chat; they must
@@ -326,13 +449,13 @@ describe('people on chats and messages', () => {
 
     const listed = () => listChats().then(cs => cs.find(c => c.id === dm.id)!.title)
     expect(await listed()).toBe('Bo')
-    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Bo')
+    expect(((await searchMessages('dentist')).hits)[0].chatTitle).toBe('Bo')
 
     // …and once the owner names them, both say the name the owner chose.
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
     expect(await listed()).toBe('Ada Lovelace')
-    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Ada Lovelace')
+    expect(((await searchMessages('dentist')).hits)[0].chatTitle).toBe('Ada Lovelace')
   })
 
   it('a hidden person names nothing: every read path falls back', async () => {
@@ -350,7 +473,7 @@ describe('people on chats and messages', () => {
     expect((await listChats())[0]).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
     expect((await getMessages(dm.id))!.chat).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
     expect((await getMessages(dm.id))!.messages[0].person).toBeNull()
-    expect((await searchMessages('dentist'))[0].person).toBeNull()
+    expect(((await searchMessages('dentist')).hits)[0].person).toBeNull()
   })
 
   it('carries the person and the contact name into search results', async () => {
@@ -361,7 +484,11 @@ describe('people on chats and messages', () => {
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
 
-    const [hit] = await searchMessages('dentist')
-    expect(hit).toMatchObject({ senderName: 'Saved Contact', person: { id: ada.id, name: 'Ada Lovelace' } })
+    // The address-book name is the sender label once the person is linked
+    // (the contact name was, until then); the person rides alongside.
+    const [hit] = (await searchMessages('dentist')).hits
+    expect(hit).toMatchObject({ senderName: 'Ada Lovelace', person: { id: ada.id, name: 'Ada Lovelace' } })
+    await archivePerson(ada.id)
+    expect(((await searchMessages('dentist')).hits)[0]).toMatchObject({ senderName: 'Saved Contact', person: null })
   })
 })

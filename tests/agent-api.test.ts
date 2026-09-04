@@ -49,6 +49,30 @@ describe('pageChats — the aimed chat list', () => {
     expect(ids(await pageChats({ channel: 'telegram', kind: 'group' }))).toEqual([])
   })
 
+  it('reports how many chats match the filters, and tells two rows for one chat apart', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await chatAt(tg, 'TG DM', '2026-01-01T00:00:00Z')
+    await chatAt(wa, 'WA DM', '2026-01-02T00:00:00Z')
+    const group = await chatAt(wa, 'WA Group', '2026-01-03T00:00:00Z', { kind: 'group' })
+
+    // total counts every match, not the page.
+    const page = await pageChats({ limit: 1 })
+    expect(page.chats).toHaveLength(1)
+    expect(page.total).toBe(3)
+    expect((await pageChats({ kind: 'group' })).total).toBe(1)
+    expect((await pageChats({ channel: 'whatsapp', limit: 1, cursor: page.nextCursor! })).total).toBe(2)
+    expect((await pageChats({ q: 'nothing' })).total).toBe(0)
+
+    // A re-paired account makes a second row for every chat: same title,
+    // different id and count. connectionId and createdAt are what tell them
+    // apart, and connectionId is the id whoami reports.
+    const summary = page.chats[0]
+    expect(summary).toMatchObject({ id: group.id, connectionId: wa.id })
+    expect(summary.createdAt).toBeInstanceOf(Date)
+    expect(JSON.stringify(summary)).not.toContain('acct-')
+  })
+
   it('matches q against the displayed title, case-insensitively, with LIKE wildcards taken literally', async () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
     const air = await chatAt(conn, 'Air Asia flight', '2026-01-01T00:00:00Z')
@@ -98,10 +122,57 @@ describe('pageChats — the aimed chat list', () => {
     expect(byId.get(chat.id)).toBe('x'.repeat(160))
     expect(byId.get(empty.id)).toBeNull()
   })
+
+  it('snippet names what a textless latest message is, and looks past system rows', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Air Asia group' })
+    const snippet = async () => (await pageChats()).chats[0].snippet
+    await addMessage(chat, { text: 'see attached', sentAt: at('2026-01-01T00:00:00Z') })
+    await addMessage(chat, { text: null, type: 'image', sentAt: at('2026-01-02T00:00:00Z') })
+    expect(await snippet()).toBe('[image]')
+    await addMessage(chat, { text: 'a caption', type: 'image', sentAt: at('2026-01-03T00:00:00Z') })
+    expect(await snippet()).toBe('a caption')
+    await addMessage(chat, { text: '👍', type: 'reaction', sentAt: at('2026-01-04T00:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    // A row the parser could not name and that says nothing is not the
+    // latest useful message: the snippet walks back past it. So does a
+    // system row (someone joined, the subject changed).
+    await addMessage(chat, { text: null, type: 'unknown', sentAt: at('2026-01-05T00:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    await addMessage(chat, { text: null, type: 'system', sentAt: at('2026-01-06T00:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    // A text row with nothing in it (an extendedTextMessage that carried only
+    // context) and an un-reaction (a reaction with empty text) say nothing
+    // either; neither may be the snippet.
+    await addMessage(chat, { text: null, type: 'text', sentAt: at('2026-01-06T12:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    await addMessage(chat, { text: null, type: 'reaction', sentAt: at('2026-01-06T13:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    const onlyNoise = await makeChat(conn, { kind: 'group', title: 'New group' })
+    await addMessage(onlyNoise, { text: null, type: 'system', sentAt: at('2026-01-07T00:00:00Z') })
+    await addMessage(onlyNoise, { text: null, type: 'unknown', sentAt: at('2026-01-08T00:00:00Z') })
+    expect((await pageChats()).chats.find(c => c.id === onlyNoise.id)!.snippet).toBeNull()
+  })
 })
 
 describe('recentMessages — the inbox', () => {
   beforeEach(resetDb)
+
+  it('leaves broadcast channels out unless asked, the way a person opens their inbox', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const dm = await chatAt(tg, 'Mum', '2026-01-01T00:00:00Z')
+    const group = await chatAt(tg, 'Team', '2026-01-02T00:00:00Z', { kind: 'group' })
+    const feed = await chatAt(tg, 'Announcements', '2026-01-03T00:00:00Z', { kind: 'channel' })
+
+    const ids = (o: { messages: Array<{ chatId: string }> }) => o.messages.map(m => m.chatId)
+    // The default is what a person sees when they open the app: their
+    // conversations, not the announcement firehose beside them.
+    expect(ids(await recentMessages())).toEqual([group.id, dm.id])
+    expect(ids(await recentMessages({ includeChannels: true }))).toEqual([feed.id, group.id, dm.id])
+    // Asking for a kind is asking for it.
+    expect(ids(await recentMessages({ kind: 'channel' }))).toEqual([feed.id])
+    expect(ids(await recentMessages({ kind: 'dm' }))).toEqual([dm.id])
+  })
 
   it('lists the newest messages across every chat, with the chat named on each line', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
@@ -150,7 +221,7 @@ describe('searchMessages — filters', () => {
     await addMessage(work, { text: 'dentist wednesday', senderName: 'Kim Smith', sentAt: at('2026-03-01T00:00:00Z') })
 
     const texts = async (opts: Parameters<typeof searchMessages>[1]) =>
-      (await searchMessages('dentist', opts)).map(h => h.text).sort()
+      ((await searchMessages('dentist', opts)).hits).map(h => h.text).sort()
 
     expect(await texts({})).toEqual(['dentist monday', 'dentist tuesday', 'dentist wednesday'])
     expect(await texts({ channel: 'telegram' })).toEqual(['dentist monday'])
@@ -158,9 +229,9 @@ describe('searchMessages — filters', () => {
     expect(await texts({ sender: 'kim' })).toEqual(['dentist tuesday', 'dentist wednesday'])
     expect(await texts({ after: at('2026-01-15T00:00:00Z'), before: at('2026-02-15T00:00:00Z') })).toEqual(['dentist tuesday'])
     expect(await texts({ chatId: mum.id })).toEqual(['dentist monday'])
-    expect((await searchMessages('dentist', { limit: 1 }))).toHaveLength(1)
+    expect(((await searchMessages('dentist', { limit: 1 })).hits)).toHaveLength(1)
 
-    const [hit] = await searchMessages('dentist', { channel: 'telegram' })
+    const [hit] = (await searchMessages('dentist', { channel: 'telegram' })).hits
     expect(hit).toMatchObject({ chatId: mum.id, chatTitle: 'Mum', channel: 'telegram', kind: 'dm' })
   })
 
@@ -170,8 +241,51 @@ describe('searchMessages — filters', () => {
     await addMessage(chat, { text: 'dentist', senderName: null, senderExternalId: '15551230000@s.whatsapp.net' })
     const { id } = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
-    expect(await searchMessages('dentist', { sender: 'lovelace' })).toHaveLength(1)
-    expect(await searchMessages('dentist', { sender: 'babbage' })).toEqual([])
+    expect((await searchMessages('dentist', { sender: 'lovelace' })).hits).toHaveLength(1)
+    expect((await searchMessages('dentist', { sender: 'babbage' })).hits).toEqual([])
+  })
+})
+
+describe('searchMessages — order and paging', () => {
+  beforeEach(resetDb)
+
+  async function three() {
+    const chat = await makeChat(await makeConnection(), { title: 'Mum' })
+    const a = await addMessage(chat, { text: 'umbrella one', sentAt: at('2026-01-01T00:00:00Z') })
+    const b = await addMessage(chat, { text: 'umbrella two', sentAt: at('2026-01-02T00:00:00Z') })
+    const c = await addMessage(chat, { text: 'umbrella three', sentAt: at('2026-01-03T00:00:00Z') })
+    return { a, b, c }
+  }
+
+  it('pages relevance order with a cursor and ends with null', async () => {
+    const { a, b, c } = await three()
+    const first = await searchMessages('umbrella', { limit: 2 })
+    expect(first.hits).toHaveLength(2)
+    expect(first.nextCursor).not.toBeNull()
+    const second = await searchMessages('umbrella', { limit: 2, cursor: first.nextCursor! })
+    expect(second.hits).toHaveLength(1)
+    expect(second.nextCursor).toBeNull()
+    expect([...first.hits, ...second.hits].map(h => h.id).sort()).toEqual([a.id, b.id, c.id].sort())
+    // Nothing is counted twice and nothing is skipped: every hit exactly once.
+    expect(new Set([...first.hits, ...second.hits].map(h => h.id)).size).toBe(3)
+  })
+
+  it('orders newest first when asked, or whenever a date bound is given, and pages that too', async () => {
+    const { a, b, c } = await three()
+    const newest = await searchMessages('umbrella', { order: 'newest', limit: 2 })
+    expect(newest.hits.map(h => h.id)).toEqual([c.id, b.id])
+    const rest = await searchMessages('umbrella', { order: 'newest', limit: 2, cursor: newest.nextCursor! })
+    expect(rest.hits.map(h => h.id)).toEqual([a.id])
+    expect(rest.nextCursor).toBeNull()
+    // A date range is a "what happened then" question: newest first by default.
+    const ranged = await searchMessages('umbrella', { after: at('2025-12-31T00:00:00Z') })
+    expect(ranged.hits.map(h => h.id)).toEqual([c.id, b.id, a.id])
+    // …unless relevance is asked for explicitly.
+    expect((await searchMessages('umbrella', { after: at('2025-12-31T00:00:00Z'), order: 'relevance' })).hits).toHaveLength(3)
+    // A cursor minted for one order is ignored by the other, and a bad cursor
+    // starts from the top.
+    expect((await searchMessages('umbrella', { cursor: newest.nextCursor! })).hits).toHaveLength(3)
+    expect((await searchMessages('umbrella', { cursor: 'garbage' })).hits).toHaveLength(3)
   })
 })
 
@@ -225,15 +339,51 @@ describe('publicPeople — which chats', () => {
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
     await createPerson({ name: 'Charles Babbage' })
 
-    const [ada] = await publicPeople({ q: 'ada' })
+    // Lean by default: the direct chat ids ride along (that is the one-hop
+    // answer to "open my chat with Ada"), the full chat list only on request.
+    const { people: [ada] } = await publicPeople({ q: 'ada' })
+    expect(Object.keys(ada).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes', 'self'])
     expect(ada.name).toBe('Ada Lovelace')
     expect(ada.chatCount).toBe(2)
-    expect(ada.chats.map(c => c.id).sort()).toEqual([dm.id, group.id].sort())
-    expect(ada.chats.find(c => c.id === dm.id)).toMatchObject({ title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' })
-    expect(ada.chats.find(c => c.id === group.id)).toMatchObject({ title: 'Work', kind: 'group' })
+    expect(ada.dm).toEqual([{ id: dm.id, channel: 'whatsapp' }])
     expect(JSON.stringify(ada)).not.toContain('1555123')
-    expect((await publicPeople()).map(p => p.name).sort()).toEqual(['Ada Lovelace', 'Charles Babbage'])
-    expect(await publicPeople({ q: 'nobody' })).toEqual([])
+
+    const { people: [full] } = await publicPeople({ q: 'ada', includeChats: true })
+    expect(full.chats!.map(c => c.id).sort()).toEqual([dm.id, group.id].sort())
+    expect(full.chats!.find(c => c.id === dm.id)).toMatchObject({ title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' })
+    expect(full.chats!.find(c => c.id === group.id)).toMatchObject({ title: 'Work', kind: 'group' })
+
+    expect((await publicPeople()).people.map(p => p.name)).toEqual(['Ada Lovelace', 'Charles Babbage'])
+    expect(await publicPeople({ q: 'nobody' })).toEqual({ people: [], nextCursor: null })
+  })
+
+  it('pages by name with a cursor in one ordering, accents included', async () => {
+    // The sort and the cursor keyset must agree, or a page boundary on a
+    // non-ASCII name skips everyone after it.
+    for (const name of ['Ada', 'Émile', 'Fred', 'Ólafur', 'Zed']) await createPerson({ name })
+    const seen: string[] = []
+    let cursor: string | undefined
+    for (let i = 0; i < 10; i++) {
+      const page = await publicPeople({ limit: 2, cursor })
+      seen.push(...page.people.map(p => p.name))
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+    }
+    expect(seen).toHaveLength(5)
+    expect(new Set(seen).size).toBe(5)
+  })
+
+  it('pages by name with a cursor, and clamps the limit', async () => {
+    for (const name of ['Charles', 'ada', 'Bob']) await createPerson({ name })
+    const first = await publicPeople({ limit: 2 })
+    expect(first.people.map(p => p.name)).toEqual(['ada', 'Bob'])
+    expect(first.nextCursor).not.toBeNull()
+    const second = await publicPeople({ limit: 2, cursor: first.nextCursor! })
+    expect(second.people.map(p => p.name)).toEqual(['Charles'])
+    expect(second.nextCursor).toBeNull()
+    // A cursor nobody minted starts from the top rather than failing.
+    expect((await publicPeople({ cursor: 'not-a-cursor' })).people).toHaveLength(3)
+    expect((await publicPeople({ limit: 0 })).people).toHaveLength(1)
   })
 })
 
@@ -293,7 +443,7 @@ describe('the MCP surface', () => {
     await addMessage(await makeChat(tg, { title: 'Mum' }), { text: 'dentist monday', senderName: 'Mum' })
     await addMessage(await makeChat(wa, { title: 'Work', kind: 'group' }), { text: 'dentist tuesday', senderName: 'Kim' })
     const key = await agentKey()
-    const hits = JSON.parse(await callTool(key, 'search_messages', { query: 'dentist', channel: 'whatsapp', sender: 'kim', limit: 5 })) as Array<{ text: string }>
+    const { hits } = JSON.parse(await callTool(key, 'search_messages', { query: 'dentist', channel: 'whatsapp', sender: 'kim', limit: 5 })) as { hits: Array<{ text: string }> }
     expect(hits.map(h => h.text)).toEqual(['dentist tuesday'])
   })
 
@@ -352,6 +502,18 @@ describe('the MCP surface', () => {
     expect(out).toMatchObject({ status: 'pending', url: null })
   })
 
+  it('recent_messages leaves channels out by default and takes include_channels', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await chatAt(tg, 'Mum', '2026-01-01T00:00:00Z')
+    await chatAt(tg, 'Announcements', '2026-01-02T00:00:00Z', { kind: 'channel' })
+    const key = await agentKey()
+    const titles = async (args: Record<string, unknown>) =>
+      (JSON.parse(await callTool(key, 'recent_messages', args)) as { messages: Array<{ chatTitle: string }> }).messages.map(m => m.chatTitle)
+    expect(await titles({})).toEqual(['Mum'])
+    expect(await titles({ include_channels: true })).toEqual(['Announcements', 'Mum'])
+    expect(await titles({ kind: 'channel' })).toEqual(['Announcements'])
+  })
+
   it('list_people takes q and names each person’s chats', async () => {
     const wa = await makeConnection({ channel: 'whatsapp' })
     const dm = await makeChat(wa, { title: null, externalChatId: '15551230000@s.whatsapp.net' })
@@ -359,12 +521,18 @@ describe('the MCP surface', () => {
     const { id } = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
     await createPerson({ name: 'Charles Babbage' })
-    const out = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada' })) as Array<{
-      name: string; chats: Array<{ id: string; title: string | null; channel: string; kind: string }>
-    }>
-    expect(out.map(p => p.name)).toEqual(['Ada Lovelace'])
-    expect(out[0].chats).toEqual([{ id: dm.id, title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' }])
-    expect(JSON.stringify(out)).not.toContain('1555123')
+    type Person = { name: string; dm: Array<{ id: string; channel: string }>; chats?: Array<{ id: string; title: string | null; channel: string; kind: string }> }
+    const out = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada' })) as { people: Person[]; nextCursor: string | null }
+    expect(out.people.map(p => p.name)).toEqual(['Ada Lovelace'])
+    expect(out.people[0].dm).toEqual([{ id: dm.id, channel: 'whatsapp' }])
+    expect(out.people[0].chats).toBeUndefined()
+    expect(out.nextCursor).toBeNull()
+    const full = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada', include_chats: true })) as { people: Person[] }
+    expect(full.people[0].chats).toEqual([{ id: dm.id, title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' }])
+    expect(JSON.stringify(full)).not.toContain('1555123')
+    const paged = JSON.parse(await callTool(await agentKey(), 'list_people', { limit: 1 })) as { people: Person[]; nextCursor: string | null }
+    expect(paged.people).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
   })
 
   it('whoami falls back to the name the contact cache holds for the account itself', async () => {

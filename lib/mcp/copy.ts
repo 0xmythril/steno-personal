@@ -20,7 +20,9 @@ export const NO_CONNECTION = 'No personal account is connected.'
 export const MEDIA_URL_NOTE =
   'When a message has an attachment, media.status says whether its bytes are ready, still pending, failed, or '
   + 'unavailable; only a ready one has media.url, a path on this same server — the origin this MCP endpoint is served '
-  + 'from — fetched with the same bearer key, and get_media returns a ready image inline by its media.id.'
+  + 'from — fetched with the same bearer key, and get_media returns a ready image inline by its media.id. '
+  + 'media.analysis says whether text was extracted from it: off (no enrichment key or switch in Settings), queued, '
+  + 'done, failed, skipped, or unsupported (documents are not analysed yet).'
 
 // Chats and messages can carry a `person`, and an agent that has only ever
 // seen channel ids needs to be told what that field is before it starts
@@ -29,7 +31,8 @@ export const MEDIA_URL_NOTE =
 // and appended to every tool whose result can contain the field.
 export const PERSON_NOTE =
   'Chats and messages carry a person field — { id, name } — when the sender or counterparty is in the '
-  + "address book; the id is this instance's own, usable only with list_people."
+  + "address book; the id is this instance's own, usable only with list_people. The owner's own messages "
+  + '(fromOwner: true) carry the owner as their person, the one list_people marks self: true.'
 
 export const CHAT_NOT_FOUND = 'Chat not found.'
 export const MEDIA_NOT_FOUND = 'Media not found.'

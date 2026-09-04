@@ -50,4 +50,17 @@ describe('connections page', () => {
     expect(page).toMatch(/<ConnectPanel[\s\S]*?channel=\{channel\}/)
   })
 
+
+  it('points at Settings for the agent once an account is live, and not before', () => {
+    // Connecting a phone is step one; connecting an agent is the obvious step
+    // two, and it lives under Settings. The page says so — but only once
+    // there is an archive for an agent to read, so a fresh instance is not
+    // sent to make a key for nothing.
+    const src = readFileSync('app/connections/page.tsx', 'utf8')
+    expect(src).toMatch(/Connect your agent/)
+    // A button, not a word in a sentence: the way on is the one control here.
+    expect(src).toMatch(/href="\/settings" className="btn primary">Make an access key/)
+    const pointer = src.slice(src.indexOf('Connect your agent') - 400, src.indexOf('Connect your agent'))
+    expect(pointer).toMatch(/anyLive/)
+  })
 })

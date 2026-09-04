@@ -54,10 +54,17 @@ export default async function PersonPage({ params, searchParams }: {
             <p className="eyebrow">Person</p>
             <h1>
               {person.name}
+              {person.isOwner && <> <span className="chip note">You</span></>}
               {person.nameSource === 'owner' && <> <span className="chip note">alias</span></>}
             </h1>
           </div>
         </div>
+        {person.isOwner && (
+          <p className="help">
+            This is you: every message you sent carries this name for your agents, and the name
+            here is yours to change.
+          </p>
+        )}
         {person.notes && <p className="lede">{person.notes}</p>}
         {error && <p className="danger" role="alert">{error}</p>}
 

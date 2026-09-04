@@ -38,8 +38,9 @@ export function groupRuns(items: MessageView[]): Run[] {
     const person = m.fromOwner ? null : m.person
     const key = m.fromOwner ? 'me' : person ? `person:${person.id}` : `them:${stored}`
     const senderLabel = person ? person.name : stored
-    // Only worth showing when it says something the label does not.
-    const rawLabel = person && m.senderName && m.senderName !== person.name ? m.senderName : null
+    // Only worth showing when it says something the label does not: the name
+    // the channel used, when the owner's address book calls them otherwise.
+    const rawLabel = person && m.channelName && m.channelName !== person.name ? m.channelName : null
     const last = runs[runs.length - 1]
     if (last && last.senderKey === key) { last.messages.push(m); continue }
     runs.push({ senderKey: key, senderLabel, rawLabel, isMe: m.fromOwner, messages: [m] })

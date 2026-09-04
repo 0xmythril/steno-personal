@@ -207,6 +207,8 @@ th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing
 td { padding: 11px 14px; border-bottom: 1px solid var(--hairline); color: var(--body); vertical-align: middle; }
 tr:last-child td { border-bottom: 0; }
 td.name, td.name a { color: var(--ink); font-weight: 600; }
+/* A run of ordinary words inside a name cell: "on WhatsApp" beside a name in a merge suggestion. */
+td.name .on { color: var(--body); font-weight: 400; }
 td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 td.end { text-align: right; white-space: nowrap; }
 

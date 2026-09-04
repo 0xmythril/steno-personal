@@ -353,8 +353,8 @@ deployer fills in:
 | `DATA_DIR` | `/data` | Matches the volume mount path below. |
 | `SECRET_KEY` | `${{secret(48)}}` | A different random secret per deploy. `secret(length?, alphabet?)` is a Railway template variable function evaluated at deploy time; it defaults to 32 characters, and 48 comfortably clears the 32-character minimum. Docs: <https://docs.railway.com/templates/create> ("Template variable functions"). |
 | `PORT` | `3000` | The supervisor passes it to Next. |
-| `TELEGRAM_API_ID` | empty, deployer-supplied | The repo ships **no** working pair (`TELEGRAM_DEFAULT_API_ID` is `0`), so leave the value blank and let the deployer paste their own from my.telegram.org. Blank is a valid state: the worker warns once and runs without Telegram, and Setup shows the Telegram card as **Not available** with the two variable names on it. **Since the project ships its own pair, leave both variables out of the template entirely** — a blank value falls back to the shipped pair anyway, and a visible empty field only invites the deployer to think one is needed. |
-| `TELEGRAM_API_HASH` | empty, deployer-supplied | Same; both are needed together before a Telegram QR appears. |
+| `TELEGRAM_API_ID` | leave out of the template | The project ships its own pair (`lib/channels/telegram-defaults.ts`), so a one-click deploy needs nothing from my.telegram.org. A blank value falls back to the shipped pair anyway, and a visible empty field only invites the deployer to think one is needed. A self-hoster who wants their own application sets both variables together; `TELEGRAM_API_ID=0` runs without Telegram. |
+| `TELEGRAM_API_HASH` | leave out of the template | Same. Half a pair is refused at boot. |
 
 **5. Attach the volume.** Right-click the service in the composer → **Attach
 Volume** → mount path `/data`. One volume, that path, nothing else — it must
