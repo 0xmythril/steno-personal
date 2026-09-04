@@ -237,6 +237,22 @@ describe('content that used to be unknown', () => {
   })
 })
 
+describe('replies', () => {
+  it('a reply names the message it quotes, whichever node carries the context', () => {
+    const text = parseWaMessage(groupText({ message: { extendedTextMessage: { text: 'I refer to here', contextInfo: { stanzaId: 'WA0', quotedMessage: { conversation: 'x' } } } } }))!
+    expect(text.replyToExternalId).toBe('WA0')
+    const image = parseWaMessage(groupText({ message: { imageMessage: { mimetype: 'image/jpeg', caption: 'this one', contextInfo: { stanzaId: 'WA9' } } } }))!
+    expect(image.replyToExternalId).toBe('WA9')
+    expect(parseWaMessage(groupText())!.replyToExternalId).toBeNull()
+    // A mention-only context is not a reply.
+    expect(parseWaMessage(groupText({ message: { extendedTextMessage: { text: '@1 hi', contextInfo: { mentionedJid: ['1@lid'] } } } }))!.replyToExternalId).toBeNull()
+  })
+  it('toIncoming carries it', () => {
+    const p = parseWaMessage(groupText({ message: { extendedTextMessage: { text: 'r', contextInfo: { stanzaId: 'WA0' } } } }))!
+    expect(toIncoming(p, { chatTitle: null }).replyToExternalId).toBe('WA0')
+  })
+})
+
 describe('toIncoming', () => {
   it('builds the shared DTO, letting the context override the ids', () => {
     const p = parseWaMessage(groupText())!
@@ -253,6 +269,7 @@ describe('toIncoming', () => {
       type: 'text',
       text: 'hello there',
       media: null,
+      replyToExternalId: null,
       raw: p.raw,
     })
   })

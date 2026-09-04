@@ -182,6 +182,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     type: messageType(msg),
     text: msg.text || mediaText(msg),
     media: mediaMeta(msg),
+    replyToExternalId: msg.replyToMessage?.id != null ? String(msg.replyToMessage.id) : null,
     raw: encodeTlRaw(msg.raw),
   }
 }

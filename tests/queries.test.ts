@@ -4,7 +4,7 @@ import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
 import { archivePerson, createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
 import { db } from '@/lib/db/client'
-import { channelContacts, connections } from '@/lib/db/schema'
+import { channelContacts, connections, messages } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 describe('listChats', () => {
@@ -133,6 +133,30 @@ describe('getMessages', () => {
     await addMessage(chat, { text: 'hi', senderName: 'Bob', fromOwner: false, externalMessageId: '77' })
     const [m] = (await getMessages(chat.id))!.messages
     expect(m).toMatchObject({ externalMessageId: '77', senderName: 'Bob', fromOwner: false, type: 'text', editedAt: null, media: null })
+  })
+})
+
+describe('replies', () => {
+  beforeEach(resetDb)
+
+  it('resolves a reply to the quoted message in the same chat, and to nothing once that is deleted', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
+    const quoted = await addMessage(chat, { text: 'the deck is attached', senderName: 'Avir', externalMessageId: 'WA0', sentAt: new Date(1000) })
+    const reply = await addMessage(chat, { text: 'I refer to here', externalMessageId: 'WA1', replyToExternalId: 'WA0', sentAt: new Date(2000) })
+    // Same external id in ANOTHER chat is another message.
+    const other = await makeChat(conn, { kind: 'group', title: 'Other' })
+    await addMessage(other, { text: 'unrelated', externalMessageId: 'WA0' })
+    await addMessage(other, { text: 'dangling', externalMessageId: 'WA2', replyToExternalId: 'WA-missing' })
+
+    const page = (await getMessages(chat.id))!.messages
+    expect(page.find(m => m.id === reply.id)!.replyTo).toEqual({ id: quoted.id, senderName: 'Avir', text: 'the deck is attached' })
+    expect(page.find(m => m.id === quoted.id)!.replyTo).toBeNull()
+    expect((await getMessages(other.id))!.messages.every(m => m.replyTo === null)).toBe(true)
+    expect((await searchMessages('refer'))[0].replyTo).toMatchObject({ id: quoted.id })
+
+    await db.update(messages).set({ deletedAt: new Date() }).where(eq(messages.id, quoted.id))
+    expect((await getMessages(chat.id))!.messages[0].replyTo).toBeNull()
   })
 })
 

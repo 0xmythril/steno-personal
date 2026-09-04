@@ -184,7 +184,19 @@ export type ParsedWaMessage = {
   type: WaMessageType
   text: string | null
   media: WaMedia
+  replyToExternalId: string | null
   raw: unknown
+}
+
+// A reply carries contextInfo.stanzaId — the quoted message's id — on
+// whichever content node the message is (text, image, sticker…). A
+// contextInfo with mentions but no stanzaId is not a reply.
+export function replyTargetOf(content: any): string | null {
+  for (const node of Object.values(content ?? {})) {
+    const id = (node as any)?.contextInfo?.stanzaId
+    if (typeof id === 'string' && id) return id
+  }
+  return null
 }
 
 // Live group messages carry the sender at m.key.participant (LID-addressed
@@ -244,6 +256,7 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
     senderName: pushName,
     fromOwner,
     sentAt: tsToDate(m?.messageTimestamp),
+    replyToExternalId: replyTargetOf(content),
     raw: m,
   }
 
@@ -319,6 +332,7 @@ export function toIncoming(p: ParsedWaMessage, ctx: ToIncomingCtx): IncomingMess
     type: p.type,
     text: p.text,
     media: p.media,
+    replyToExternalId: p.replyToExternalId,
     raw: p.raw,
   }
 }

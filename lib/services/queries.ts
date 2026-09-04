@@ -48,11 +48,18 @@ export type MediaView = {
   extractedText: string | null; description: string | null
 }
 
+// The message a reply quotes, when the archive has it: enough to read the
+// reply in context without a second call. Null for a message that is not a
+// reply, for one whose target never reached the archive, and for one whose
+// target was deleted — deleted stays deleted, quoted or not.
+export type ReplyRef = { id: string; senderName: string | null; text: string | null }
+
 export type MessageView = {
   id: string; externalMessageId: string; senderName: string | null; fromOwner: boolean; sentAt: Date
   type: IncomingMessage['type']; text: string | null; editedAt: Date | null
   person: PersonRef | null
   media: MediaView | null
+  replyTo: ReplyRef | null
 }
 
 // A message with its chat named on the same line, for the read paths that
@@ -235,17 +242,34 @@ const senderLabelSql = sql<string | null>`coalesce(${senderPersonNameSql}, ${mes
 // an unaliased raw column there.
 const senderLabel = senderLabelSql.as('sender_name')
 
+// The quoted message, looked up by (this chat, the channel's id it carries).
+// (chat_id, external_message_id) is the messages unique index, so each is one
+// probe per row. Aliased `r` because the outer query is `messages` too. The
+// quoted text is cut like a snippet: the reply needs its context, not the
+// whole essay it answered.
+const quoted = (column: SQL): SQL => sql`(select ${column} from ${messages} r
+  where r.chat_id = ${messages.chatId} and r.external_message_id = ${messages.replyToExternalId}
+    and r.deleted_at is null)`
+const replyToId = nested(sql<string | null>`${quoted(sql`r.id`)}`).as('reply_to_id')
+const replyToSender = nested(sql<string | null>`${quoted(sql`r.sender_name`)}`).as('reply_to_sender')
+const replyToText = nested(sql<string | null>`${quoted(sql`substr(r.text, 1, ${SNIPPET_CHARS})`)}`).as('reply_to_text')
+
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
   senderName: senderLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
   personId: senderPersonId, personName: senderPersonName,
   hasMedia: messages.hasMedia,
+  replyToId, replyToSender, replyToText,
 }
 
 // Exactly what messageSelection returns: MessageView minus the field the
-// database cannot answer yet, with the person still in its two columns.
-type MessageRow = Omit<MessageView, 'media' | 'person'> & { personId: string | null; personName: string | null; hasMedia: boolean }
+// database cannot answer yet, with the person and the reply still in their
+// columns.
+type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo'> & {
+  personId: string | null; personName: string | null; hasMedia: boolean
+  replyToId: string | null; replyToSender: string | null; replyToText: string | null
+}
 
 // Every message has a media row from the moment ingest sees an attachment,
 // but not every archive was built that way; a message that says has_media
@@ -255,8 +279,12 @@ const unavailableMedia = (): MediaView => ({
   durationSeconds: null, isVoiceNote: null, extractedText: null, description: null,
 })
 
-const toView = ({ personId, personName, hasMedia, ...row }: MessageRow, media?: MediaView): MessageView =>
-  ({ ...row, person: personRef(personId, personName), media: media ?? (hasMedia ? unavailableMedia() : null) })
+const toView = ({ personId, personName, hasMedia, replyToId, replyToSender, replyToText, ...row }: MessageRow, media?: MediaView): MessageView => ({
+  ...row,
+  person: personRef(personId, personName),
+  media: media ?? (hasMedia ? unavailableMedia() : null),
+  replyTo: replyToId !== null ? { id: replyToId, senderName: replyToSender, text: replyToText } : null,
+})
 
 // base64url of `${sentAt}:${id}` — opaque to the caller, and a URL cursor
 // never leaks a timestamp or an id into a log or a Referer in readable form.

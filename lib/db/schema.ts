@@ -116,6 +116,10 @@ export const messages = sqliteTable('messages', {
   type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'reaction', 'poll', 'location', 'contact', 'system', 'unknown'] }).notNull(),
   text: text('text'),
   hasMedia: integer('has_media', { mode: 'boolean' }).notNull().default(false),
+  // The channel's own id of the message this one quotes, in the same chat.
+  // Resolved to our row on read (lib/services/queries.ts replyTo), never
+  // stored as our id: the quoted message may arrive after the reply.
+  replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
   raw: text('raw', { mode: 'json' }).notNull(),
