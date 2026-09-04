@@ -4,7 +4,7 @@
 :root {
   color-scheme: light dark;
   --paper:#F3F7F4; --card:#FFFFFF; --well:#E9F0EB; --ink:#14201B; --body:#2A3A33; --muted:#5E6F67;
-  --hairline:#D7E1DB; --rule:#B9D3C7; --mint:#A7E1D3; --mint-soft:#DDF3EC; --pine:#1E7A63; --pine-ink:#135A49;
+  --hairline:#D7E1DB; --edge:#7C8C84; --rule:#B9D3C7; --mint:#A7E1D3; --mint-soft:#DDF3EC; --pine:#1E7A63; --pine-ink:#135A49;
   --pencil:#E6F5FA; --btn-bg:#14201B; --btn-fg:#FFFFFF; --ok:#1E7A63; --warn:#9C610D; --bad:#B42318; --bad-soft:#FBE4E1;
   --shadow:0 1px 2px rgba(20,32,27,.06),0 8px 24px rgba(20,32,27,.06);
   --serif:var(--font-serif),Georgia,serif;
@@ -13,22 +13,22 @@
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
-  --hairline:#263029; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
+  --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 } }
 :root[data-theme="dark"] {
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
-  --hairline:#263029; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
+  --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 }
 
 /* Base */
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+
 body { margin: 0; background: var(--paper); color: var(--body); font-family: var(--sans); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; min-height: 100vh; }
-main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 18px 24px 40px; display: flex; flex-direction: column; gap: 14px; }
+main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 22px 24px 48px; display: flex; flex-direction: column; gap: 24px; }
 a { color: var(--pine); text-decoration: none; }
 a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--pine); outline-offset: 2px; border-radius: 4px; }
@@ -41,8 +41,8 @@ ul, ol { margin: 0; padding-left: 18px; }
 li { margin: 4px 0; }
 strong { color: var(--ink); font-weight: 600; }
 code, pre, kbd { font-family: var(--mono); }
-code { font-size: 12px; color: var(--ink); background: var(--well); border: 1px solid var(--hairline); border-radius: 6px; padding: 1px 6px; }
-pre { margin: 0; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--well); font-size: 12px; line-height: 1.5; color: var(--ink); overflow-x: auto; }
+code { font-size: 12px; color: var(--ink); background: var(--well); border-radius: 6px; padding: 1px 6px; }
+pre { margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--well); font-size: 12px; line-height: 1.5; color: var(--ink); overflow-x: auto; }
 pre + button { margin-top: 6px; }
 .muted { color: var(--muted); }
 .danger { color: var(--bad); }
@@ -58,7 +58,7 @@ pre + button { margin-top: 6px; }
 .brand .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--hairline); }
 
 /* Nav */
-nav.top { display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--hairline); background: var(--paper); flex-wrap: wrap; }
+nav.top { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--hairline); background: var(--paper); flex-wrap: wrap; }
 nav.top .links { display: flex; gap: 4px; margin-left: 8px; }
 nav.top .links a { color: var(--muted); padding: 6px 10px; border-radius: 6px; font-weight: 500; font-size: 14px; }
 nav.top .links a.on { color: var(--ink); background: var(--well); }
@@ -67,7 +67,7 @@ nav.top .session { margin-left: auto; display: inline-flex; align-items: center;
 nav.top .session button { height: 30px; padding: 0 10px; font-size: 13px; }
 
 /* Footer */
-.site-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 10px 24px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--muted); background: var(--paper); flex-wrap: wrap; }
+.site-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 14px 24px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--muted); background: var(--paper); flex-wrap: wrap; }
 .site-footer .brand .word { font-size: 16px; }
 .site-footer .links { display: inline-flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .site-footer .links a { display: inline-flex; align-items: center; gap: 5px; }
@@ -77,20 +77,30 @@ nav.top .session button { height: 30px; padding: 0 10px; font-size: 13px; }
 .page-head .sub { font-size: 13px; color: var(--muted); }
 
 /* Buttons. A bare <button> is secondary; opt in to primary or danger. */
-/* A bare button is secondary: a well fill and a hairline edge so it reads as a
-   control on both palettes; hover firms the edge. Opt in to primary or danger. */
-button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--hairline); font: 500 14px var(--sans); cursor: pointer; background: var(--well); color: var(--ink); white-space: nowrap; text-decoration: none; }
-button:hover:not([disabled]), .btn:hover { border-color: var(--muted); }
+/* Only a control carries an --edge outline. Static surfaces (code, pre, .token)
+   share the well fill but have no border, so "can I press this?" is answered by
+   the edge alone. --edge holds 3:1 on card, paper and well in both palettes,
+   which --hairline (a divider colour) does not. Hover adds the fill. */
+button svg, .btn svg { flex: none; }
+button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--edge); font: 500 14px var(--sans); cursor: pointer; background: transparent; color: var(--ink); white-space: nowrap; text-decoration: none; }
+button:hover:not([disabled]), .btn:hover { background: var(--well); border-color: var(--ink); }
 button.primary, .btn.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: transparent; }
-button.primary:hover:not([disabled]) { border-color: transparent; opacity: 0.92; }
-button.danger, .btn.danger { color: var(--bad); }
+button.primary:hover:not([disabled]) { background: var(--btn-bg); border-color: transparent; opacity: 0.92; }
+/* Destructive is a fill, not a text colour: a filled danger button acts on
+   click, an outlined one (details.confirm summary) only opens the question. */
+button.danger, .btn.danger { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
+button.danger:hover:not([disabled]), .btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); opacity: 0.9; }
 button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
 td button, td .btn, .attachment .btn { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
 a.btn:hover { text-decoration: none; }
-form.inline { display: inline-flex; align-items: center; gap: 8px; }
+form.inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+/* A native select sizes to its widest option. Without this an identity picker
+   whose options run to 70 characters scrolls the page on a phone. */
+form.inline select, .row select { min-width: 0; max-width: 100%; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-@media (prefers-reduced-motion: no-preference) { button, .btn, nav.top .links a, .chip { transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease; } }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; }
+  button, .btn, nav.top .links a, .chip { transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease; } }
 
 /* Chips */
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--mint-soft); color: var(--pine-ink); font: 500 12px var(--sans); white-space: nowrap; text-decoration: none; }
@@ -101,23 +111,36 @@ a.chip:hover { text-decoration: none; }
 .chip.warn { color: var(--warn); }
 .chip.bad { color: var(--bad); }
 .chip.off { color: var(--muted); }
+/* A filter is a link, so it reads as pine on an edge — never as `off`, which
+   DESIGN.md reserves for a status and which draws a dot that means nothing on
+   a control. The ::after restores a 36px touch target over a 22px chip. */
+/* A provenance label — where a name came from — is not a status, so it takes
+   no dot and none of the status colours. */
+.chip.note { background: transparent; border: 1px solid var(--hairline); color: var(--muted); }
+a.chip.filter { background: transparent; border: 1px solid var(--edge); color: var(--pine); position: relative; }
+a.chip.filter:hover { background: var(--well); }
+a.chip.filter::after { content: ""; position: absolute; inset: -7px 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* Cards and banners */
-.card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .card h2 { font-family: var(--sans); font-size: 15px; font-weight: 600; line-height: 1.4; }
+/* The one place a margin beats the gap: a card's opening sentence explains its
+   heading, so it binds to it rather than sitting the same distance away as the
+   controls below. Nothing else in the card is spaced by hand. */
+.card > h2 + p, .card > .card-head + p { margin-top: -7px; }
 .card h3 { font-size: 14px; }
 .card p, .card li { font-size: 13.5px; }
-.card .card { background: var(--well); border-color: transparent; }
+.card .card { background: var(--paper); border-color: var(--hairline); }
 .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .hosted-cta { background: var(--mint-soft); border-color: transparent; }
 .hosted-cta h2 { color: var(--pine-ink); }
-.banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--card); font-size: 13.5px; }
+.banner { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--hairline); background: var(--card); font-size: 13.5px; }
 .banner::before { content: ""; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; flex: none; background: var(--pine); }
 .banner.bad { background: var(--bad-soft); }
 .banner.bad::before { background: var(--bad); }
 .banner strong { display: block; }
-.two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.two-up { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
 /* A 1fr track is minmax(auto, 1fr): without this a <pre> or a token field sets
    the column's floor at its longest line and the card runs off the page. */
 .two-up > * { min-width: 0; }
@@ -125,48 +148,89 @@ a.chip:hover { text-decoration: none; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 
 /* Forms */
-.field { display: flex; flex-direction: column; gap: 6px; }
+/* A control wider than about 34rem stops reading as one field and pushes the
+   button that submits it off to the far side of the card. */
+.field { display: flex; flex-direction: column; gap: 6px; max-width: 34rem; }
 .field > span, .field label { font-size: 13px; font-weight: 600; color: var(--ink); }
 .help { font-size: 12px; color: var(--muted); }
-input:not([type="checkbox"]):not([type="hidden"]), select, textarea { height: 36px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--card); color: var(--ink); font: 400 14px var(--sans); }
+input:not([type="checkbox"]):not([type="hidden"]), select, textarea { height: 36px; padding: 0 10px; border: 1px solid var(--edge); border-radius: 6px; background: var(--well); color: var(--ink); font: 400 14px var(--sans); }
+/* The native arrow is drawn inside the padding box, so an un-reset select runs
+   its text under it. The caret is two gradient halves rather than an SVG so it
+   stays a token and no colour literal enters the stylesheet. */
+select { appearance: none; -webkit-appearance: none; padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 16px center, right 11px center; background-size: 5px 5px; background-repeat: no-repeat; }
 input[type="password"], input.mono { font-family: var(--mono); font-size: 13px; }
 input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--pine); margin: 0 8px 0 0; vertical-align: -3px; }
 label.check { display: inline-flex; align-items: center; font-size: 14px; color: var(--ink); }
 label.check:has(input[disabled]) { color: var(--muted); }
 .row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .row .field { flex: 1; min-width: 200px; }
+.row > .auto-submit, .row .field { max-width: 34rem; }
+/* flex-end is right for a bare button beside a labelled field and wrong for a
+   message: without this an error bottom-aligns to the button's baseline. */
+.row > .danger { flex-basis: 100%; order: 99; }
 
 /* Keys and snippets */
 details.snippet { border: 1px solid var(--hairline); border-radius: 8px; background: var(--card); }
-details.snippet summary { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; list-style: none; font-size: 14px; font-weight: 600; color: var(--ink); }
+details.snippet summary { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; list-style: none; font-size: 14px; font-weight: 600; color: var(--ink); }
 details.snippet summary::-webkit-details-marker { display: none; }
 details.snippet summary::before { content: ""; width: 6px; height: 6px; margin: 0 4px 0 2px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); flex: none; }
 details.snippet[open] summary::before { transform: rotate(45deg); }
 details.snippet summary .sum { flex: 1; min-width: 0; }
 details.snippet summary .hint { font-weight: 400; font-size: 12px; color: var(--muted); }
 details.snippet[open] summary { border-bottom: 1px solid var(--hairline); }
-details.snippet .snippet-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+details.snippet .snippet-body { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
 details.snippet .snippet-body p { font-size: 13px; }
 details.snippet pre { border: 0; border-radius: 6px; }
 .row > .auto-submit { flex: 1; min-width: 200px; display: flex; }
 .auto-submit > .field { flex: 1; }
-.token { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--well); font-family: var(--mono); font-size: 12px; color: var(--ink); }
+.token { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--well); font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .token code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: 0; padding: 0; }
+
+/* Confirm. A destructive action that cannot be undone opens its consequence
+   before it can be pressed. A <details> so it needs no JS and no dialog: the
+   summary is an outlined danger control that only opens, the button inside is
+   the filled one that acts. */
+details.confirm > summary { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--bad); border-radius: 8px; color: var(--bad); font: 500 13px var(--sans); cursor: pointer; list-style: none; }
+details.confirm > summary::-webkit-details-marker { display: none; }
+details.confirm > summary:hover { background: var(--bad-soft); }
+details.confirm[open] { flex-basis: 100%; }
+details.confirm .confirm-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); max-width: 60ch; }
+details.confirm .confirm-body p { font-size: 13px; color: var(--ink); }
 
 /* Tables */
 .tbl { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--card); }
 .tbl .scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
-td { padding: 9px 12px; border-bottom: 1px solid var(--hairline); color: var(--body); vertical-align: middle; }
+th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 10px 14px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+td { padding: 11px 14px; border-bottom: 1px solid var(--hairline); color: var(--body); vertical-align: middle; }
 tr:last-child td { border-bottom: 0; }
 td.name, td.name a { color: var(--ink); font-weight: 600; }
 td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 td.end { text-align: right; white-space: nowrap; }
 
-/* Login */
-.login { width: 100%; max-width: 440px; margin: 28px auto 0; display: flex; flex-direction: column; gap: 16px; }
-.login h1 { font-size: 28px; }
+/* Login. Three step sizes, not one: 8px binds a label to the control it
+   describes, 14px holds the header block together, 20px separates the parts
+   that mean different things. A single gap for all three is what made this
+   page read as one undifferentiated stack. */
+.login { width: 100%; max-width: 440px; margin: clamp(24px, 7vh, 56px) auto 0; display: flex; flex-direction: column; gap: 28px; }
+.login h1 { font-size: 28px; line-height: 1.15; }
+/* A mark above a heading. Shared by the login and setup headers, which is
+   why it is not scoped to .login. */
+.brand-head { display: flex; flex-direction: column; gap: 14px; }
+/* The two ways in are one part of the page, so they sit closer to each other
+   than the page's parts sit to one another. */
+.login-ways { display: flex; flex-direction: column; gap: 18px; }
+/* 12px, not the 8px that binds a field label: this lead-in is a 15px sentence
+   sitting over a 36px button, and 8px reads as crowding at that weight. */
+.login .choice { display: flex; flex-direction: column; gap: 12px; }
+.login .choice button { width: 100%; }
+.login .card { padding: 20px; gap: 14px; }
+/* The two ways in are alternatives, not a sequence, so the rule reads across
+   rather than the copy having to say "or" twice. */
+.login .or { display: flex; align-items: center; gap: 12px; }
+.login .or::before, .login .or::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
 
 /* Transcript */
 .pad { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }

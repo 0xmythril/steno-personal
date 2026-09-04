@@ -33,7 +33,21 @@ describe('the connect-agent panel', () => {
     expect(auto).toContain('requestSubmit()')
   })
 
-  it('a bare button reads as a control on both palettes: well fill, not transparent', () => {
-    expect(css).toMatch(/^button, \.btn \{[^}]*background: var\(--well\)/m)
+  // Was: "well fill, not transparent". The well fill did make a button visible,
+  // but .token, code and pre share that fill, so a read-only key rendered as the
+  // same object as the Reveal button beside it. The promise is unchanged — a bare
+  // button must read as a control — and the mechanism is now the edge outline,
+  // which nothing static is allowed to carry. See DESIGN.md, Colors → Rules.
+  it('a bare button reads as a control on both palettes: an edge outline, which no readout has', () => {
+    expect(css).toMatch(/^button, \.btn \{[^}]*border: 1px solid var\(--edge\)/m)
+    const token = css.match(/^\.token \{([^}]*)\}/m)?.[1] ?? ''
+    expect(token).toMatch(/background: var\(--well\)/)
+    expect(token, '.token shares the well fill but must not carry a border').not.toMatch(/\bborder\s*:/)
+  })
+
+  it('the MCP URL readout and the Copy URL button beside it are not the same object', () => {
+    expect(src).toMatch(/<span className="token"><code>\{mcpUrl\}<\/code> <CopyButton/)
+    const token = css.match(/^\.token \{([^}]*)\}/m)?.[1] ?? ''
+    expect(token).not.toMatch(/\bborder\s*:/)
   })
 })

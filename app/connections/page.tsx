@@ -1,6 +1,8 @@
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { HostedCta } from '@/app/hosted-cta'
+import { TelegramUnavailable } from './telegram-unavailable'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS, formatRelativeTime } from '@/lib/format'
@@ -36,10 +38,20 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
             <input type="hidden" name="connectionId" value={live.id} />
             <button type="submit" className="small">Disconnect</button>
           </form>
-          <form action={deleteEverythingAction} className="inline">
-            <input type="hidden" name="connectionId" value={live.id} />
-            <button type="submit" className="small danger">Delete this account and everything it archived</button>
-          </form>
+          <details className="confirm">
+            <summary>Delete this account and everything it archived</summary>
+            <div className="confirm-body">
+              <p>
+                Every chat, message and downloaded file this {CHANNEL_LABELS[channel]} account produced is erased from
+                this machine, and your agents stop seeing it. Deleted stays deleted: there is no undo and no export.
+                Disconnect instead if you only want to stop archiving.
+              </p>
+              <form action={deleteEverythingAction}>
+                <input type="hidden" name="connectionId" value={live.id} />
+                <button type="submit" className="small danger">Yes, erase this {CHANNEL_LABELS[channel]} archive</button>
+              </form>
+            </div>
+          </details>
         </div>
       </section>
     )
@@ -69,6 +81,9 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
     )
   }
 
+  // An active or pending row above still shows, so a pair removed after a
+  // pairing can still be disconnected; only a fresh start is refused.
+  if (channel === 'telegram' && !telegramConfigured()) return <TelegramUnavailable />
   return (
     <section className="card">
       <div className="card-head">

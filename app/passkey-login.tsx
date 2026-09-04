@@ -2,8 +2,9 @@
 import { useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser'
+import { PasskeyIcon } from '@/app/passkey-icon'
 
-// Rendered on /login only when a passkey exists. Shows nothing until the
+// Rendered on /login only when a passkey exists. Offers nothing until the
 // browser has confirmed it can do WebAuthn in a secure context (HTTPS or
 // localhost); on a plain-http LAN address the key form below is all there
 // is. useSyncExternalStore rather than an effect: the server renders
@@ -17,6 +18,9 @@ export function PasskeyLogin() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  // The divider below belongs to this component, not the page: only the browser
+  // knows whether a passkey is really on offer, and an "or" with one side empty
+  // is worse than no passkey button at all. The key form labels itself either way.
   if (!supported) return null
 
   const login = async () => {
@@ -44,11 +48,16 @@ export function PasskeyLogin() {
   }
 
   return (
-    <div className="card stack" style={{ gap: 12 }}>
-      <button type="button" className="primary" onClick={login} disabled={busy}>
-        {busy ? 'Waiting for your passkey…' : 'Log in with a passkey'}
-      </button>
-      {failed && <p className="danger" role="alert">That passkey was not accepted. Use an access key below.</p>}
-    </div>
+    <>
+      <div className="choice">
+        <p className="muted">Use your fingerprint, face, or screen lock.</p>
+        <button type="button" className="primary" onClick={login} disabled={busy}>
+          <PasskeyIcon />
+          {busy ? 'Waiting for your passkey…' : 'Log in with a passkey'}
+        </button>
+        {failed && <p className="danger" role="alert">That passkey was not accepted. Use an access key below.</p>}
+      </div>
+      <p className="or eyebrow">or</p>
+    </>
   )
 }

@@ -9,6 +9,8 @@ import { Consent } from '@/app/connections/consent'
 import { WhatsAppConsent } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
+import { TelegramUnavailable } from '@/app/connections/telegram-unavailable'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { HOSTED_URL } from '@/app/links'
 import { setupConnectAction, setupPasswordAction, setupCancelAction, finishSetupAction } from './actions'
 
@@ -31,6 +33,7 @@ function errorText(c: ConnectionStatus): string | null {
 }
 
 function SetupChannelCard({ channel, live }: { channel: Channel; live: ConnectionStatus | undefined }) {
+  if (channel === 'telegram' && !telegramConfigured()) return <TelegramUnavailable />
   const consent = channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />
   if (live?.status === 'pending') {
     return (
@@ -127,8 +130,8 @@ export default async function SetupPage() {
   return (
     <main>
       <div className="page-head">
-        <div>
-          <span className="brand" style={{ marginBottom: 10 }}><BrandLogo size={24} /><Wordmark /></span>
+        <div className="brand-head">
+          <span className="brand"><BrandLogo size={24} /><Wordmark /></span>
           <h1>This instance has no owner yet</h1>
         </div>
       </div>

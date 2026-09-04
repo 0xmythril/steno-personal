@@ -7,7 +7,7 @@ import { PEOPLE_ERRORS } from './labels'
 import { createPersonAction, confirmSuggestionAction, dismissSuggestionAction, restorePersonAction } from './actions'
 
 // The address book. Suggestions never merge anything on their own: an equal
-// name is a hint, and the only path from a hint to one row is the Confirm
+// name is a hint, and the only path from a hint to one row is the "Merge them"
 // button below, which the owner is the one to press.
 export default async function PeoplePage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
@@ -30,118 +30,144 @@ export default async function PeoplePage({ searchParams }: {
     <>
       <Nav label={session.label} via={session.via} current="people" />
       <main>
-      <h1>People</h1>
-      <p className="muted">
-        One person, both apps. Everyone in your contacts is here already, and everything on this
-        page is your own annotation over the archive: nothing is ever sent back to Telegram or
-        WhatsApp.
-      </p>
-      {error && <p className="danger" role="alert">{error}</p>}
+        <div className="page-head">
+          <div><p className="eyebrow">Contacts</p><h1>People</h1></div>
+          <span className="sub mono">{people.length} {people.length === 1 ? 'person' : 'people'}</span>
+        </div>
+        <p className="muted lede">
+          One person, both apps. Everyone in your contacts is here already, and everything on this
+          page is your own annotation over the archive: nothing is ever sent back to Telegram or
+          WhatsApp.
+        </p>
+        {error && <p className="danger" role="alert">{error}</p>}
 
-      {suggestions.length > 0 && (
-        <section className="card">
-          <h2>Suggestions</h2>
-          <p className="muted">
-            Two rows with the same name, one found on Telegram and one on WhatsApp. A name is only
-            ever a hint — matching phone numbers are joined for you, names are not — so nothing
-            happens until you say so. Confirm moves every identity onto the older row and removes
-            the other; dismiss and the pair is not offered again.
-          </p>
-          <table>
-            <thead><tr><th>Suggestion</th><th>Why</th><th></th></tr></thead>
-            <tbody>
-              {suggestions.map(s => (
-                <tr key={`${s.from.id} ${s.into.id}`}>
-                  <td>Merge {s.from.name} into {s.into.name}?</td>
-                  <td className="muted">Same name</td>
-                  <td>
-                    <form action={confirmSuggestionAction} className="inline">
-                      <input type="hidden" name="fromId" value={s.from.id} />
-                      <input type="hidden" name="intoId" value={s.into.id} />
-                      <button type="submit">Confirm</button>
-                    </form>{' '}
-                    <form action={dismissSuggestionAction} className="inline">
-                      <input type="hidden" name="fromId" value={s.from.id} />
-                      <input type="hidden" name="intoId" value={s.into.id} />
-                      <button type="submit">Dismiss</button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      <section className="card">
-        <h2>New person</h2>
-        <form action={createPersonAction}>
-          <label>Name <input name="name" maxLength={100} required placeholder="e.g. Ada" /></label>{' '}
-          <label>Notes <input name="notes" placeholder="optional" /></label>{' '}
-          <button type="submit">Add</button>
-        </form>
-      </section>
-
-      <section className="card">
-        <h2>Address book</h2>
-        {people.length === 0 ? (
-          <p className="muted">
-            Nobody yet. Your contacts arrive here after the first sync; until then, add someone
-            above and link their Telegram and WhatsApp identities.
-          </p>
-        ) : (
-          <table>
-            <thead><tr><th>Name</th><th>Linked</th><th>Chats</th></tr></thead>
-            <tbody>
-              {people.map(p => (
-                <tr key={p.id}>
-                  <td>
-                    <Link href={`/people/${p.id}`}>{p.name}</Link>
-                    {isAuto(p) && <> <span className="eyebrow" title="Named from your contacts">Auto</span></>}
-                  </td>
-                  <td className="muted">
-                    {p.identities.length === 0
-                      ? 'nothing yet'
-                      : [...new Set(p.identities.map(i => CHANNEL_LABELS[i.channel]))].join(', ')}
-                  </td>
-                  <td className="muted">{p.chatCount}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {suggestions.length > 0 && (
+          <section className="card">
+            <h2>Suggestions</h2>
+            <p className="muted">
+              Two rows with the same name, one found on Telegram and one on WhatsApp. A name is only
+              ever a hint — matching phone numbers are joined for you, names are not — so nothing
+              happens until you say so. Merging them moves every identity onto the older row and
+              removes the other; keep them separate and the pair is not offered again.
+            </p>
+            <div className="tbl"><div className="scroll">
+              <table>
+                <thead><tr><th>Suggestion</th><th>Why</th><th></th></tr></thead>
+                <tbody>
+                  {suggestions.map(s => (
+                    <tr key={`${s.from.id} ${s.into.id}`}>
+                      <td className="name">Merge {s.from.name} into {s.into.name}?</td>
+                      <td className="muted">Same name</td>
+                      <td className="end">
+                        <span className="actions">
+                          <form action={confirmSuggestionAction} className="inline">
+                            <input type="hidden" name="fromId" value={s.from.id} />
+                            <input type="hidden" name="intoId" value={s.into.id} />
+                            <button type="submit">Merge them</button>
+                          </form>
+                          <form action={dismissSuggestionAction} className="inline">
+                            <input type="hidden" name="fromId" value={s.from.id} />
+                            <input type="hidden" name="intoId" value={s.into.id} />
+                            <button type="submit">Keep separate</button>
+                          </form>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </section>
         )}
-      </section>
 
-      {hidden.length > 0 && (
         <section className="card">
-          <h2>Hidden ({hidden.length})</h2>
+          <h2>New person</h2>
           <p className="muted">
-            Hidden from the address book and from your agents. Their links are still here, which is
-            what stops a contact sync from adding them back. Restore puts one on the list again.
+            For someone your contacts have not named yet. Link their Telegram and WhatsApp
+            identities from their own page afterwards.
           </p>
-          <table>
-            <thead><tr><th>Name</th><th>Linked</th><th></th></tr></thead>
-            <tbody>
-              {hidden.map(p => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td className="muted">
-                    {p.identities.length === 0
-                      ? 'nothing'
-                      : [...new Set(p.identities.map(i => CHANNEL_LABELS[i.channel]))].join(', ')}
-                  </td>
-                  <td>
-                    <form action={restorePersonAction} className="inline">
-                      <input type="hidden" name="personId" value={p.id} />
-                      <button type="submit">Restore</button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <form action={createPersonAction} className="row">
+            <label className="field">
+              <span>Name</span>
+              <input name="name" maxLength={100} required placeholder="e.g. Ada" />
+            </label>
+            <label className="field">
+              <span>Notes</span>
+              <input name="notes" placeholder="Optional. Your own, never sent anywhere." />
+            </label>
+            <button type="submit" className="primary">Add person</button>
+          </form>
         </section>
-      )}
+
+        <section className="card">
+          <h2>Address book</h2>
+          {people.length === 0 ? (
+            <p className="muted">
+              Nobody yet. Your contacts arrive here after the first sync; until then, add someone
+              above and link their Telegram and WhatsApp identities.
+            </p>
+          ) : (
+            <>
+              <div className="tbl"><div className="scroll">
+                <table>
+                  <thead><tr><th>Name</th><th>Linked</th><th className="num">Chats</th></tr></thead>
+                  <tbody>
+                    {people.map(p => (
+                      <tr key={p.id}>
+                        <td className="name">
+                          <Link href={`/people/${p.id}`}>{p.name}</Link>
+                          {isAuto(p) && <> <span className="chip note">Auto</span></>}
+                        </td>
+                        <td className="muted">
+                          {p.identities.length === 0
+                            ? 'nothing yet'
+                            : [...new Set(p.identities.map(i => CHANNEL_LABELS[i.channel]))].join(', ')}
+                        </td>
+                        <td className="num">{p.chatCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div></div>
+              {/* The tag used to carry its meaning in a title attribute, which a
+                  touch device never shows. */}
+              <p className="help">Auto means the name came from your contacts and still follows it. Rename someone on their page and your name wins from then on.</p>
+            </>
+          )}
+        </section>
+
+        {hidden.length > 0 && (
+          <section className="card">
+            <h2>Hidden ({hidden.length})</h2>
+            <p className="muted">
+              Hidden from the address book and from your agents. Their links are still here, which is
+              what stops a contact sync from adding them back. Restore puts one on the list again.
+            </p>
+            <div className="tbl"><div className="scroll">
+              <table>
+                <thead><tr><th>Name</th><th>Linked</th><th></th></tr></thead>
+                <tbody>
+                  {hidden.map(p => (
+                    <tr key={p.id}>
+                      <td className="name">{p.name}</td>
+                      <td className="muted">
+                        {p.identities.length === 0
+                          ? 'nothing'
+                          : [...new Set(p.identities.map(i => CHANNEL_LABELS[i.channel]))].join(', ')}
+                      </td>
+                      <td className="end">
+                        <form action={restorePersonAction} className="inline">
+                          <input type="hidden" name="personId" value={p.id} />
+                          <button type="submit">Restore to the address book</button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </section>
+        )}
       </main>
     </>
   )
