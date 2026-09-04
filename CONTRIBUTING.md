@@ -60,6 +60,11 @@ when you touch the Dockerfile, `scripts/start.mjs`, migrations or auth.
 
 ## Pull requests
 
+- **Branch from `staging`, and open the pull request into `staging`** — not
+  `main`. `staging` is the integration branch and deploys to a staging
+  instance; `main` is the release line and deploys to production. Changes
+  reach `main` only as a promotion of `staging`, which the maintainer does.
+  The whole pipeline is in [docs/releasing.md](docs/releasing.md#environments).
 - One change per pull request, with a description that says what a user
   would notice and why.
 - Commit messages: `type(scope): imperative summary` — `fix(media): …`,
