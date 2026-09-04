@@ -18,16 +18,16 @@ One container, one volume, one file.
   enrichment, off until you turn it on, and anonymous usage events — that a
   feature was used, never what it was used on — which you can turn off in
   Settings or with `DO_NOT_TRACK=1`.
-- **Agent-ready.** An MCP endpoint with five read tools: list chats, read a
-  chat, search, list the people in your address book, and ask which accounts
-  are connected.
+- **Agent-ready.** An MCP endpoint with seven read tools: list chats, read a
+  chat, see what is new across chats, search, list the people in your address
+  book, fetch an attachment, and ask which accounts are connected.
 
 Licensed under the GNU Affero General Public License v3.0.
 
 ## Need it for a team?
 
 For teams, or if you don't want to connect your own account, go to
-[Steno.chat](https://steno.chat) for our hosted solution. It archives shared
+[Steno Cloud](https://steno.chat) for our hosted solution. It archives shared
 group chats through its own number, so nothing of yours is linked.
 
 ## The WhatsApp risk, in one paragraph
@@ -54,7 +54,7 @@ cd steno-personal
 docker compose up
 ```
 
-The first boot creates the volume and applies migrations. Nothing is printed
+The first boot creates the volume and applies migrations. No key is printed
 to the log; the first visit sets the instance up:
 
 1. Open <http://localhost:3000>. A fresh instance lands on **Setup**.
@@ -88,8 +88,8 @@ pairing a channel and hands you your first access key.
 
 Two things to know before you click. First, a Railway deploy has a public URL.
 Until you have your first access key, **Setup** is open to whoever reaches that
-URL first (a pairing you have started can only be finished from your own
-browser), and afterwards the only thing standing between the internet and your
+URL first (once you have started pairing, every other visitor is refused on
+both channels until you finish), and afterwards the only thing standing between the internet and your
 archive is an access key or a passkey — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
@@ -324,12 +324,11 @@ channel's.
 
 ## Configuration
 
-Every variable is optional except `DATA_DIR`, which Docker already sets. Empty
-means unset.
+Every variable is optional. Empty means unset.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `DATA_DIR` | `/data` in Docker, none otherwise | Where everything lives: the SQLite file, downloaded media, WhatsApp auth state, and the generated secret key. |
+| `DATA_DIR` | `./data`; `/data` in Docker | Where everything lives: the SQLite file, downloaded media, WhatsApp auth state, and the generated secret key. |
 | `PORT` | `3000` | Port the portal and MCP endpoint listen on. |
 | `SECRET_KEY` | generated | Encrypts your OpenRouter key, your revealable access keys, and the Telegram session at rest. If unset, one is generated into `$DATA_DIR/secret.key` on first boot. Set it yourself and the file is not used. **Changing or losing it makes those encrypted values unreadable** — you re-pair the channels and re-enter the OpenRouter key; your messages are unaffected. |
 | `TELEGRAM_API_ID` | the project's own | Telegram application id. The project ships a registered pair, so leave it unset unless you registered your own at <https://my.telegram.org>. `0` runs without Telegram: every page that could pair it shows **Not available** and says so, and the worker logs one warning. |
@@ -342,6 +341,7 @@ means unset.
 | `STENO_POSTHOG_KEY` | the project's token | The PostHog project anonymous usage events are sent to. It is PostHog's write-only client token, shipped in the build as every PostHog client's is; a fork sets its own. It is **not** the off switch — that is the **Anonymous usage** box in Settings, or `DO_NOT_TRACK=1`. See [What leaves your machine](PRIVACY.md#what-leaves-your-machine). |
 | `STENO_POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host. Set the EU host if your project lives there. |
 | `DO_NOT_TRACK` | unset | Set to `1` and no usage event is ever sent, whatever Settings says. The same variable GitHub CLI and other tools honour. |
+| `NEXT_TELEMETRY_DISABLED` | `1` in Docker, unset otherwise | Read by Next.js, not by this project: without it, `next build` and `next dev` report anonymous build statistics to Vercel. The Docker image sets it; set it yourself when you build from source. |
 | `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](docs/self-hosting.md#lost-access). |
 | `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 

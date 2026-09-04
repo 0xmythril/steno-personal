@@ -216,5 +216,5 @@ credential, for the routes that accept both. Server actions call
 4. Add a consent screen with the honest sentences for that channel.
 5. Add the import-ban entry to `tests/launch-invariants.test.ts`.
 
-Read spec §9 first: channels with a first-party agent connector (Slack, Discord)
-are a non-goal, on purpose.
+Channels with a first-party agent connector (Slack, Discord) are a non-goal,
+on purpose: their own platforms already give an agent read access.

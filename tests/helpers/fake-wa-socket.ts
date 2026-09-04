@@ -10,9 +10,9 @@ export function flush(ms = 10): Promise<void> {
 }
 
 // Poll instead of sleeping a fixed duration: `flush()` only guesses how long
-// mkdir + the makeSocket chain takes, and that guess can lose under load
-// (see .superpowers/sdd/2026-09-03-m2-whatsapp/flakiness.md). Every call site
-// that immediately indexes h.sockets[0]/h.last() must wait on this instead.
+// mkdir + the makeSocket chain takes, and that guess lost under load (the M2
+// suite flaked on CI exactly here until this was made a poll). Every call
+// site that immediately indexes h.sockets[0]/h.last() must wait on this.
 export async function waitForSocket(h: FakeWaHarness, n = 1): Promise<void> {
   for (let i = 0; i < 500 && h.sockets.length < n; i++) {
     await flush(1)

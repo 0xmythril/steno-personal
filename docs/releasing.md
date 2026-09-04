@@ -154,7 +154,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
   staging. Find out what before you carry on.
 - If the Dockerfile, `railway.json`, or the deploy instructions changed,
   update the Railway template so a one-click deploy builds the new release;
-  see the Railway section of [self-hosting.md](self-hosting.md).
+  see [The Railway template](#the-railway-template) below.
 - If the release fixes a reported vulnerability, publish the advisory from
   the repository's Security tab and credit the reporter if they asked to be.
 
@@ -166,3 +166,117 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
   to do anything beyond `git pull` and a restart.
 - **Major**: anything that needs manual action on the volume, changes the
   meaning of an existing environment variable, or removes an MCP tool.
+
+## The Railway template
+
+The template exists, unpublished, as code `1Vhm3c` (editor:
+<https://railway.com/workspace/templates/546731b9-54bf-467b-9d40-67f685511bb6>),
+generated from the `steno-personal` project in the maintainer's workspace, and
+the README button already points at it. What remains is the editor cleanup in
+step 3 to 5, the verification in step 6, and publishing. This is the whole
+procedure, kept for the day the template has to be rebuilt. It is manual on
+purpose — Railway has no committed template manifest; a template is built in the
+dashboard composer or generated from a live project, per
+<https://docs.railway.com/templates/create>. Verify against that page before you
+start, in case Railway has since shipped a file format.
+
+**1. Build a working project first.** Follow the Railway section of [self-hosting.md](self-hosting.md#railway) and get a
+real deploy green, with the volume attached and Setup served on the generated
+domain. A template generated from something that works is worth more than one
+assembled blind.
+
+**2. Create the template.** Either
+
+- dashboard: project **Settings → Generate Template from Project → Create
+  Template**, then confirm the settings in the composer; or
+- CLI: `railway templates create --project steno-personal --environment production`
+  (`railway template` is an accepted alias; see <https://docs.railway.com/cli/templates>).
+
+The CLI clones the project's variables verbatim. Do **not** set
+`SECRET_KEY=${{secret(48)}}` on the live project first: Railway evaluates the
+function there and stores the resulting string, so the clone would hand every
+deployer the same secret. Leave `SECRET_KEY` off the project and add the
+function in the template editor (step 4).
+
+**3. Check the service in the composer.**
+
+- Source: the GitHub repo `0xmythril/steno-personal`. To pin a branch, paste the
+  full branch URL, e.g. `https://github.com/0xmythril/steno-personal/tree/main`.
+- Build: Dockerfile — it should already be picked up from `railway.json`.
+- Healthcheck path: `/api/health`.
+- Public networking: HTTP, enabled.
+
+**4. Set the variables.** Three fixed, plus the two Telegram credentials the
+deployer fills in:
+
+| Variable | Value | Why |
+|---|---|---|
+| `DATA_DIR` | `/data` | Matches the volume mount path below. |
+| `SECRET_KEY` | `${{secret(48)}}` | A different random secret per deploy. `secret(length?, alphabet?)` is a Railway template variable function evaluated at deploy time; it defaults to 32 characters, and 48 comfortably clears the 32-character minimum. Docs: <https://docs.railway.com/templates/create> ("Template variable functions"). |
+| `PORT` | `3000` | The supervisor passes it to Next. |
+| `TELEGRAM_API_ID` | leave out of the template | The project ships its own pair (`lib/channels/telegram-defaults.ts`), so a one-click deploy needs nothing from my.telegram.org. A blank value falls back to the shipped pair anyway, and a visible empty field only invites the deployer to think one is needed. A self-hoster who wants their own application sets both variables together; `TELEGRAM_API_ID=0` runs without Telegram. |
+| `TELEGRAM_API_HASH` | leave out of the template | Same. Half a pair is refused at boot. |
+
+**5. Attach the volume.** Right-click the service in the composer → **Attach
+Volume** → mount path `/data`. One volume, that path, nothing else — it must
+match `DATA_DIR`. There is no volume block in `railway.json`; the volume belongs
+to the template. Docs: <https://docs.railway.com/templates/create> ("Add a
+volume") and <https://docs.railway.com/volumes>.
+
+**6. Create the template**, then deploy it once yourself from a clean workspace
+and confirm, in order:
+
+- the build uses the Dockerfile and succeeds;
+- the volume is mounted at `/data`;
+- `SECRET_KEY` in the deployed service is a 48-character random string, not the
+  literal `${{secret(48)}}`;
+- the deploy log ends its `[boot]` line with `no key yet — open the portal to
+  set up`, and contains no `sp_…` key;
+- the generated domain redirects to `/setup`, and a paired channel there hands
+  out a key that logs in;
+- `/api/health` returns `{"ok":true}`;
+- redeploying keeps that key working and does **not** reopen Setup (the volume
+  persisted).
+
+That list is the bar: one click gives a running instance.
+
+**7. Publish it.** Dashboard: **Workspace settings → Templates → Publish**, and
+fill the form — category `Other`, a one-line description, and the overview
+markdown. Or CLI:
+
+```bash
+railway templates publish <template-id> \
+  --category Other \
+  --description "Archive your own Telegram and WhatsApp chats to SQLite, read-only, for your agents" \
+  --readme-file README.md
+```
+
+First publication requires `--readme-file` or `--readme`; `railway templates
+update` replaces the metadata later. Docs:
+<https://docs.railway.com/cli/templates>.
+
+**8. Check the button.** The README button points at:
+
+```
+https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
+```
+
+If the template is ever recreated, its code changes and this URL must follow.
+
+`45_zFw` is the maintainer's code from the workspace's referrals page
+(<https://railway.com/account/referrals>): a signup through it gets $20 in
+credits and the maintainer gets 15% of their first twelve months of invoices
+under Railway's affiliate programme. The same link is offered, and labelled as
+a referral, in the README and in the Railway steps of self-hosting.md. That is separate from the template kickback,
+which needs no code at all: once the template is on the marketplace you earn
+15% of the usage it generates, 25% if you answer questions in your template
+queue. Docs: <https://docs.railway.com/community/affiliate-program> and
+<https://docs.railway.com/templates/kickbacks>.
+
+The button image is `https://railway.com/button.svg`. Docs:
+<https://docs.railway.com/templates/publish-and-share>.
+
+**9. Re-run the invariant sweep.** `tests/launch-invariants.test.ts` asserts
+that the README button carries a real template URL
+(`toContain('railway.com/new/template/')`) and that no placeholder marker is
+left in any shipped document. Keep it green.
