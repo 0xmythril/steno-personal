@@ -132,13 +132,15 @@ export async function agentConnections(): Promise<AgentConnection[]> {
     // the contact cache seldom holds the account itself — but every message
     // the owner sends carries their push name. The latest live one is the
     // name they are showing the world right now.
-    // Keyed on the account id — the owner's own messages carry it as their
-    // sender id — so this is one descending walk of messages_sender_sent_idx
-    // that stops at the first named row, not a scan of every chat.
-    if (!displayName && r.externalAccountId) {
+    // Joined through the chat's connection, not keyed on the account id: the
+    // WhatsApp parser stores no sender id on the owner's own direct messages
+    // (fromOwner is their identity), and those are most of what an owner
+    // writes.
+    if (!displayName) {
       const [own] = await db.select({ displayName: messages.senderName }).from(messages)
+        .innerJoin(chats, eq(chats.id, messages.chatId))
         .where(and(
-          eq(messages.senderExternalId, r.externalAccountId), eq(messages.fromOwner, true),
+          eq(chats.connectionId, r.id), eq(messages.fromOwner, true),
           isNotNull(messages.senderName), isNull(messages.deletedAt),
         ))
         .orderBy(desc(messages.sentAt), desc(messages.id))

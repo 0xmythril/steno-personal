@@ -337,7 +337,7 @@ describe('people on chats and messages', () => {
   })
 
   it('puts the person on a message by its sender identity, and the owner’s own person on the owner’s lines', async () => {
-    const conn = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '987654321' })
+    const conn = await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '987654321' })
     const group = await makeChat(conn, { kind: 'group', title: 'Team' })
     await addMessage(group, { senderName: 'Ada', senderExternalId: '123456789', text: 'from ada' })
     await addMessage(group, { senderName: 'Me', senderExternalId: '987654321', fromOwner: true, text: 'from me' })
@@ -358,8 +358,8 @@ describe('people on chats and messages', () => {
     const me = (await ownerPerson())!
     const after = (await getMessages(group.id))!.messages
     const mine = after.find(m => m.text === 'from me')!
-    expect(mine.person).toEqual({ id: me.id, name: 'Cham' })
-    expect(mine.senderName).toBe('Cham')
+    expect(mine.person).toEqual({ id: me.id, name: 'Casey' })
+    expect(mine.senderName).toBe('Casey')
     expect(after.find(m => m.text === 'from ada')!.person).toEqual({ id: ada.id, name: 'Ada Lovelace' })
     // Hidden, the owner is nobody here too.
     await archivePerson(me.id)

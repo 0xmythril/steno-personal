@@ -61,7 +61,8 @@ export async function seedMessage(chatId: string, opts: {
     id,
     chatId,
     externalMessageId: `m-${id.slice(0, 8)}`,
-    senderExternalId: opts.senderExternalId ?? 'sender-1',
+    // '' means "no sender id", the shape of an owner's own direct message.
+    senderExternalId: opts.senderExternalId === '' ? null : opts.senderExternalId ?? 'sender-1',
     senderName: opts.senderName === undefined ? 'Mum' : opts.senderName,
     fromOwner: opts.fromOwner ?? false,
     sentAt,

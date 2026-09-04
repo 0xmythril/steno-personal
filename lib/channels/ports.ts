@@ -16,11 +16,11 @@ export function buildPorts(
   if (hasTelegramCredentials(cfg)) {
     ports.set('telegram', new MtcuteTelegramPort({ apiId: cfg.apiId, apiHash: cfg.apiHash }))
   } else {
-    // Not fatal: the project defaults ship empty until the application is
-    // registered, and a worker with no channel port still does useful work
-    // (purging sessions) and still lets the portal load. One warning at start,
-    // never one per tick.
-    warn('TELEGRAM_API_ID / TELEGRAM_API_HASH are unset; running without the Telegram port')
+    // Not fatal: the project ships its own pair, so this is an explicit
+    // TELEGRAM_API_ID=0 (or a fork without the pair), and a worker with no
+    // channel port still does useful work (purging sessions) and still lets
+    // the portal load. One warning at start, never one per tick.
+    warn('TELEGRAM_API_ID=0: running without the Telegram port')
   }
   // WhatsApp needs no credentials of its own: the QR pairs the owner's account
   // and Baileys keeps its signal keys on the volume at

@@ -273,10 +273,11 @@ const latestPushName = sql`(select m2.sender_name from ${messages} m2
 const channelLabelSql = sql<string | null>`coalesce(${messages.senderName}, ${latestPushName}, ${contactName},
   case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
     then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`
-const senderLabelSql = sql<string | null>`coalesce(${senderPersonNameSql}, ${channelLabelSql})`
-// Aliased: searchMessages selects these inside a subquery, and drizzle
+// senderName is coalesce(address book, channel label), assembled in toView
+// from the two columns rather than selected as a third: as SQL it would
+// inline the channel label's subqueries a second time on every row.
+// Aliased: searchMessages selects this inside a subquery, and drizzle
 // refuses an unaliased raw column there.
-const senderLabel = senderLabelSql.as('sender_name')
 const channelLabel = channelLabelSql.as('channel_name')
 
 // The quoted message, joined by (this chat, the channel's id it carries):
@@ -293,7 +294,7 @@ const quotedJoin = and(
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
-  senderName: senderLabel, channelName: channelLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
+  channelName: channelLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
   personId: senderPersonId, personName: senderPersonName,
   hasMedia: messages.hasMedia,
@@ -305,7 +306,7 @@ const messageSelection = {
 // Exactly what messageSelection returns: MessageView minus the field the
 // database cannot answer yet, with the person and the reply still in their
 // columns.
-type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo'> & {
+type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo' | 'senderName'> & {
   personId: string | null; personName: string | null; hasMedia: boolean
   replyToId: string | null; replyToSender: string | null; replyToText: string | null
 }
@@ -321,6 +322,7 @@ const unavailableMedia = (): MediaView => ({
 
 const toView = ({ personId, personName, hasMedia, replyToId, replyToSender, replyToText, ...row }: MessageRow, media?: MediaView): MessageView => ({
   ...row,
+  senderName: personName ?? row.channelName,
   person: personRef(personId, personName),
   media: media ?? (hasMedia ? unavailableMedia() : null),
   replyTo: replyToId !== null ? { id: replyToId, senderName: replyToSender, text: replyToText } : null,
