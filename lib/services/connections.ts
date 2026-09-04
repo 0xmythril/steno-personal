@@ -1,9 +1,9 @@
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { channelContacts, chats, connections, media } from '@/lib/db/schema'
+import { channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { mediaFilePath } from '@/lib/services/media'
 import { errorShape, log } from '@/lib/log'
@@ -107,7 +107,10 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
 // contact cache read from that same connection usually holds an entry for
 // the account itself, and that name is used before answering null. The
 // account id is looked up here and never returned.
-export type AgentConnection = { channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
+// `id` is this instance's own connection uuid, the one every chat carries as
+// connectionId — never the account identifier (spec invariant: no channel id
+// on an agent surface).
+export type AgentConnection = { id: string; channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
 
 export async function agentConnections(): Promise<AgentConnection[]> {
   const rows = await db.select({
@@ -125,7 +128,24 @@ export async function agentConnections(): Promise<AgentConnection[]> {
         .limit(1)
       displayName = own?.displayName ?? null
     }
-    out.push({ channel: r.channel, displayName, status: r.status })
+    // WhatsApp rarely hands the port the owner's own name at pairing, and
+    // the contact cache seldom holds the account itself — but every message
+    // the owner sends carries their push name. The latest live one is the
+    // name they are showing the world right now.
+    // Keyed on the account id — the owner's own messages carry it as their
+    // sender id — so this is one descending walk of messages_sender_sent_idx
+    // that stops at the first named row, not a scan of every chat.
+    if (!displayName && r.externalAccountId) {
+      const [own] = await db.select({ displayName: messages.senderName }).from(messages)
+        .where(and(
+          eq(messages.senderExternalId, r.externalAccountId), eq(messages.fromOwner, true),
+          isNotNull(messages.senderName), isNull(messages.deletedAt),
+        ))
+        .orderBy(desc(messages.sentAt), desc(messages.id))
+        .limit(1)
+      displayName = own?.displayName ?? null
+    }
+    out.push({ id: r.id, channel: r.channel, displayName, status: r.status })
   }
   return out
 }

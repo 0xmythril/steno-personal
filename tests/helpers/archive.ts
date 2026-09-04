@@ -12,6 +12,7 @@ export async function seedConnection(opts: {
   channel?: Channel
   displayName?: string | null
   status?: 'pending' | 'active' | 'revoked' | 'error'
+  externalAccountId?: string
 } = {}): Promise<string> {
   const id = randomUUID()
   const status = opts.status ?? 'active'
@@ -19,7 +20,7 @@ export async function seedConnection(opts: {
     id,
     channel: opts.channel ?? 'telegram',
     status,
-    externalAccountId: `acct-${id.slice(0, 8)}`,
+    externalAccountId: opts.externalAccountId ?? `acct-${id.slice(0, 8)}`,
     displayName: opts.displayName === undefined ? 'Test Account' : opts.displayName,
     revokedAt: status === 'revoked' ? new Date() : null,
   })
@@ -49,9 +50,10 @@ export async function seedMessage(chatId: string, opts: {
   text?: string | null
   sentAt?: Date
   senderName?: string | null
+  senderExternalId?: string
   fromOwner?: boolean
   deletedAt?: Date | null
-  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
+  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
 } = {}): Promise<string> {
   const id = randomUUID()
   const sentAt = opts.sentAt ?? new Date()
@@ -59,7 +61,7 @@ export async function seedMessage(chatId: string, opts: {
     id,
     chatId,
     externalMessageId: `m-${id.slice(0, 8)}`,
-    senderExternalId: 'sender-1',
+    senderExternalId: opts.senderExternalId ?? 'sender-1',
     senderName: opts.senderName === undefined ? 'Mum' : opts.senderName,
     fromOwner: opts.fromOwner ?? false,
     sentAt,

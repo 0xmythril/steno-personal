@@ -1,4 +1,5 @@
 import { Document, MemoryStorage, Photo, TelegramClient, tl } from '@mtcute/node'
+import { locationLabel, nonEmpty } from '@/lib/channels/content-text'
 import type { Message, Peer } from '@mtcute/node'
 // mtcute's own TL codec, the same pair its session storage uses:
 // serializeObject() is TlBinaryWriter.serializeObject(__tlWriterMap, obj) and
@@ -81,9 +82,48 @@ function messageType(msg: Message): IncomingMessage['type'] {
     case 'audio': case 'voice': return 'audio'
     case 'document': return 'document'
     case 'sticker': return 'sticker'
-    // contact, dice, game, location, poll, venue, webpage, story, invoice…
+    case 'location': case 'live_location': case 'venue': return 'location'
+    case 'contact': return 'contact'
+    case 'poll': return 'poll'
+    // dice, game, webpage, story, invoice…
     default: return 'unknown'
   }
+}
+
+// The one line a reader wants from content that is not text: a venue's name,
+// a pin's coordinates, a contact's name, a poll's question and options. Every
+// field is read through a narrow cast and guarded, like mediaMeta below;
+// a shape mtcute changes degrades to null, never to a throw in ingest.
+function mediaText(msg: Message): string | null {
+  const m = msg.media as {
+    type: string; title?: string; address?: string; latitude?: number; longitude?: number
+    // A venue carries its point one level down (mtcute Venue.location).
+    location?: { latitude?: number; longitude?: number }
+    firstName?: string; lastName?: string; question?: string; answers?: ReadonlyArray<{ text?: string }>
+  } | null
+  if (!m) return null
+  switch (m.type) {
+    case 'venue':
+      return locationLabel({ name: m.title, address: m.address, lat: m.location?.latitude, lng: m.location?.longitude })
+    case 'location': case 'live_location':
+      return locationLabel({ lat: m.latitude, lng: m.longitude })
+    case 'contact':
+      return [nonEmpty(m.firstName), nonEmpty(m.lastName)].filter(Boolean).join(' ') || null
+    case 'poll': {
+      const answers = Array.isArray(m.answers) ? m.answers.map(a => nonEmpty(a?.text)).filter(Boolean) : []
+      return [nonEmpty(m.question), ...answers].filter(Boolean).join('\n') || null
+    }
+    default:
+      return null
+  }
+}
+
+// Only a reply to a message in THIS chat resolves here: a quote from another
+// chat carries that chat's message id, which in a supergroup's own id space
+// would name an unrelated message.
+function replyTarget(msg: Message): string | null {
+  const r = msg.replyToMessage
+  return r && r.originIs('same_chat') && r.id != null ? String(r.id) : null
 }
 
 const DOWNLOADABLE = new Set(['photo', 'video', 'audio', 'voice', 'document', 'sticker'])
@@ -144,8 +184,9 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     fromOwner: msg.isOutgoing || String(msg.chat.id) === selfId,
     sentAt: msg.date,
     type: messageType(msg),
-    text: msg.text || null,
+    text: msg.text || mediaText(msg),
     media: mediaMeta(msg),
+    replyToExternalId: replyTarget(msg),
     raw: encodeTlRaw(msg.raw),
   }
 }

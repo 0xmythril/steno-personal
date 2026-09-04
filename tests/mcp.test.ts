@@ -53,13 +53,48 @@ describe('whoami', () => {
     await seedConnection({ channel: 'telegram', displayName: 'Alex' })
     await seedConnection({ channel: 'whatsapp', displayName: 'Alex on WhatsApp', status: 'revoked' })
     const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as {
-      connections: Array<{ channel: string; displayName: string | null; status: string }>
+      connections: Array<{ channel: string; displayName: string | null; status: string; id: string }>
     }
     expect(out.connections).toHaveLength(2)
     expect(out.connections.map(c => [c.channel, c.status]).sort())
       .toEqual([['telegram', 'active'], ['whatsapp', 'revoked']])
-    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,status')).toBe(true)
+    // id is this instance's own connection uuid — the one list_chats puts
+    // on each chat as connectionId — never the account identifier.
+    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,status')).toBe(true)
     expect(JSON.stringify(out)).not.toContain('acct-')
+  })
+
+  it('carries the connection id that list_chats names on each chat', async () => {
+    const conn = await seedConnection({ channel: 'telegram' })
+    const chat = await seedChat(conn, { title: 'Mum' })
+    await seedMessage(chat, { text: 'hi' })
+    const key = await agentKey()
+    const who = JSON.parse(await callTool(key, 'whoami')) as { connections: Array<{ id: string }> }
+    const list = JSON.parse(await callTool(key, 'list_chats')) as { chats: Array<{ connectionId: string; createdAt: string }>; total: number }
+    expect(who.connections[0].id).toBe(conn)
+    expect(list.chats[0].connectionId).toBe(conn)
+    expect(list.total).toBe(1)
+    expect(typeof list.chats[0].createdAt).toBe('string')
+  })
+})
+
+describe('whoami display name', () => {
+  beforeEach(resetDb)
+
+  it('falls back to the push name on the owner’s own messages when the socket and the contact cache gave none', async () => {
+    // WhatsApp rarely hands the port the owner's own name at pairing, so the
+    // account sat in whoami as { displayName: null } while every message the
+    // owner sent carried their push name.
+    const ME = '15550001111@s.whatsapp.net'
+    const conn = await seedConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ME })
+    const chat = await seedChat(conn, { channel: 'whatsapp', kind: 'group', title: 'Team' })
+    await seedMessage(chat, { fromOwner: true, senderExternalId: ME, senderName: 'Old Name', sentAt: new Date(1000) })
+    await seedMessage(chat, { fromOwner: true, senderExternalId: ME, senderName: 'Cham', sentAt: new Date(2000) })
+    // Someone else's name, and a deleted line of the owner's, are not it.
+    await seedMessage(chat, { fromOwner: false, senderName: 'Not Me', sentAt: new Date(3000) })
+    await seedMessage(chat, { fromOwner: true, senderExternalId: ME, senderName: 'Retracted', sentAt: new Date(4000), deletedAt: new Date() })
+    const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as { connections: Array<{ displayName: string | null }> }
+    expect(out.connections.map(c => c.displayName)).toEqual(['Cham'])
   })
 })
 
@@ -156,11 +191,19 @@ describe('content tools with an archive', () => {
     await seedMessage(work, { text: 'umbrella corp deck is ready' })
     const key = await agentKey()
 
-    const wide = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella' })) as Array<{ chatId: string }>
-    expect(wide.map(r => r.chatId).sort()).toEqual([mum, work].sort())
+    type Out = { hits: Array<{ chatId: string }>; nextCursor: string | null }
+    const wide = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella' })) as Out
+    expect(wide.hits.map(r => r.chatId).sort()).toEqual([mum, work].sort())
+    expect(wide.nextCursor).toBeNull()
 
-    const scoped = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', chat_id: mum })) as Array<{ chatId: string }>
-    expect(scoped.map(r => r.chatId)).toEqual([mum])
+    const scoped = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', chat_id: mum })) as Out
+    expect(scoped.hits.map(r => r.chatId)).toEqual([mum])
+
+    const paged = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', limit: 1, order: 'newest' })) as Out
+    expect(paged.hits).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
+    const rest = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', limit: 1, order: 'newest', cursor: paged.nextCursor! })) as Out
+    expect(rest.hits.map(r => r.chatId)).not.toEqual(paged.hits.map(r => r.chatId))
   })
 
   it('answers a failed query with a fixed sentence, never the query or its parameters', async () => {
@@ -198,7 +241,7 @@ describe('content tools with an archive', () => {
     expect(transcript).toContain('kept')
     expect(transcript).not.toContain('retracted')
     expect(transcript).not.toContain('deletedAt')
-    expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('[]')
+    expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('{"hits":[],"nextCursor":null}')
   })
 })
 
@@ -221,11 +264,15 @@ describe('list_people', () => {
     await linkIdentity(id, { channel: 'whatsapp', externalId: '447700900123@s.whatsapp.net' })
 
     const out = await callTool(await agentKey(), 'list_people')
-    expect(JSON.parse(out)).toEqual([{
-      id, name: 'Ada', notes: 'from the archive',
-      channels: ['telegram', 'whatsapp'], chatCount: 1,
-      chats: [{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }],
-    }])
+    expect(JSON.parse(out)).toEqual({
+      people: [{
+        id, name: 'Ada', notes: 'from the archive',
+        channels: ['telegram', 'whatsapp'], chatCount: 1,
+        dm: [{ id: chat, channel: 'telegram' }],
+        self: false,
+      }],
+      nextCursor: null,
+    })
     expect(out).not.toContain('+447700900123')
     expect(out).not.toContain('@s.whatsapp.net')
     expect(out).not.toContain('externalId')
@@ -243,7 +290,7 @@ describe('list_people', () => {
     const chat = await seedChat(conn, { title: 'Ada', kind: 'dm', externalChatId: '42' })
     await seedMessage(chat, { text: 'hello' })
     await createPerson({ name: 'Ada' })
-    const out = JSON.parse(await callTool(await agentKey(), 'list_people')) as Array<{ name: string }>
-    expect(out.map(p => p.name)).toEqual(['Ada'])
+    const out = JSON.parse(await callTool(await agentKey(), 'list_people')) as { people: Array<{ name: string }> }
+    expect(out.people.map(p => p.name)).toEqual(['Ada'])
   })
 })

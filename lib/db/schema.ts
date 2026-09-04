@@ -113,9 +113,13 @@ export const messages = sqliteTable('messages', {
   senderName: text('sender_name'),
   fromOwner: integer('from_owner', { mode: 'boolean' }).notNull().default(false),
   sentAt: integer('sent_at', { mode: 'timestamp_ms' }).notNull(),
-  type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'system', 'unknown'] }).notNull(),
+  type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'reaction', 'poll', 'location', 'contact', 'system', 'unknown'] }).notNull(),
   text: text('text'),
   hasMedia: integer('has_media', { mode: 'boolean' }).notNull().default(false),
+  // The channel's own id of the message this one quotes, in the same chat.
+  // Resolved to our row on read (lib/services/queries.ts replyTo), never
+  // stored as our id: the quoted message may arrive after the reply.
+  replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
   raw: text('raw', { mode: 'json' }).notNull(),
@@ -123,6 +127,9 @@ export const messages = sqliteTable('messages', {
 }, t => [
   uniqueIndex('messages_external_unique').on(t.chatId, t.externalMessageId),
   index('messages_chat_sent_idx').on(t.chatId, t.sentAt),
+  // The sender-name lookup in lib/services/queries.ts walks one sender's
+  // messages newest-first, once per row on a page.
+  index('messages_sender_sent_idx').on(t.senderExternalId, t.sentAt),
 ])
 
 // Downloaded attachment bytes, one row per message that carries one. Queued
@@ -205,6 +212,11 @@ export const people = sqliteTable('people', {
   name: text('name').notNull(),
   notes: text('notes'),
   nameSource: text('name_source', { enum: ['channel', 'owner'] }).notNull().default('channel'),
+  // The one row that is the owner themself: created by populate, linked to
+  // each connected account's id, attached as `person` to every message the
+  // owner sent, and kept out of the address-book table (it lists the people
+  // the owner talks to). Never more than one live row.
+  isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false),
   archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),

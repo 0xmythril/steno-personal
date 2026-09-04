@@ -1,0 +1,1 @@
+ALTER TABLE `people` ADD `is_owner` integer DEFAULT false NOT NULL;

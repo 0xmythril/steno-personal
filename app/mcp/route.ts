@@ -87,6 +87,7 @@ const getMessagesInput = z.object({
 const recentInput = z.object({
   channel: channel.optional(),
   kind: kind.optional(),
+  include_channels: z.boolean().optional(),
   limit: limit.optional(),
   cursor: z.string().optional(),
   before: timestamp.optional(),
@@ -101,9 +102,14 @@ const searchInput = z.object({
   before: timestamp.optional(),
   after: timestamp.optional(),
   limit: limit.optional(),
+  order: z.enum(['relevance', 'newest']).optional(),
+  cursor: z.string().optional(),
 })
 const listPeopleInput = z.object({
   q: z.string().optional(),
+  limit: limit.optional(),
+  cursor: z.string().optional(),
+  include_chats: z.boolean().optional(),
 })
 const getMediaInput = z.object({
   media_id: z.string(),
@@ -118,7 +124,8 @@ const handler = createMcpHandler(server => {
         'The chats archived on this instance, most recently active first: id, channel, kind (dm, group or channel), title, ' +
         'last activity, live message count and a snippet of the latest message. Filter by channel, by kind, or by q — a ' +
         'case-insensitive substring of the title, which for a direct chat is the name of the person in it. Twenty per page; ' +
-        'pass nextCursor back to continue. ' +
+        'pass nextCursor back to continue; total is how many match the filters. Two rows with one title are the same ' +
+        'chat seen through two pairings of the account: connectionId (the id whoami reports) and createdAt tell them apart. ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: listChatsInput,
@@ -158,9 +165,10 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        'The inbox: the newest messages across every chat, each with the chat it came from (chatId, chatTitle, channel, ' +
-        'kind). Optionally one channel or one kind of chat, and before/after as ISO-8601 timestamps. Twenty per page; ' +
-        'pass nextCursor back to go further back in time. ' +
+        'The inbox: the newest messages across your direct chats and groups, each with the chat it came from (chatId, ' +
+        'chatTitle, channel, kind). Broadcast channels are left out unless you pass include_channels or kind: channel. ' +
+        'Optionally one channel or one kind of chat, and before/after as ISO-8601 timestamps. Twenty per page; pass ' +
+        'nextCursor back to go further back in time. ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
@@ -171,6 +179,7 @@ const handler = createMcpHandler(server => {
       const out = await recentMessages({
         channel: args.channel,
         kind: args.kind,
+        includeChannels: args.include_channels,
         limit: args.limit,
         cursor: args.cursor,
         before: toDate(args.before),
@@ -186,9 +195,10 @@ const handler = createMcpHandler(server => {
       annotations: READ_ONLY,
       description:
         'Full-text search across the archive. Every word must match. Narrow it with chat_id, channel, kind, sender ' +
-        '(a substring of the sender as shown: channel name, contact name or address-book name), and before/after as ' +
-        'ISO-8601 timestamps; limit defaults to 50. Each hit names its chat (chatId, chatTitle, channel, kind), best ' +
-        'match first. ' +
+        '(a substring of the sender as shown), and before/after as ISO-8601 timestamps. Returns { hits, nextCursor }: ' +
+        'fifty per page, pass nextCursor back to continue. Order is relevance (best match first) for a bare query and ' +
+        'newest first when before or after is given; pass order to choose. Relevance pages can shift while the archive ' +
+        'is being written to; newest is stable. Each hit names its chat (chatId, chatTitle, channel, kind). ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
@@ -196,7 +206,7 @@ const handler = createMcpHandler(server => {
     },
     guarded('search_messages', async (args: z.infer<typeof searchInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
-      const hits = await searchMessages(args.query, {
+      const out = await searchMessages(args.query, {
         chatId: args.chat_id,
         channel: args.channel,
         kind: args.kind,
@@ -204,8 +214,10 @@ const handler = createMcpHandler(server => {
         before: toDate(args.before),
         after: toDate(args.after),
         limit: args.limit,
+        order: args.order,
+        cursor: args.cursor,
       })
-      return text(hits.map(lean))
+      return text({ hits: out.hits.map(lean), nextCursor: out.nextCursor })
     }),
   )
 
@@ -218,16 +230,18 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        "The people in this instance's address book: id, name, your notes, which channels are linked, and the chats "
-        + 'they appear in (id, title, channel, kind — the same ids get_messages takes). Pass q to match a substring of '
-        + "the name. The notes are the owner's own free text and are returned verbatim. "
+        "The people in this instance's address book: id, name, your notes, which channels are linked, how many chats "
+        + 'they appear in, and dm — the ids of the direct chats with them, which get_messages takes. Pass q to match a '
+        + 'substring of the name. Fifty per page, sorted by name; pass nextCursor back to continue. Pass include_chats '
+        + 'to also list every chat they appear in (id, title, channel, kind); it is long for a well-connected person, '
+        + "so ask for it with q. The notes are the owner's own free text and are returned verbatim. "
         + 'Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: listPeopleInput,
     },
     guarded('list_people', async (args: z.infer<typeof listPeopleInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
-      return text(await publicPeople({ q: args.q }))
+      return text(await publicPeople({ q: args.q, limit: args.limit, cursor: args.cursor, includeChats: args.include_chats }))
     }),
   )
 
@@ -267,7 +281,8 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        'The channel accounts connected to this instance: channel, display name and status. Never a phone number. ' +
+        'The channel accounts connected to this instance: id (the connectionId list_chats puts on each chat), channel, ' +
+        'display name and status. Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('whoami', async () => {

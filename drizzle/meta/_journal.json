@@ -57,6 +57,27 @@
       "when": 1788501813696,
       "tag": "0007_telemetry",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788533838712,
+      "tag": "0008_sender_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788534223912,
+      "tag": "0009_reply_to",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788536145125,
+      "tag": "0010_owner_person",
+      "breakpoints": true
     }
   ]
 }

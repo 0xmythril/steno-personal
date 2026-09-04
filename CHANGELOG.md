@@ -8,6 +8,50 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.
+- **The owner is a person.** Populate makes one address-book row for you,
+  linked to each connected account; every message you sent carries it as
+  `person`, and `list_people` marks it `self: true`. It stays out of the
+  People table, which lists the people you talk to.
+- **`list_chats`** reports `total` for the filters, and each chat carries
+  `createdAt` and `connectionId`; `whoami` carries the matching `id`, so two
+  rows for one chat after a re-pairing can be told apart.
+- **`channelName`** on every message: what the channel called the sender,
+  with the address book left out, beside the resolved `senderName`.
+- **Replies** carry `replyTo` — the quoted message's id, sender and text —
+  on every message read path.
+- **Mentions** in WhatsApp text (`@<digits>`) are shown as the name the
+  archive knows for that person.
+- **Reactions, polls, locations and contact cards** get a type and a line of
+  text instead of `unknown` with nothing in it.
+- **`media.analysis`** on every attachment: off, queued, done, failed, skipped
+  or unsupported, so an agent can tell "no key in Settings" from "not run
+  yet" from "nothing found".
+
+### Changed
+- **`search_messages`** returns `{hits, nextCursor}` and pages fifty at a
+  time. Order is relevance for a bare query and newest first when a date
+  bound is given; `order: relevance | newest` picks. `GET /api/search` takes
+  the same `order` and `cursor` and adds `nextCursor` beside `results`.
+  Agents reading the old bare array must update.
+- **`list_people`** is paged (`{people, nextCursor}`, fifty per page) and lean
+  by default: id, name, notes, channels, chat count and the direct-chat ids.
+  Pass `include_chats` for the full chat list. Agents reading the old bare
+  array must update. A contact whose name has no letter or digit in it (`'`,
+  `…`) no longer becomes a person.
+- **`recent_messages`** leaves broadcast channels out unless `include_channels`
+  or `kind: channel` is passed: an inbox that is mostly announcements is not
+  an inbox.
+- **Sender names** are resolved once per sender on every read path: the
+  address-book name, then the push name, then the latest push name that
+  sender ever carried, then the contact list. One person reads the same in
+  every chat.
+- **Chat snippets** show a placeholder (`[image]`, `Reacted 👍`) instead of
+  nothing when the latest message has no text, and walk past system rows and
+  unrecognised rows with no text.
+- **`whoami`** names a WhatsApp account from the push name on the owner's
+  own messages when the socket gave none.
+- **Merge suggestions** on the People page now say which row is on Telegram
+  and which on WhatsApp, which one is kept, and how many chats each carries.
 
 ## [0.1.0] — 2026-09-04
 

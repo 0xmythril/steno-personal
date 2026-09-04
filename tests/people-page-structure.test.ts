@@ -129,7 +129,14 @@ describe('people pages', () => {
     const src = readFileSync('app/people/page.tsx', 'utf8')
     expect(src).toMatch(/listMergeSuggestions/)
     expect(src).not.toMatch(/listSuggestions/)
-    expect(src).toMatch(/Merge \{s\.from\.name\} into \{s\.into\.name\}\?/)
+    // The sentence names the channel of each side and the Why column says
+    // which row is kept: two identical names on one line told the owner
+    // nothing about which was Telegram and which WhatsApp.
+    expect(src).toMatch(/Add \{s\.from\.name\}/)
+    expect(src).toMatch(/CHANNEL_LABELS\[s\.from\.channel\]/)
+    expect(src).toMatch(/CHANNEL_LABELS\[s\.into\.channel\]/)
+    expect(src).toMatch(/row is older/)
+    expect(src).not.toMatch(/Merge \{s\.from\.name\} into/)
     expect(src).toMatch(/name="fromId"/)
     // The two channel identities are what the table used to post around; a
     // person id is this instance's own uuid and names nobody.

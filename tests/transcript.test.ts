@@ -6,7 +6,7 @@ import type { MessageView } from '@/lib/services/queries'
 const msg = (over: Partial<MessageView> & { id: string }): MessageView => ({
   externalMessageId: over.id, sentAt: new Date('2026-08-01T10:00:00Z'),
   type: 'text', text: 'hi', senderName: 'Alice', fromOwner: false, editedAt: null,
-  person: null, media: null,
+  person: null, media: null, replyTo: null, channelName: null,
   ...over,
 })
 
@@ -65,8 +65,8 @@ describe('transcript grouping', () => {
   it('labels a run with the person, not the name the channel stored', () => {
     const person = { id: 'p1', name: 'Ada' }
     const runs = groupRuns([
-      msg({ id: '1', senderName: 'ada@work', person }),
-      msg({ id: '2', senderName: 'Ada Lovelace', person }),
+      msg({ id: '1', senderName: 'Ada', channelName: 'ada@work', person }),
+      msg({ id: '2', senderName: 'Ada', channelName: 'Ada Lovelace', person }),
     ])
     // One person under two spellings is one run: the key is the person's id,
     // which is the only stable sender identity a MessageView carries.
@@ -146,5 +146,14 @@ describe('linkify', () => {
       { kind: 'text', value: 'javascript:alert(1) data:text/html,x mailto:a@b.c' },
     ])
     expect(linkify('')).toEqual([])
+  })
+})
+
+describe('the channel-name hint beside a linked person', () => {
+  it('shows the name the channel used when it differs from the address book, and nothing otherwise', () => {
+    const [run] = groupRuns([msg({ id: 'a', senderName: 'Mum', channelName: 'Kim Smith', person: { id: 'p1', name: 'Mum' } })])
+    expect(run.rawLabel).toBe('Kim Smith')
+    const [same] = groupRuns([msg({ id: 'b', senderName: 'Mum', channelName: 'Mum', person: { id: 'p1', name: 'Mum' } })])
+    expect(same.rawLabel).toBeNull()
   })
 })

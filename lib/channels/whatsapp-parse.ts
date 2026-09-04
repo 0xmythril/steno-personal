@@ -1,4 +1,5 @@
 import type { IncomingMessage } from '@/lib/services/ingest'
+import { locationLabel, nonEmpty } from '@/lib/channels/content-text'
 
 // Pure parsing of the message shapes Baileys hands over — unwrapping,
 // text extraction, protocol events, contact identity — for any remoteJid:
@@ -184,7 +185,19 @@ export type ParsedWaMessage = {
   type: WaMessageType
   text: string | null
   media: WaMedia
+  replyToExternalId: string | null
   raw: unknown
+}
+
+// A reply carries contextInfo.stanzaId — the quoted message's id — on
+// whichever content node the message is (text, image, sticker…). A
+// contextInfo with mentions but no stanzaId is not a reply.
+export function replyTargetOf(content: any): string | null {
+  for (const node of Object.values(content ?? {})) {
+    const id = (node as any)?.contextInfo?.stanzaId
+    if (typeof id === 'string' && id) return id
+  }
+  return null
 }
 
 // Live group messages carry the sender at m.key.participant (LID-addressed
@@ -244,6 +257,7 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
     senderName: pushName,
     fromOwner,
     sentAt: tsToDate(m?.messageTimestamp),
+    replyToExternalId: replyTargetOf(content),
     raw: m,
   }
 
@@ -256,9 +270,45 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
     if (!node) continue
     return { ...base, type, text: node.caption ?? null, media: mediaMeta(type, node) }
   }
+  // Content that is not text and not a file, given a type and the one line
+  // of text a reader would want: without it every reaction, poll, pin and
+  // shared contact was an `unknown` row with nothing in it, and a chat whose
+  // latest message was one had no snippet at all.
+  // A reaction's target is the message it was put on — the reply target,
+  // so "Reacted 👍" resolves to what was reacted to.
+  const reaction = content?.reactionMessage
+  if (reaction) {
+    return {
+      ...base, type: 'reaction', text: nonEmpty(reaction.text), media: null,
+      replyToExternalId: nonEmpty(reaction.key?.id) ?? base.replyToExternalId,
+    }
+  }
+  const poll = content?.pollCreationMessageV3 ?? content?.pollCreationMessageV2 ?? content?.pollCreationMessage
+  if (poll) {
+    const options: string[] = Array.isArray(poll.options)
+      ? poll.options.map((o: any) => nonEmpty(o?.optionName)).filter((s: string | null): s is string => s !== null)
+      : []
+    return { ...base, type: 'poll', text: [nonEmpty(poll.name), ...options].filter(Boolean).join('\n') || null, media: null }
+  }
+  const location = content?.locationMessage ?? content?.liveLocationMessage
+  if (location) {
+    const text = locationLabel({ name: location.name, address: location.address, lat: location.degreesLatitude, lng: location.degreesLongitude })
+    return { ...base, type: 'location', text, media: null }
+  }
+  // A contact card's vcard carries the number; only the display name is kept.
+  const contact = content?.contactMessage
+  if (contact) return { ...base, type: 'contact', text: nonEmpty(contact.displayName), media: null }
+  const contacts = content?.contactsArrayMessage
+  if (contacts) {
+    const n = Array.isArray(contacts.contacts) ? contacts.contacts.length : 0
+    const name = nonEmpty(contacts.displayName)
+    const count = n > 0 ? `${n} contact${n === 1 ? '' : 's'}` : null
+    return { ...base, type: 'contact', text: name && count ? `${name} (${count})` : name ?? count, media: null }
+  }
   if (m?.messageStubType != null) return { ...base, type: 'system', text: null, media: null }
   return { ...base, type: 'unknown', text: null, media: null }
 }
+
 
 export type ToIncomingCtx = {
   chatTitle: string | null
@@ -282,6 +332,7 @@ export function toIncoming(p: ParsedWaMessage, ctx: ToIncomingCtx): IncomingMess
     type: p.type,
     text: p.text,
     media: p.media,
+    replyToExternalId: p.replyToExternalId,
     raw: p.raw,
   }
 }

@@ -32,6 +32,21 @@ export type Medium = 'image' | 'audio'
 // Every audio predicate FAILS CLOSED on null: a row whose is_voice_note or
 // duration_seconds is unknown is never enqueued, because unknown length must
 // not become unbounded spend.
+// The same two predicates as the enqueue gate below, for a read path that
+// has one row in hand and wants to say whether analysis could ever run on
+// it: an image the vision analyzer accepts, or a voice note within the
+// transcription cap. Null is everything else — a PDF, a song, a note of
+// unknown length — and reads to an agent as `unsupported`. Change one of
+// these and change the SQL under it.
+export function analysisMedium(row: {
+  messageType: string; mimeType: string | null; isVoiceNote: boolean | null; durationSeconds: number | null
+}): Medium | null {
+  if (row.messageType === 'image' && row.mimeType !== null && ANALYZABLE_MIMES.includes(row.mimeType)) return 'image'
+  if (row.messageType === 'audio' && row.isVoiceNote === true
+    && row.durationSeconds !== null && row.durationSeconds <= MAX_TRANSCRIPTION_SECONDS) return 'audio'
+  return null
+}
+
 export async function enqueueMediaAnalysis(medium: Medium, opts: { batch?: number } = {}): Promise<number> {
   const batch = opts.batch ?? 20
   const mediumCond = medium === 'image'

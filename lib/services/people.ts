@@ -1,11 +1,12 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { track } from '@/lib/services/telemetry'
 import { db } from '@/lib/db/client'
 import {
   channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
 } from '@/lib/db/schema'
 import type { Channel } from '@/lib/channels/port'
-import { chatSummaries, type ChatKind } from '@/lib/services/queries'
+import { chatSummaries, clampLimit, type ChatKind } from '@/lib/services/queries'
+import { agentConnections } from '@/lib/services/connections'
 
 // The address book. Everything here is the owner's own annotation over
 // identities the archive already stores: nothing in this file talks to a
@@ -44,6 +45,8 @@ export type PersonView = {
   name: string
   notes: string | null
   nameSource: NameSource
+  // The owner's own row (see ownerPerson). Kept out of listPeople.
+  isOwner: boolean
   archivedAt: Date | null
   identities: Array<{
     id: string; channel: Channel; externalId: string
@@ -68,6 +71,10 @@ function cleanName(name: string): string {
 // from a channel has no length contract, and refusing to create the person
 // over it would be a worse answer than trimming it.
 const clampName = (name: string): string => name.trim().slice(0, MAX_NAME)
+
+// A contact list carries entries like "'" and "…": a saved number with no
+// real name. There is nothing to call such a person, so none is created.
+const usableName = (name: string): boolean => /[\p{L}\p{N}]/u.test(name)
 
 const cleanText = (v: string | null | undefined): string | null => {
   const trimmed = v?.trim()
@@ -115,11 +122,12 @@ async function chatCountsByPerson(personIds: string[]): Promise<Map<string, numb
   return new Map(personIds.map(id => [id, ids.get(id)?.size ?? 0]))
 }
 
-async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<string>>> {
-  const seen = new Map<string, Set<string>>()
-  if (personIds.length === 0) return seen
-
-  const dmRows = await db.select({ personId: personIdentities.personId, chatId: chats.id })
+// The direct chats a person is the other side of, one per identity per
+// connection: the one-hop answer to "open my chat with Ada".
+async function dmChatsByPerson(personIds: string[]): Promise<Map<string, Array<{ id: string; channel: Channel }>>> {
+  const out = new Map<string, Array<{ id: string; channel: Channel }>>()
+  if (personIds.length === 0) return out
+  const rows = await db.select({ personId: personIdentities.personId, chatId: chats.id, channel: chats.channel })
     .from(personIdentities)
     .innerJoin(chats, and(
       eq(chats.channel, personIdentities.channel),
@@ -127,6 +135,20 @@ async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<str
       eq(chats.externalChatId, personIdentities.externalId),
     ))
     .where(inArray(personIdentities.personId, personIds))
+    .orderBy(desc(chats.lastMessageAt), asc(chats.id))
+  for (const r of rows) {
+    const list = out.get(r.personId)
+    if (list) list.push({ id: r.chatId, channel: r.channel })
+    else out.set(r.personId, [{ id: r.chatId, channel: r.channel }])
+  }
+  return out
+}
+
+async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<string>>> {
+  const seen = new Map<string, Set<string>>()
+  if (personIds.length === 0) return seen
+
+  const dmRows = [...(await dmChatsByPerson(personIds))].flatMap(([personId, list]) => list.map(c => ({ personId, chatId: c.id })))
 
   const senderRows = await db.select({ personId: personIdentities.personId, chatId: messages.chatId })
     .from(personIdentities)
@@ -167,7 +189,7 @@ async function toViews(rows: Array<typeof people.$inferSelect>): Promise<PersonV
   const [identities, counts] = [await identitiesByPerson(ids), await chatCountsByPerson(ids)]
   return rows.map(r => ({
     id: r.id, name: r.name, notes: r.notes,
-    nameSource: r.nameSource, archivedAt: r.archivedAt,
+    nameSource: r.nameSource, isOwner: r.isOwner, archivedAt: r.archivedAt,
     identities: identities.get(r.id) ?? [], chatCount: counts.get(r.id) ?? 0,
   }))
 }
@@ -182,8 +204,72 @@ const byName = [asc(sql`lower(${people.name})`), asc(people.id)] as const
 // identities as answered and never offers to create them again.
 export async function listPeople(): Promise<PersonView[]> {
   const rows = await db.select().from(people)
-    .where(isNull(people.archivedAt)).orderBy(...byName)
+    .where(and(isNull(people.archivedAt), eq(people.isOwner, false))).orderBy(...byName)
   return toViews(rows)
+}
+
+// The owner themself, as a person: the row every message the owner sent
+// carries as `person`, so "what did I tell Ada" is answerable by id. Made by
+// populatePeople from the connected accounts (ensureOwnerPerson), never by
+// hand, and not part of listPeople — the address book is the people the
+// owner talks to. Null until an account is connected, and null while hidden:
+// hiding the owner is an answer like hiding anyone else.
+export async function ownerPerson(): Promise<PersonView | null> {
+  const rows = await db.select().from(people)
+    .where(and(eq(people.isOwner, true), isNull(people.archivedAt))).limit(1)
+  return rows.length > 0 ? (await toViews(rows))[0] : null
+}
+
+// One row for the owner, linked to every archive connection's own account id
+// — live or past, since a re-paired account is still the owner. Named after
+// the account the way whoami names it (display name, else the owner's own
+// push name), else "You"; nameSource 'channel', so renaming it on the People
+// page makes it an alias like anyone else's. A hidden owner stays hidden,
+// but their identities are still linked, which is what stops a contact-list
+// entry for the owner's own number becoming a second person.
+async function ensureOwnerPerson(): Promise<void> {
+  const accounts = await db.select({
+    id: connections.id, channel: connections.channel, externalAccountId: connections.externalAccountId,
+  }).from(connections).where(eq(connections.purpose, 'archive')).orderBy(asc(connections.createdAt), asc(connections.id))
+  const accountIds = accounts.filter(a => a.externalAccountId).map(a => ({ channel: a.channel, externalId: a.externalAccountId! }))
+  if (accountIds.length === 0) return
+  // Somebody already holding one of the owner's own account ids IS the owner:
+  // an install from before this row existed made a visible contact for the
+  // owner's own number, and a second channel's contact list may do it again.
+  // The oldest such row becomes the owner row rather than a second one being
+  // made beside it; later ones are folded in.
+  const holders: string[] = []
+  for (const a of accountIds) {
+    const [h] = await db.select({ personId: personIdentities.personId }).from(personIdentities)
+      .innerJoin(people, eq(people.id, personIdentities.personId))
+      .where(and(
+        eq(personIdentities.channel, a.channel), eq(personIdentities.externalId, a.externalId),
+        eq(people.isOwner, false), isNull(people.archivedAt),
+      ))
+      .limit(1)
+    if (h && !holders.includes(h.personId)) holders.push(h.personId)
+  }
+  let [row] = await db.select({ id: people.id }).from(people).where(eq(people.isOwner, true)).limit(1)
+  if (!row && holders.length > 0) {
+    const [oldest] = await db.select({ id: people.id }).from(people)
+      .where(inArray(people.id, holders)).orderBy(asc(people.createdAt), asc(people.id)).limit(1)
+    await db.update(people).set({ isOwner: true, updatedAt: new Date() }).where(eq(people.id, oldest.id))
+    row = oldest
+  }
+  if (!row) {
+    const named = await agentConnections()
+    const name = named.find(c => c.status === 'active' && c.displayName)?.displayName
+      ?? named.find(c => c.displayName)?.displayName
+      ?? 'You'
+    ;[row] = await db.insert(people)
+      .values({ name: clampName(name), nameSource: 'channel', isOwner: true })
+      .returning({ id: people.id })
+  }
+  for (const h of holders) if (h !== row.id) await mergePeople(h, row.id)
+  for (const a of accountIds) {
+    // already_linked — to the owner from an earlier run — is left as it is.
+    await linkIdentity(row.id, a, 'auto')
+  }
 }
 
 // The "Hidden" half of the People page. The only read that returns them.
@@ -209,32 +295,88 @@ export type PublicPerson = {
   notes: string | null
   channels: Channel[]
   chatCount: number
-  // The chats this person appears in — a DM with them, or a chat they have
-  // written in — most recently active first, under the titles the chat list
-  // shows. The ids are the ones get_messages takes, so "what did Ada say" is
-  // one hop from here.
-  chats: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
+  // The direct chats with this person, most recently active first — the ids
+  // get_messages takes, so "open my chat with Ada" is one hop from here.
+  dm: Array<{ id: string; channel: Channel }>
+  // True on exactly one row: the owner, whose id every message they sent
+  // carries as `person`.
+  self: boolean
+  // Every chat this person appears in — a DM with them, or a chat they have
+  // written in — under the titles the chat list shows. Only on request: a
+  // well-connected person sits in fifty groups, and an address-book listing
+  // that inlines all of them for everyone is the 140 KB answer the testers
+  // could not use.
+  chats?: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
 }
+
+const DEFAULT_PEOPLE_LIMIT = 50
+
+// The page cursor is (lower-cased name, id) — the sort key — as base64url
+// JSON. Opaque to the caller and never a channel identifier.
+const encodePeopleCursor = (p: { name: string; id: string }): string =>
+  Buffer.from(JSON.stringify([p.name.toLowerCase(), p.id]), 'utf8').toString('base64url')
+function decodePeopleCursor(cursor: string): [string, string] | null {
+  try {
+    const v: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+    return Array.isArray(v) && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string' ? [v[0], v[1]] : null
+  } catch {
+    return null
+  }
+}
+
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 // `q` is a case-insensitive substring of the name, matched here in memory:
 // an address book is hundreds of rows, not millions, and the filter must see
-// the same name the list shows.
-export async function publicPeople(opts: { q?: string } = {}): Promise<PublicPerson[]> {
+// the same name the list shows. Paged in the same order listPeople sorts —
+// lower-cased name, then id — so a cursor is stable across calls; a cursor
+// nobody minted reads as "start at the top", the same rule the chat cursors
+// follow.
+export async function publicPeople(
+  opts: { q?: string; limit?: number; cursor?: string; includeChats?: boolean } = {},
+): Promise<{ people: PublicPerson[]; nextCursor: string | null }> {
   const q = opts.q?.trim().toLowerCase()
-  const views = (await listPeople()).filter(p => !q || p.name.toLowerCase().includes(q))
-  const chatIds = await chatIdsByPerson(views.map(p => p.id))
-  const summaries = await chatSummaries([...new Set([...chatIds.values()].flatMap(s => [...s]))])
-  return views.map(p => {
-    const mine = chatIds.get(p.id) ?? new Set<string>()
-    return {
+  const limit = clampLimit(opts.limit, DEFAULT_PEOPLE_LIMIT)
+  const after = opts.cursor ? decodePeopleCursor(opts.cursor) : null
+  // The owner rides along for agents — their id is on every own message and
+  // must resolve here — sorted among everyone else so the cursor stays one
+  // rule. The sort and the keyset use the SAME comparison (code units of the
+  // lower-cased name, then id): a locale sort here with a code-unit keyset
+  // below skipped everyone after the first accented name on a page edge.
+  const me = await ownerPerson()
+  const everyone = [...(await listPeople()), ...(me ? [me] : [])]
+    .sort((a, b) => cmp(a.name.toLowerCase(), b.name.toLowerCase()) || cmp(a.id, b.id))
+  const views = everyone
+    .filter(p => !q || p.name.toLowerCase().includes(q))
+    .filter(p => {
+      if (!after) return true
+      const name = p.name.toLowerCase()
+      return name > after[0] || (name === after[0] && p.id > after[1])
+    })
+  const page = views.slice(0, limit)
+  const nextCursor = views.length > limit && page.length > 0 ? encodePeopleCursor(page[page.length - 1]) : null
+
+  const ids = page.map(p => p.id)
+  const dms = await dmChatsByPerson(ids)
+  const chatIds = opts.includeChats ? await chatIdsByPerson(ids) : null
+  const summaries = chatIds ? await chatSummaries([...new Set([...chatIds.values()].flatMap(s => [...s]))]) : []
+  const people = page.map(p => {
+    const person: PublicPerson = {
       id: p.id,
       name: p.name,
       notes: p.notes,
       channels: [...new Set(p.identities.map(i => i.channel))].sort(),
       chatCount: p.chatCount,
-      chats: summaries.filter(c => mine.has(c.id)).map(c => ({ id: c.id, title: c.title, channel: c.channel, kind: c.kind })),
+      dm: dms.get(p.id) ?? [],
+      self: p.isOwner,
     }
+    if (chatIds) {
+      const mine = chatIds.get(p.id) ?? new Set<string>()
+      person.chats = summaries.filter(c => mine.has(c.id)).map(c => ({ id: c.id, title: c.title, channel: c.channel, kind: c.kind }))
+    }
+    return person
   })
+  return { people, nextCursor }
 }
 
 export async function getPerson(id: string): Promise<PersonView | null> {
@@ -511,9 +653,14 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
 // found on Telegram, one on WhatsApp, both named the same thing and with no
 // phone number to prove it. Decision 12 will not merge those by itself and
 // should not; this is where the owner is asked.
+// One side of a suggestion, with what the page needs to say which row is
+// which: its channel (the two sides are always one Telegram and one WhatsApp)
+// and how many chats it carries, so "keep the older row" is a decision the
+// owner can weigh rather than take on trust.
+export type SuggestionSide = { id: string; name: string; channel: Channel; chatCount: number }
 export type MergeSuggestion = {
-  from: { id: string; name: string }
-  into: { id: string; name: string }
+  from: SuggestionSide
+  into: SuggestionSide
   reason: 'name'
 }
 
@@ -536,9 +683,10 @@ type SingleChannelPerson = {
 }
 
 async function singleChannelPeople(): Promise<SingleChannelPerson[]> {
+  // The owner is not half of any pair: a same-named contact is not them.
   const rows = await db.select({
     id: people.id, name: people.name, createdAt: people.createdAt,
-  }).from(people).where(isNull(people.archivedAt))
+  }).from(people).where(and(isNull(people.archivedAt), eq(people.isOwner, false)))
   if (rows.length === 0) return []
   const identities = await identitiesByPerson(rows.map(r => r.id))
 
@@ -573,6 +721,10 @@ export async function listMergeSuggestions(): Promise<MergeSuggestion[]> {
     whatsappExternalId: dismissedSuggestions.whatsappExternalId,
   }).from(dismissedSuggestions)).map(r => pairKey(r.telegramExternalId, r.whatsappExternalId)))
 
+  const counts = await chatCountsByPerson(candidates.map(c => c.id))
+  const side = (c: SingleChannelPerson): SuggestionSide =>
+    ({ id: c.id, name: c.name, channel: c.channel, chatCount: counts.get(c.id) ?? 0 })
+
   const byName = new Map<string, SingleChannelPerson[]>()
   for (const w of whatsapp) {
     const key = nameKey(w.name)
@@ -592,11 +744,7 @@ export async function listMergeSuggestions(): Promise<MergeSuggestion[]> {
       const [into, from] = t.createdAt.getTime() === w.createdAt.getTime()
         ? (t.id < w.id ? [t, w] : [w, t])
         : (t.createdAt < w.createdAt ? [t, w] : [w, t])
-      out.push({
-        from: { id: from.id, name: from.name },
-        into: { id: into.id, name: into.name },
-        reason: 'name',
-      })
+      out.push({ from: side(from), into: side(into), reason: 'name' })
     }
   }
   return out
@@ -744,6 +892,9 @@ export async function mergePeople(fromId: string, intoId: string): Promise<boole
       .where(and(inArray(people.id, [fromId, intoId]), isNull(people.archivedAt))).all()
     const from = rows.find(r => r.id === fromId)
     const into = rows.find(r => r.id === intoId)
+    // The owner's row is the one every own message resolves to; it can take
+    // a contact in, never be folded into one.
+    if (from?.isOwner) return false
     if (!from || !into) return false
 
     tx.update(personIdentities).set({ personId: intoId })
@@ -813,7 +964,8 @@ async function mergeByPhone(): Promise<number> {
     createdAt: people.createdAt,
   }).from(personIdentities)
     .innerJoin(people, eq(people.id, personIdentities.personId))
-    .where(and(isNotNull(personIdentities.phone), isNull(people.archivedAt)))
+    // The owner's own number is not a bridge to anyone.
+    .where(and(isNotNull(personIdentities.phone), isNull(people.archivedAt), eq(people.isOwner, false)))
 
   type Group = { telegram: Set<string>; whatsapp: Set<string> }
   const groups = new Map<string, Group>()
@@ -848,8 +1000,10 @@ async function mergeByPhone(): Promise<number> {
 // chose the channel's name — destroyed silently and never corrected by a later
 // sync. Repeating both predicates in the WHERE makes the racing write a no-op.
 async function refreshChannelNames(): Promise<number> {
+  // The owner's row is named after the account, not after a contact-list
+  // entry for their own number ("Me", or worse); it is left alone here.
   const rows = await db.select({ id: people.id, name: people.name }).from(people)
-    .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt)))
+    .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt), eq(people.isOwner, false)))
     // Oldest first, so the loop below runs in the same order every time rather
     // than in whatever order the planner happens to return.
     .orderBy(asc(people.createdAt), asc(people.id))
@@ -857,12 +1011,14 @@ async function refreshChannelNames(): Promise<number> {
   let renamed = 0
   for (const r of rows) {
     const next = names.get(r.id)
-    if (!next || next === r.name) continue
+    // A contact renamed to nothing usable keeps the name they had.
+    if (!next || next === r.name || !usableName(next)) continue
     const written = await db.update(people).set({ name: next, updatedAt: new Date() })
       .where(and(
         eq(people.id, r.id),
         eq(people.nameSource, 'channel'),
         isNull(people.archivedAt),
+        eq(people.isOwner, false),
       ))
       .returning({ id: people.id })
     // Counted from what actually landed, so a lost race is not reported as a
@@ -915,6 +1071,9 @@ export type PopulateResult = { created: number; merged: number; renamed: number 
 // people the owner actually talks to. They stay linkable by hand.
 export async function populatePeople(): Promise<PopulateResult> {
   const channels: Channel[] = ['telegram', 'whatsapp']
+  // First, so the owner's own account ids are already somebody's before the
+  // candidates are read and none of them becomes a contact.
+  await ensureOwnerPerson()
   const hiddenByPhone = await archivedPeopleByPhone()
   let created = 0
   for (const channel of channels) {
@@ -923,7 +1082,7 @@ export async function populatePeople(): Promise<PopulateResult> {
       // exactly why "hidden" stays hidden across syncs (decision 14).
       if (c.personId !== null || c.kind === 'sender') continue
       const name = c.displayName?.trim()
-      if (!name) continue
+      if (!name || !usableName(name)) continue
       // Somebody the owner hid, arriving on a second channel. Their "no" meant
       // the person, not the account, so the identity joins them where they are
       // rather than becoming a visible row of their own.

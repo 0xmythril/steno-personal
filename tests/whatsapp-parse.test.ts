@@ -190,12 +190,67 @@ describe('parseWaMessage', () => {
 
   it('marks a stub message as system and anything else as unknown', () => {
     expect(parseWaMessage(groupText({ message: {}, messageStubType: 27 }))!.type).toBe('system')
-    expect(parseWaMessage(groupText({ message: { pollCreationMessage: {} } }))!.type).toBe('unknown')
+    // A poll used to be the example here; it has a type of its own now.
+    expect(parseWaMessage(groupText({ message: { someFutureMessage: {} } }))!.type).toBe('unknown')
   })
 
   it('rejects an absurd audio duration rather than trusting it', () => {
     const p = parseWaMessage(groupText({ message: { audioMessage: { mimetype: 'audio/ogg', ptt: false, seconds: 2 ** 31 } } }))!
     expect(p.media).toEqual({ mimeType: 'audio/ogg', sizeBytes: null, isVoiceNote: false, durationSeconds: null })
+  })
+})
+
+describe('content that used to be unknown', () => {
+  it('a reaction is its emoji', () => {
+    const p = parseWaMessage(groupText({ message: { reactionMessage: { key: { id: 'WA0' }, text: '👍' } } }))!
+    // The reacted-to message is the reply target: "Reacted 👍" to what.
+    expect(p).toMatchObject({ type: 'reaction', text: '👍', media: null, replyToExternalId: 'WA0' })
+    // A removed reaction has empty text; it is still a reaction, with nothing to say.
+    expect(parseWaMessage(groupText({ message: { reactionMessage: { key: { id: 'WA0' }, text: '' } } }))!)
+      .toMatchObject({ type: 'reaction', text: null })
+  })
+  it('a poll is its question and its options, one per line', () => {
+    const p = parseWaMessage(groupText({ message: { pollCreationMessageV3: { name: 'Lunch?', options: [{ optionName: 'Yes' }, { optionName: 'No' }] } } }))!
+    expect(p).toMatchObject({ type: 'poll', text: 'Lunch?\nYes\nNo', media: null })
+    expect(parseWaMessage(groupText({ message: { pollCreationMessage: { name: 'Old shape' } } }))!)
+      .toMatchObject({ type: 'poll', text: 'Old shape' })
+  })
+  it('a location is its name or address, else its coordinates', () => {
+    expect(parseWaMessage(groupText({ message: { locationMessage: { degreesLatitude: 22.2819, degreesLongitude: 114.1583, name: 'IFC' } } }))!)
+      .toMatchObject({ type: 'location', text: 'IFC' })
+    expect(parseWaMessage(groupText({ message: { locationMessage: { degreesLatitude: 22.2819, degreesLongitude: 114.1583, address: '8 Finance St' } } }))!)
+      .toMatchObject({ type: 'location', text: '8 Finance St' })
+    expect(parseWaMessage(groupText({ message: { liveLocationMessage: { degreesLatitude: 22.2819, degreesLongitude: 114.1583 } } }))!)
+      .toMatchObject({ type: 'location', text: '22.28190, 114.15830' })
+  })
+  it('a contact card is its display name, never its vcard', () => {
+    expect(parseWaMessage(groupText({ message: { contactMessage: { displayName: 'Ada L', vcard: 'BEGIN:VCARD\nTEL:+15551230000' } } }))!)
+      .toMatchObject({ type: 'contact', text: 'Ada L' })
+    const nameless = parseWaMessage(groupText({ message: { contactMessage: { vcard: 'BEGIN:VCARD\nTEL:+15551230000' } } }))!
+    expect(nameless).toMatchObject({ type: 'contact', text: null })
+    expect(parseWaMessage(groupText({ message: { contactsArrayMessage: { displayName: 'Team', contacts: [{}, {}] } } }))!)
+      .toMatchObject({ type: 'contact', text: 'Team (2 contacts)' })
+    expect(parseWaMessage(groupText({ message: { contactsArrayMessage: { contacts: [{}] } } }))!)
+      .toMatchObject({ type: 'contact', text: '1 contact' })
+  })
+  it('anything else is still unknown, with no text', () => {
+    expect(parseWaMessage(groupText({ message: { someFutureMessage: {} } }))!).toMatchObject({ type: 'unknown', text: null })
+  })
+})
+
+describe('replies', () => {
+  it('a reply names the message it quotes, whichever node carries the context', () => {
+    const text = parseWaMessage(groupText({ message: { extendedTextMessage: { text: 'I refer to here', contextInfo: { stanzaId: 'WA0', quotedMessage: { conversation: 'x' } } } } }))!
+    expect(text.replyToExternalId).toBe('WA0')
+    const image = parseWaMessage(groupText({ message: { imageMessage: { mimetype: 'image/jpeg', caption: 'this one', contextInfo: { stanzaId: 'WA9' } } } }))!
+    expect(image.replyToExternalId).toBe('WA9')
+    expect(parseWaMessage(groupText())!.replyToExternalId).toBeNull()
+    // A mention-only context is not a reply.
+    expect(parseWaMessage(groupText({ message: { extendedTextMessage: { text: '@1 hi', contextInfo: { mentionedJid: ['1@lid'] } } } }))!.replyToExternalId).toBeNull()
+  })
+  it('toIncoming carries it', () => {
+    const p = parseWaMessage(groupText({ message: { extendedTextMessage: { text: 'r', contextInfo: { stanzaId: 'WA0' } } } }))!
+    expect(toIncoming(p, { chatTitle: null }).replyToExternalId).toBe('WA0')
   })
 })
 
@@ -215,6 +270,7 @@ describe('toIncoming', () => {
       type: 'text',
       text: 'hello there',
       media: null,
+      replyToExternalId: null,
       raw: p.raw,
     })
   })
