@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { HostedCta } from '@/app/hosted-cta'
@@ -114,6 +115,7 @@ export default async function ConnectionsPage() {
   // the owner can see one happened.
   const liveOf = (channel: Channel) => all.find(c => c.channel === channel && c.purpose === 'archive' && c.revokedAt === null)
   const history = all.filter(c => c.revokedAt !== null)
+  const anyLive = (['telegram', 'whatsapp'] as const).some(ch => liveOf(ch)?.status === 'active')
 
   return (
     <>
@@ -125,6 +127,21 @@ export default async function ConnectionsPage() {
           <ChannelCard channel="telegram" live={liveOf('telegram')} />
           <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
         </div>
+
+        {/* Step two, said where step one just happened. The agent panel
+            stays under Settings beside the keys it is built on (DESIGN.md,
+            "Four pages"); this only points there, and only once there is an
+            archive for an agent to read. */}
+        {anyLive && (
+          <section className="card">
+            <h2>Connect your agent</h2>
+            <p className="muted">
+              An account is connected, so the archive is filling in. Next, let an agent read it: make an access
+              key under <Link href="/settings">Settings</Link>, one per agent, and copy the setup instructions
+              there. An agent only ever reads, and a key is revoked in the same place.
+            </p>
+          </section>
+        )}
 
         {history.length > 0 && (
           <section className="card">
