@@ -24,7 +24,9 @@ import { SETTINGS_ID } from '@/lib/services/settings'
 // the sweep in tests/launch-invariants.test.ts still bans the SDKs by name.
 // The project token lives in lib/telemetry-defaults.ts.
 
-export const MCP_TOOLS = ['list_chats', 'get_messages', 'search_messages', 'list_people', 'whoami'] as const
+export const MCP_TOOLS = [
+  'list_chats', 'get_messages', 'search_messages', 'recent_messages', 'get_media', 'list_people', 'whoami',
+] as const
 export type McpTool = (typeof MCP_TOOLS)[number]
 
 // The tracking plan. Every property is an enum or a boolean: nothing here can
@@ -34,7 +36,7 @@ export type Events = {
   search: { surface: 'portal' | 'mcp' }
   mcp_tool_call: { tool: McpTool }
   transcript_viewed: Record<never, never>
-  person_linked: { source: 'manual' | 'phone_match' | 'name_match' }
+  person_linked: { source: 'manual' | 'phone_match' | 'name_match' | 'auto' }
   channel_connected: { channel: 'telegram' | 'whatsapp' }
   access_key_minted: Record<never, never>
   enrichment_toggled: { images: boolean; audio: boolean }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
-import { createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
+import { archivePerson, createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
 import { db } from '@/lib/db/client'
 import { channelContacts, connections } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -148,7 +148,7 @@ describe('searchMessages', () => {
     const all = await searchMessages('dentist')
     expect(all).toHaveLength(2)
     expect(all.every(h => h.chatTitle === 'A' || h.chatTitle === 'B')).toBe(true)
-    const scoped = await searchMessages('dentist', a.id)
+    const scoped = await searchMessages('dentist', { chatId: a.id })
     expect(scoped).toHaveLength(1)
     expect(scoped[0].text).toContain('monday')
     expect(scoped[0].chatId).toBe(a.id)
@@ -181,7 +181,7 @@ describe('searchMessages', () => {
   it('honours the limit', async () => {
     const chat = await makeChat(await makeConnection())
     for (let i = 0; i < 5; i++) await addMessage(chat, { text: `dentist ${i}` })
-    expect(await searchMessages('dentist', undefined, 2)).toHaveLength(2)
+    expect(await searchMessages('dentist', { limit: 2 })).toHaveLength(2)
   })
 })
 
@@ -333,6 +333,24 @@ describe('people on chats and messages', () => {
     await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
     expect(await listed()).toBe('Ada Lovelace')
     expect((await searchMessages('dentist'))[0].chatTitle).toBe('Ada Lovelace')
+  })
+
+  it('a hidden person names nothing: every read path falls back', async () => {
+    // Addendum 2 decision 14. The identity row stays linked — that is what
+    // stops the populater making the person again — so this is the join, not
+    // the link, that has to know about archived_at.
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const dm = await makeChat(conn, { title: 'Saved as A. Lovelace', externalChatId: ADA })
+    await addMessage(dm, { senderName: 'ada push name', senderExternalId: ADA, text: 'the dentist' })
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+    await linkIdentity(id, { channel: 'whatsapp', externalId: ADA })
+    expect((await listChats())[0]).toMatchObject({ title: 'Ada Lovelace', person: { id } })
+
+    expect(await archivePerson(id)).toBe(true)
+    expect((await listChats())[0]).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
+    expect((await getMessages(dm.id))!.chat).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
+    expect((await getMessages(dm.id))!.messages[0].person).toBeNull()
+    expect((await searchMessages('dentist'))[0].person).toBeNull()
   })
 
   it('carries the person and the contact name into search results', async () => {

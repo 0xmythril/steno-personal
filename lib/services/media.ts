@@ -3,7 +3,7 @@ import { media, messages } from '@/lib/db/schema'
 import { env } from '@/lib/env'
 import type { IncomingMessage } from '@/lib/services/ingest'
 import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
-import { mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 // One media payload is buffered whole — by the worker's download and by the
@@ -218,6 +218,19 @@ export async function processPendingMedia(
   return summary
 }
 
+// What get_media may inline as MCP image content. Base64 grows bytes by a
+// third and every client caps a single image somewhere around 5 MB, so the
+// raw file stops well short of that; a bigger image is metadata plus a url.
+export const MAX_INLINE_IMAGE_BYTES = 3 * 1024 * 1024
+
+// The image types the drain stores and the media route serves inline — the
+// only ones a model can be handed as picture rather than as bytes.
+const INLINE_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+export function isInlineImage(mime: string | null): boolean {
+  const base = normalizeMime(mime)
+  return base !== null && INLINE_IMAGE_MIMES.has(base)
+}
+
 export type ServableMedia = { id: string; storagePath: string; mimeType: string | null }
 
 // What /media/[id] is allowed to hand back: a downloaded file whose message is
@@ -231,4 +244,16 @@ export async function getServableMedia(id: string): Promise<ServableMedia | null
     .limit(1)
   if (!row || !row.storagePath) return null
   return { id: row.id, storagePath: row.storagePath, mimeType: row.mimeType }
+}
+
+// The bytes /media/[id] would serve, for a caller that cannot make an HTTP
+// request of its own (the get_media tool). Same gate as the route: a live
+// message, a done row, a file that is actually there and under the cap.
+export async function readServableMediaBytes(id: string, maxBytes: number = MAX_MEDIA_BYTES): Promise<Buffer | null> {
+  const row = await getServableMedia(id)
+  if (!row) return null
+  const file = mediaFilePath(row.storagePath)
+  if (!existsSync(file)) return null
+  if (statSync(file).size > maxBytes) return null
+  return readFileSync(file)
 }

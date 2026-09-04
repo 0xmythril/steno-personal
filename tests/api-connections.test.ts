@@ -47,7 +47,7 @@ const cookie = (init: RequestInit = {}) => new Request('http://local/api/connect
 // as opposed to the same key used as a bearer token.
 async function signedIn() {
   const k = await key()
-  await startSession(k.id)
+  await startSession({ keyId: k.id })
   return k
 }
 
@@ -63,7 +63,7 @@ describe('authenticateRequest', () => {
 
   it('rejects an unknown, malformed, or revoked bearer key without falling back to the cookie', async () => {
     const k = await key()
-    await startSession(k.id) // a live cookie session exists…
+    await startSession({ keyId: k.id }) // a live cookie session exists…
     await revokeAccessKey(k.id)
     expect(await authenticateRequest(bearer(k.rawKey))).toBeNull()
     expect(await authenticateRequest(bearer('sp_nope'))).toBeNull()
@@ -72,7 +72,7 @@ describe('authenticateRequest', () => {
 
   it('accepts the session cookie when no bearer header is present', async () => {
     const k = await key()
-    await startSession(k.id)
+    await startSession({ keyId: k.id })
     expect(jar.get(SESSION_COOKIE)).toBeTruthy()
     const req = new Request('http://local/api/connections')
     expect(await authenticateRequest(req)).toEqual({ via: 'cookie', keyId: k.id })

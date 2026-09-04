@@ -15,6 +15,6 @@ export const GET = withErrorBoundary(async (request: Request): Promise<Response>
   // The fact of a search, never the query.
   track('search', { surface: 'portal' })
   return Response.json({
-    results: await searchMessages(q, searchParams.get('chat_id') ?? undefined, limit.value),
+    results: await searchMessages(q, { chatId: searchParams.get('chat_id') ?? undefined, limit: limit.value }),
   })
 })

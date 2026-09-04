@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3d47610b-fc86-476d-b753-ec5f2eebd8bb",
+  "id": "58e06e80-f595-43cc-8b66-973ae495bc39",
   "prevId": "a120a024-41fc-4b8e-bcf0-ae00694601f8",
   "tables": {
     "access_keys": {
@@ -901,6 +901,21 @@
           "notNull": false,
           "autoincrement": false
         },
+        "name_source": {
+          "name": "name_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'channel'"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -916,7 +931,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "people_archived_idx": {
+          "name": "people_archived_idx",
+          "columns": [
+            "archived_at"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -1121,21 +1144,6 @@
         },
         "transcription_model": {
           "name": "transcription_model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "telemetry_enabled": {
-          "name": "telemetry_enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "telemetry_instance_id": {
-          "name": "telemetry_instance_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

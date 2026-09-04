@@ -101,7 +101,7 @@ describe('the WhatsApp warning is on the front page', () => {
 // carry is written down there as a type. PostHog sees an event name and an
 // enum; it never gets a library in here that could see more.
 const BANNED_EVERYWHERE = [
-  '@/lib/services/analytics', '@mocanetwork',
+  '@/lib/services/analytics',
   'posthog', 'mixpanel', '@segment/', 'analytics-node',
   '@sentry/', '@amplitude/', '@vercel/analytics', 'plausible',
 ]

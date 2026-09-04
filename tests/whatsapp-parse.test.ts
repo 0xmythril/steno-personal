@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  chatKindForJid, parseProtocolEvent, parseWaMessage, phoneFromPnJid,
-  resolveContactIdentity, textOf, toIncoming, tsToDate, unwrapContent,
+  chatKindForJid, hasTrustedMediaSource, parseProtocolEvent, parseWaMessage, phoneFromPnJid,
+  resolveContactIdentity, textOf, toIncoming, tsToDate, unwrapContent, WA_MEDIA_HOST,
 } from '@/lib/channels/whatsapp-parse'
 
 const GROUP = '12345-67890@g.us'
@@ -74,21 +74,53 @@ describe('identity', () => {
 })
 
 describe('parseProtocolEvent', () => {
-  it('reads a revoke', () => {
+  // Who sent the revoke or edit is carried out with it: WhatsApp cannot check
+  // authorship server-side (the payload is end-to-end encrypted), so the
+  // archive has to, and it can only do that if the port tells it who acted.
+  it('reads a revoke, with the group participant who sent it as the actor', () => {
     const ev = parseProtocolEvent({
-      key: { remoteJid: GROUP, id: 'REV', fromMe: false },
+      key: { remoteJid: GROUP, id: 'REV', fromMe: false, participant: '15559990000@s.whatsapp.net' },
       messageTimestamp: 1_700_000_500,
       message: { protocolMessage: { type: 0, key: { id: 'WA1' } } },
     })
-    expect(ev).toEqual({ kind: 'delete', remoteJid: GROUP, waId: 'WA1', sentAt: new Date(1_700_000_500_000) })
+    expect(ev).toEqual({
+      kind: 'delete', remoteJid: GROUP, waId: 'WA1', sentAt: new Date(1_700_000_500_000),
+      fromOwner: false, actor: { jid: '15559990000@s.whatsapp.net', lidJid: null, phone: '+15559990000' },
+    })
   })
-  it('reads an edit wrapped in editedMessage', () => {
+  it('reads an edit wrapped in editedMessage, with the actor', () => {
     const ev = parseProtocolEvent({
-      key: { remoteJid: GROUP, id: 'ED', fromMe: false },
+      key: { remoteJid: GROUP, id: 'ED', fromMe: false, participant: '15559990000@s.whatsapp.net' },
       messageTimestamp: 1_700_000_600,
       message: { editedMessage: { message: { protocolMessage: { type: 14, key: { id: 'WA1' }, editedMessage: { conversation: 'fixed' } } } } },
     })
-    expect(ev).toEqual({ kind: 'edit', remoteJid: GROUP, waId: 'WA1', newText: 'fixed' })
+    expect(ev).toEqual({
+      kind: 'edit', remoteJid: GROUP, waId: 'WA1', newText: 'fixed',
+      fromOwner: false, actor: { jid: '15559990000@s.whatsapp.net', lidJid: null, phone: '+15559990000' },
+    })
+  })
+  it('takes the actor of a DM revoke from the remote JID, and none from the owner', () => {
+    const contact = parseProtocolEvent({
+      key: { remoteJid: DM, id: 'REV', fromMe: false },
+      messageTimestamp: 1_700_000_500,
+      message: { protocolMessage: { type: 0, key: { id: 'WA1' } } },
+    })
+    expect(contact).toMatchObject({ kind: 'delete', fromOwner: false, actor: { jid: DM, phone: '+15551230000' } })
+    const own = parseProtocolEvent({
+      key: { remoteJid: DM, id: 'REV2', fromMe: true },
+      messageTimestamp: 1_700_000_500,
+      message: { protocolMessage: { type: 0, key: { id: 'WA2' } } },
+    })
+    expect(own).toMatchObject({ kind: 'delete', fromOwner: true, actor: null })
+  })
+  it('reads the actor of a history-replayed revoke from the top level', () => {
+    const ev = parseProtocolEvent({
+      key: { remoteJid: GROUP, id: 'REV', fromMe: false },
+      participant: '15559990000@s.whatsapp.net',
+      messageTimestamp: 1_700_000_500,
+      message: { protocolMessage: { type: 0, key: { id: 'WA1' } } },
+    })
+    expect(ev).toMatchObject({ fromOwner: false, actor: { jid: '15559990000@s.whatsapp.net' } })
   })
   it('ignores ordinary content and unknown protocol types', () => {
     expect(parseProtocolEvent(groupText())).toBeNull()
@@ -185,5 +217,37 @@ describe('toIncoming', () => {
       media: null,
       raw: p.raw,
     })
+  })
+})
+
+// The media URL inside a message is written by whoever sent the message, and
+// Baileys fetches whatever host it names. The archive only ever downloads
+// from WhatsApp's own CDN, by direct path, so a crafted message cannot point
+// the worker at a host of the sender's choosing.
+describe('hasTrustedMediaSource', () => {
+  const image = (node: Record<string, unknown>) => ({
+    key: { remoteJid: GROUP, id: 'IMG', fromMe: false },
+    message: { imageMessage: { mimetype: 'image/jpeg', mediaKey: 'AQID', ...node } },
+  })
+  it('accepts a direct path with WhatsApp’s own CDN URL, or with no URL at all', () => {
+    expect(hasTrustedMediaSource(image({ directPath: '/v/t62.7118-24/abc', url: `https://${WA_MEDIA_HOST}/v/t62.7118-24/abc?ccb=11-4` }))).toBe(true)
+    expect(hasTrustedMediaSource(image({ directPath: '/v/t62.7118-24/abc' }))).toBe(true)
+  })
+  it('rejects a URL on any other host or scheme', () => {
+    expect(hasTrustedMediaSource(image({ directPath: '/v/x', url: 'http://127.0.0.1:3000/media/x' }))).toBe(false)
+    expect(hasTrustedMediaSource(image({ directPath: '/v/x', url: 'https://attacker.example/beacon' }))).toBe(false)
+    expect(hasTrustedMediaSource(image({ directPath: '/v/x', url: `http://${WA_MEDIA_HOST}/v/x` }))).toBe(false)
+    expect(hasTrustedMediaSource(image({ directPath: '/v/x', url: `https://${WA_MEDIA_HOST}.attacker.example/v/x` }))).toBe(false)
+    expect(hasTrustedMediaSource(image({ directPath: '/v/x', url: 'not a url' }))).toBe(false)
+  })
+  it('rejects a message with no direct path — the URL alone is the sender’s word', () => {
+    expect(hasTrustedMediaSource(image({ url: `https://${WA_MEDIA_HOST}/v/x` }))).toBe(false)
+    expect(hasTrustedMediaSource(image({}))).toBe(false)
+  })
+  it('looks through the future-proof wrappers and rejects a message with no media', () => {
+    const wrapped = { key: { remoteJid: GROUP, id: 'V' }, message: { viewOnceMessage: { message: { imageMessage: { directPath: '/v/x' } } } } }
+    expect(hasTrustedMediaSource(wrapped)).toBe(true)
+    expect(hasTrustedMediaSource(groupText())).toBe(false)
+    expect(hasTrustedMediaSource(null)).toBe(false)
   })
 })

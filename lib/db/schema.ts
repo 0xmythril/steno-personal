@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
 
@@ -20,15 +20,38 @@ export const accessKeys = sqliteTable('access_keys', {
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
 })
 
-// A portal login. Bound to the key that was pasted; resolving a session
-// re-checks that the key is still unrevoked, so revoking a key ends its
-// sessions on the next request.
+// One row per passkey (WebAuthn discoverable credential). A passkey logs
+// into the portal only — never a bearer token for the MCP route. The public
+// key is not a secret, so it is stored plain (base64url of the COSE bytes).
+// Revocation is soft (revoked_at) so the list keeps history, as for keys.
+export const passkeys = sqliteTable('passkeys', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  label: text('label').notNull(),
+  credentialId: text('credential_id').notNull().unique(),
+  publicKey: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  transports: text('transports', { mode: 'json' }).$type<string[]>(),
+  backedUp: integer('backed_up', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
+})
+
+// A portal login. Bound to exactly one credential — the key that was pasted
+// or the passkey that signed — and resolving a session re-checks that the
+// credential is still unrevoked, so revoking either ends its sessions on the
+// next request.
 export const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
-  keyId: text('key_id').notNull().references(() => accessKeys.id, { onDelete: 'cascade' }),
+  keyId: text('key_id').references(() => accessKeys.id, { onDelete: 'cascade' }),
+  passkeyId: text('passkey_id').references(() => passkeys.id, { onDelete: 'cascade' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
-}, t => [index('sessions_key_idx').on(t.keyId)])
+}, t => [
+  index('sessions_key_idx').on(t.keyId),
+  index('sessions_passkey_idx').on(t.passkeyId),
+  check('sessions_one_credential', sql`(${t.keyId} IS NULL) <> (${t.passkeyId} IS NULL)`),
+])
 
 // One row per connection attempt on one channel. A row is LIVE while
 // revoked_at IS NULL; the partial unique index below allows exactly one live
@@ -168,22 +191,36 @@ export const settings = sqliteTable('settings', {
 
 // The address book. A person is the owner's own annotation over the channel
 // identities the archive already stores — nothing here is fetched from, or
-// pushed back to, a channel. Deleting a person deletes its identity rows and
-// touches no chat or message (people design decision 7).
+// pushed back to, a channel. Deleting a person touches no chat or message
+// (people design decision 7).
+//
+// name_source is who chose the name: 'channel' means it was copied from a
+// contact list and a later sync may refresh it, 'owner' means the owner typed
+// it and no sync ever overwrites it (decision 13). archived_at is what
+// "delete" now does (decision 14): the person disappears from every listing,
+// from every read path and from every agent, but keeps its identity rows so
+// the populater never offers to create them again.
 export const people = sqliteTable('people', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   name: text('name').notNull(),
   notes: text('notes'),
+  nameSource: text('name_source', { enum: ['channel', 'owner'] }).notNull().default('channel'),
+  archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
-})
+}, t => [index('people_archived_idx').on(t.archivedAt)])
 
 // One channel identity belongs to at most one person: unique(channel,
 // external_id) is what makes "who is this?" a single-row answer on every read
 // path, and what makes a second link attempt an `already_linked` rather than a
 // silent duplicate. `source` records how the link was made — a suggestion
 // never links on its own, so 'phone_match'/'name_match' mean "the owner
-// confirmed a suggestion of that kind", not "the machine decided".
+// confirmed a suggestion of that kind", not "the machine decided". 'auto' is
+// the one source the machine does write by itself (decision 11): a contact or
+// a DM counterparty with a name and no person yet gets one, which is a
+// bookkeeping entry over what the archive already holds, not a guess about
+// who is who — the only guess, matching two channels to one person, still
+// needs an equal phone number (decision 12) or the owner's yes.
 // Deliberately NOT tied to a connection: reconnecting an account must not
 // erase the owner's address book.
 export const personIdentities = sqliteTable('person_identities', {
@@ -193,7 +230,7 @@ export const personIdentities = sqliteTable('person_identities', {
   externalId: text('external_id').notNull(),
   displayName: text('display_name'),
   phone: text('phone'),
-  source: text('source', { enum: ['manual', 'phone_match', 'name_match'] }).notNull().default('manual'),
+  source: text('source', { enum: ['manual', 'phone_match', 'name_match', 'auto'] }).notNull().default('manual'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [
   uniqueIndex('person_identities_channel_external_unique').on(t.channel, t.externalId),

@@ -8,7 +8,7 @@ export async function loginAction(formData: FormData) {
   const raw = String(formData.get('key') ?? '').trim()
   const key = raw ? await verifyAccessKey(raw) : null
   if (!key) redirect('/login?error=1')
-  await startSession(key.id)
+  await startSession({ keyId: key.id })
   redirect('/')
 }
 

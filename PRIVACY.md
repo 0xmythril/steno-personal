@@ -68,12 +68,29 @@ none** — in the portal and to an agent alike. Both only put a label on a messa
 the archive already holds and an access key can already read, and neither is
 ever written to a log.
 
-The links are yours, not the channels'. Nothing is linked automatically: a
-suggested match sits on the page until you confirm it, and dismissing one is
-remembered. Deleting a person deletes your links and nothing else — the chats,
-the messages and the attachments are untouched, and every name goes back to
-whatever the channel calls it. Deleting a connection clears the contacts read
-from that account and leaves your people alone.
+The address book fills itself in from that same local cache, and the line it
+keeps is that it may only record what your own archive already says. A contact,
+or the other side of a direct chat, with a name becomes a person under that
+name. Two identities are joined into one person **only when their phone numbers
+are equal** — the one fact that cannot be a coincidence. An identical name is
+never enough on its own: the two get a row each, and the page asks whether to
+merge them. That question sits there until you answer it, and dismissing one is
+remembered against the two identities, so a later sync does not ask again. None
+of this reads anything new, sends anything, or tells any channel that two
+accounts are the same person; it is a join over rows already on your disk.
+
+The names stay yours. A name copied off a contact list follows that list; a name
+you type is an alias and no sync overwrites it, and "Use channel name" hands it
+back. Hiding a person takes them out of every listing and away from every agent
+and keeps their links, which is what stops the next sync recreating them —
+including on a channel you pair later, where their number arrives on the hidden
+row rather than on a new one. They sit under "Hidden" on the People page until
+you restore them. Merging two rows moves the links, and carries the notes over
+if the surviving row has none and the name you typed if the surviving row only
+has a channel name. Every one of these touches your links and your
+names only — the chats, the messages and the attachments are untouched, and
+every name falls back to whatever the channel calls it. Deleting a connection
+clears the contacts read from that account and leaves your people alone.
 
 ## What it can never do
 
@@ -141,11 +158,12 @@ check every call site against it:
 
 - `search` — that a search ran, and whether from the portal or from an agent.
   Never the query.
-- `mcp_tool_call` — which of the five agent tools was called. Never its
+- `mcp_tool_call` — which agent tool was called, by name. Never its
   arguments, never its result.
 - `transcript_viewed` — that a transcript was opened. Never which one.
-- `person_linked` — that a person was linked, and whether by hand or by
-  confirming a phone or name suggestion. Never who.
+- `person_linked` — that a person was linked, and whether by hand, by
+  confirming a phone or name suggestion, or automatically from your
+  contacts. Never who.
 - `channel_connected` — that Telegram or WhatsApp was connected. Never the
   account.
 - `access_key_minted` — that a key was made. Never its label or value.
@@ -200,8 +218,8 @@ and it is why you mint a key per agent and revoke it when you are done.
 display name and status, never a phone number. On an instance with nothing
 connected that list is simply empty; it is not gated.
 
-The four content tools — `list_chats`, `get_messages`, `search_messages`,
-`list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
+The six content tools — `list_chats`, `recent_messages`, `get_messages`,
+`search_messages`, `get_media`, `list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
 there is nothing at all to serve: no active connection **and** an empty
 archive. They will not describe chats you do not have, invent an empty state,
 or hint at what they could do once you connect something.

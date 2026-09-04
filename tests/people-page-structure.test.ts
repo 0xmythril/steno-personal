@@ -21,14 +21,16 @@ vi.mock('next/navigation', () => ({
 
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
-import { createPerson, getPerson, syncContacts } from '@/lib/services/people'
+import { createPerson, getPerson, listPeople, listArchivedPeople, syncContacts } from '@/lib/services/people'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { startSession } from '@/lib/auth'
 import {
-  linkIdentityAction, updatePersonAction, deletePersonAction, unlinkIdentityAction,
+  linkIdentityAction, updatePersonAction, unlinkIdentityAction,
+  hidePersonAction, restorePersonAction, mergePeopleAction, resetNameAction,
 } from '@/app/people/actions'
 
 const actions = () => readFileSync('app/people/actions.ts', 'utf8')
+const personPage = () => readFileSync('app/people/[id]/page.tsx', 'utf8')
 
 describe('people pages', () => {
   it('every server action re-runs the session guard', () => {
@@ -100,9 +102,46 @@ describe('people pages', () => {
       ...[...src.matchAll(/field\(formData,\s*'([^']+)'\)/g)].map(m => m[1]),
     ]
     expect([...new Set(keys)].sort()).toEqual([
-      'channel', 'externalId', 'identityId', 'name', 'notes', 'personId',
-      'telegramExternalId', 'whatsappExternalId',
+      'channel', 'externalId', 'fromId', 'identityId', 'intoId', 'name', 'notes', 'personId',
     ])
+  })
+
+  it('offers merging, the alias hand-back and Hide on the person page', () => {
+    // The three things the self-populating address book added to this page.
+    // Wording, because each is a promise the copy makes: a merge the owner
+    // chooses (never the populater), a way back from an alias to the channel's
+    // own name, and a Delete that is really an archive.
+    const src = personPage()
+    expect(src).toMatch(/Merge into/)
+    expect(src).toMatch(/name="intoId"/)
+    expect(src).toMatch(/Use channel name/)
+    expect(src).toMatch(/<h2>Hide<\/h2>/)
+    // "Delete" promised something this button no longer does: the links stay,
+    // which is exactly what stops the next contact sync recreating the person.
+    expect(src).not.toMatch(/Delete this person/)
+    expect(src).toMatch(/You can restore them from the People page/)
+  })
+
+  it('offers a suggestion as a merge between two people, never as a new row', () => {
+    // Auto-populate answers every identity, so the old identity-level pair has
+    // nothing left to match. What the owner sees now is two ROWS and one
+    // question about them, and Confirm merges rather than creating a third.
+    const src = readFileSync('app/people/page.tsx', 'utf8')
+    expect(src).toMatch(/listMergeSuggestions/)
+    expect(src).not.toMatch(/listSuggestions/)
+    expect(src).toMatch(/Merge \{s\.from\.name\} into \{s\.into\.name\}\?/)
+    expect(src).toMatch(/name="fromId"/)
+    // The two channel identities are what the table used to post around; a
+    // person id is this instance's own uuid and names nobody.
+    expect(src).not.toMatch(/telegramExternalId|whatsappExternalId/)
+  })
+
+  it('lists hidden people with a way back, and only when there are some', () => {
+    const src = readFileSync('app/people/page.tsx', 'utf8')
+    expect(src).toMatch(/listArchivedPeople/)
+    expect(src).toMatch(/hidden\.length > 0 &&/)
+    expect(src).toMatch(/Hidden \(\{hidden\.length\}\)/)
+    expect(src).toMatch(/action=\{restorePersonAction\}/)
   })
 
   it('is reachable from the nav', () => {
@@ -123,7 +162,7 @@ describe('linkIdentityAction', () => {
   async function signIn(): Promise<void> {
     const k = await mintAccessKey('portal')
     if (!k.ok) throw new Error(k.reason)
-    await startSession(k.id)
+    await startSession({ keyId: k.id })
   }
 
   it('stores the name and number the page showed beside the option', async () => {
@@ -160,14 +199,89 @@ describe('linkIdentityAction', () => {
       for (const [k, v] of Object.entries(extra)) f.set(k, v)
       return f
     }
-    // Deleted out from under all three, exactly as a second tab would.
-    await expect(deletePersonAction(form())).rejects.toThrow(/^redirect:\/people$/)
+    // Hidden out from under all of them, exactly as a second tab would.
+    await expect(hidePersonAction(form())).rejects.toThrow(/^redirect:\/people$/)
 
     await expect(updatePersonAction(form({ name: 'Ada L', notes: '' })))
       .rejects.toThrow('redirect:/people?error=gone')
-    await expect(deletePersonAction(form())).rejects.toThrow('redirect:/people?error=gone')
+    await expect(hidePersonAction(form())).rejects.toThrow('redirect:/people?error=gone')
+    await expect(resetNameAction(form())).rejects.toThrow('redirect:/people?error=gone')
+    await expect(mergePeopleAction(form({ intoId: 'no-such-person' })))
+      .rejects.toThrow(`redirect:/people/${id}?error=gone`)
     await expect(unlinkIdentityAction(form({ identityId: 'no-such-identity' })))
       .rejects.toThrow(`redirect:/people/${id}?error=gone`)
+  })
+
+  it('hides a person and hands them back from the Hidden list', async () => {
+    await signIn()
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+    const form = () => { const f = new FormData(); f.set('personId', id); return f }
+
+    await expect(hidePersonAction(form())).rejects.toThrow(/^redirect:\/people$/)
+    expect(await listPeople()).toEqual([])
+    expect((await listArchivedPeople()).map(p => p.id)).toEqual([id])
+
+    await expect(restorePersonAction(form())).rejects.toThrow(`redirect:/people/${id}`)
+    expect((await listPeople()).map(p => p.id)).toEqual([id])
+    expect(await listArchivedPeople()).toEqual([])
+  })
+
+  it('refuses to merge a person into themselves', async () => {
+    await signIn()
+    const { id } = await createPerson({ name: 'Ada Lovelace' })
+    const f = new FormData()
+    f.set('personId', id)
+    f.set('intoId', id)
+    await expect(mergePeopleAction(f)).rejects.toThrow(`redirect:/people/${id}?error=self`)
+    expect((await listPeople()).map(p => p.id)).toEqual([id])
+  })
+
+  it('merges into the other person and lands on their page', async () => {
+    await signIn()
+    const conn = await makeConnection({ channel: 'telegram' })
+    await syncContacts(conn.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: '+44 7700 900123' },
+    ])
+    const from = await createPerson({ name: 'Ada' })
+    const into = await createPerson({ name: 'Ada Lovelace' })
+    const link = new FormData()
+    link.set('personId', from.id)
+    link.set('channel', 'telegram')
+    link.set('externalId', '42')
+    await expect(linkIdentityAction(link)).rejects.toThrow(`redirect:/people/${from.id}`)
+
+    const f = new FormData()
+    f.set('personId', from.id)
+    f.set('intoId', into.id)
+    await expect(mergePeopleAction(f)).rejects.toThrow(`redirect:/people/${into.id}`)
+
+    expect(await getPerson(from.id)).toBeNull()
+    expect((await getPerson(into.id))!.identities.map(i => i.externalId)).toEqual(['42'])
+  })
+
+  // Decision 13 both ways round: the box that says "Save" is a rename only
+  // when the name in it changed, and "Use channel name" gives the name back.
+  it('does not turn a note into an alias, and hands an alias back', async () => {
+    await signIn()
+    const { id } = await createPerson({ name: 'Ada', nameSource: 'channel' })
+    const save = (name: string, notes: string) => {
+      const f = new FormData()
+      f.set('personId', id)
+      f.set('name', name)
+      f.set('notes', notes)
+      return f
+    }
+
+    await expect(updatePersonAction(save('Ada', 'writes the notes'))).rejects.toThrow(`redirect:/people/${id}`)
+    expect((await getPerson(id))!).toMatchObject({ nameSource: 'channel', notes: 'writes the notes' })
+
+    await expect(updatePersonAction(save('Ada L', 'writes the notes'))).rejects.toThrow(`redirect:/people/${id}`)
+    expect((await getPerson(id))!).toMatchObject({ name: 'Ada L', nameSource: 'owner' })
+
+    const f = new FormData()
+    f.set('personId', id)
+    await expect(resetNameAction(f)).rejects.toThrow(`redirect:/people/${id}`)
+    expect((await getPerson(id))!.nameSource).toBe('channel')
   })
 
   it('refuses an identity this instance has never heard of', async () => {

@@ -11,6 +11,8 @@ const CONTENT_TOOLS = [
   ['get_messages', { chat_id: 'anything' }],
   ['search_messages', { query: 'anything' }],
   ['list_people', {}],
+  ['recent_messages', {}],
+  ['get_media', { media_id: 'anything' }],
 ] as const
 
 function walk(dir: string): string[] {
@@ -49,8 +51,8 @@ describe('M3 structural invariants', () => {
     // media.url is a path, and an MCP result carries no base-URL convention:
     // without this sentence an agent holds a string it cannot dereference.
     const tools = await listTools(await agentKey())
-    const withMedia = tools.filter(t => t.name === 'get_messages' || t.name === 'search_messages')
-    expect(withMedia).toHaveLength(2)
+    const withMedia = tools.filter(t => ['get_messages', 'search_messages', 'recent_messages', 'get_media'].includes(t.name))
+    expect(withMedia).toHaveLength(4)
     for (const tool of withMedia) {
       expect(tool.description ?? '', `${tool.name} description`).toContain(MEDIA_URL_NOTE)
     }
@@ -61,8 +63,8 @@ describe('M3 structural invariants', () => {
     // the message's: an id minted here. Without this sentence an agent has a
     // uuid it cannot resolve, and a name it might mistake for a channel handle.
     const tools = await listTools(await agentKey())
-    const withPerson = tools.filter(t => ['list_chats', 'get_messages', 'search_messages'].includes(t.name))
-    expect(withPerson).toHaveLength(3)
+    const withPerson = tools.filter(t => ['list_chats', 'get_messages', 'search_messages', 'recent_messages'].includes(t.name))
+    expect(withPerson).toHaveLength(4)
     for (const tool of withPerson) {
       expect(tool.description ?? '', `${tool.name} description`).toContain(PERSON_NOTE)
     }

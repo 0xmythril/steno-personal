@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { currentSession, isFreshInstance } from '@/lib/auth'
+import { countActivePasskeys } from '@/lib/services/passkeys'
+import { PasskeyLogin } from '@/app/passkey-login'
 import { loginAction } from './actions'
 import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { HostedCta } from '@/app/hosted-cta'
@@ -11,12 +13,16 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   // receives the first key there.
   if (await isFreshInstance()) redirect('/setup')
   const { error } = await searchParams
+  // The passkey button only when there is a passkey to use; the browser
+  // decides on top of that whether it can offer one at all.
+  const hasPasskeys = (await countActivePasskeys()) > 0
   return (
     <main>
       <div className="login">
         <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
         <h1>A private copy of your Telegram and WhatsApp chats, kept on your own computer.</h1>
-        <p className="muted">Paste one of your access keys.</p>
+        {hasPasskeys && <PasskeyLogin />}
+        <p className="muted">{hasPasskeys ? 'Or paste one of your access keys.' : 'Paste one of your access keys.'}</p>
         <form action={loginAction} className="card">
           <label className="field">
             <span>Access key</span>

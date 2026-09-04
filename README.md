@@ -63,7 +63,9 @@ to the log; the first visit sets the instance up:
    and it is also how you prove the archive is yours if you ever lose your key.
 3. Press **Create my access key**. Your first key is shown exactly once, with a
    Copy button; save it before you continue. It logs you in here and is what
-   your agents use.
+   your agents use. Under it, optionally register a **passkey** for the browser
+   you are in: from then on that browser logs in with Touch ID, Windows Hello,
+   or your phone, and the key is for agents and other devices.
 4. Wait. Backfill runs in the background; the Chats page fills in as it lands.
    Connect the other channel from **Connections** whenever you like, and make
    more keys under **Settings** — one per device or agent.
@@ -85,9 +87,10 @@ volume mounted at `/data`, and a generated `SECRET_KEY`. Open the generated
 pairing a channel and hands you your first access key.
 
 Two things to know before you click. First, a Railway deploy has a public URL.
-Until you have paired a channel, **Setup** is open to whoever reaches that URL
-first, and afterwards the only thing standing between the internet and your
-archive is an access key — so claim the deploy promptly, and read
+Until you have your first access key, **Setup** is open to whoever reaches that
+URL first (a pairing you have started can only be finished from your own
+browser), and afterwards the only thing standing between the internet and your
+archive is an access key or a passkey — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.
 A laptop, a Mac mini, or a Raspberry Pi at home is the safer place to run this.
@@ -106,8 +109,22 @@ Everything an agent sees goes through the MCP endpoint at
 token. Mint a separate key per agent in **Settings** so you can revoke one
 without disturbing the others.
 
-The tools are `list_chats`, `get_messages`, `search_messages`, `list_people`,
-and `whoami`. They only read. There is no tool that sends anything.
+The tools are `list_chats`, `recent_messages`, `get_messages`,
+`search_messages`, `get_media`, `list_people` and `whoami`. They only read,
+and each declares itself read-only to the client. There is no tool that sends
+anything.
+
+- `list_chats` filters by channel, by kind (dm, group, channel) or by `q`, a
+  substring of the title, and pages twenty at a time with a cursor; each chat
+  carries a snippet of its latest message.
+- `recent_messages` is the inbox: the newest messages across every chat, or
+  one channel or kind, each naming the chat it came from.
+- `search_messages` narrows by chat, channel, kind, sender and a date range.
+- `get_media` returns one attachment by its `media.id`: a ready image up to
+  3 MiB comes back as image content the agent can look at, anything else as
+  metadata plus the `/media/<id>` path. Every message with an attachment says
+  whether its bytes are ready, pending, failed or unavailable.
+- `list_people` takes `q` and names the chats each person appears in.
 
 **Shortest path:** open **Settings**, create a key, and press **Copy
 instructions** under "Let the agent set itself up". Paste that block into any
@@ -189,28 +206,57 @@ a chat and a transcript can say *Ada* whether she wrote from Telegram or from
 WhatsApp. It is your own annotation over the archive: nothing is sent back to
 either channel, and nothing you write here changes a message.
 
-Open **People**, add a person, and link their identities. Everyone the archive
-knows about on a channel is offered — your contact list, the other side of every
-direct chat, and anyone whose message it has archived — under the name that
-channel knows them by, with their number where there is one. An identity
-belongs to at most one person; move it by unlinking it first.
+**It fills itself in.** After every contact sync, everyone in your contact list
+and the other side of every direct chat becomes a person, named the way that
+channel names them, with that identity linked. Nothing is invented: a person who
+has only ever written in a group is not one of them, and neither is an identity
+with no name at all. The page tags those rows **Auto** and the link says *found
+in your contacts*.
 
-**Suggestions.** The page offers pairs it thinks are the same person, and it
-never acts on one by itself — confirming is a button you press.
+Two identities are joined into one person **only when their phone numbers are
+equal**. That is the one match strong enough to act on by itself, and it needs a
+number on both sides — a Telegram contact whose number Telegram will not show
+you cannot be matched this way. An identical name is never enough: the two get a
+row each, and the page offers to merge them and waits for you.
 
-- *Same phone number* is the strong one, and it needs the person saved in your
-  Telegram contacts with a number Telegram is willing to show you. Telegram
-  hides a contact's number unless you have each other saved or they let
-  everyone see it, and a Telegram account with no number visible cannot be
-  matched this way. A WhatsApp identity is always a number, so that side is
-  never the problem.
-- *Same name* is exact: the two display names must be the same once trimmed,
-  ignoring capitalisation. "Ada L" and "Ada Lovelace" are not offered.
-- **Dismiss** remembers your no, and that pair is never suggested again.
+You can still open **People**, add a person, and link their identities yourself.
+Everyone the archive knows about on a channel is offered — your contact list,
+the other side of every direct chat, and anyone whose message it has archived —
+under the name that channel knows them by, with their number where there is one.
+An identity belongs to at most one person; move it by unlinking it first.
+
+**Your name wins.** A name that came off a contact list follows it: rename the
+contact on your phone and the archive follows on the next sync. Type a name here
+and it becomes an **alias** — no sync overwrites it, ever. *Use channel name* on
+their page hands it back and the name starts following the channel again.
+
+**Merge into.** Two rows for one person is the normal state of an address book
+that filled itself in. *Merge into* on a person's page moves all of their
+identities to whoever you choose and removes the row you were on. The survivor
+keeps its name, unless it only has a channel name and the row you merged carries
+an alias you typed — a name a human chose outranks one copied off a phone.
+
+**Suggestions.** Because the address book fills itself in, two people who match
+already have a row each — so a suggestion is a question about those two rows:
+*Merge Ada into Ada?* It never acts on one by itself; confirming is a button you
+press.
+
+- A pair is offered when one row has only Telegram identities, the other only
+  WhatsApp, and the two names are the same once trimmed, ignoring
+  capitalisation. "Ada L" and "Ada Lovelace" are not offered.
+- Matching phone numbers never reach this list: those two are joined for you
+  already. A name is all that is left when Telegram will not show you a
+  contact's number — it hides one unless you have each other saved, or they let
+  everyone see it — and a name is only ever a hint.
+- **Confirm** moves every identity onto the older of the two rows and removes
+  the other, exactly as *Merge into* does on a person's page.
+- **Dismiss** remembers your no. It is remembered against the two identities,
+  not the two rows, so it holds even if the rows are rebuilt by a later sync.
+- Hidden people are never offered: hiding is already an answer.
 
 **What your agent sees.** A chat or a message gains a `person` field —
 `{ id, name }` — when the sender or the other side of a direct chat is someone
-you have linked, and the `list_people` tool lists the address book: id, name,
+in your address book, and the `list_people` tool lists it: id, name,
 your notes, which channels are linked, and how many chats they appear in. Never
 a phone number, and never the underlying Telegram id or WhatsApp number — the id
 is this instance's own and means nothing outside it. The notes are the one field
@@ -224,11 +270,14 @@ person's messages wherever the channel sent none — in the portal and to an age
 number that is its identity, again in both places. Neither adds a field: they
 fill in `senderName` and a chat's title, which an access key can already read.
 
-**Removing someone.** Deleting a person deletes the links and nothing else:
-the chats, the messages and the attachments are untouched, and the names go
-back to whatever the channels call them. Deleting a *connection* clears the
-contacts read from that account, but leaves your people alone — they are yours,
-not the channel's.
+**Hiding someone.** *Hide* takes a person out of the address book and away from
+your agents, and keeps their links: that is what stops the next contact sync
+putting them back. Hidden people are listed under **Hidden** at the foot of the
+People page with a Restore button each, so nothing is lost. The chats, the
+messages and the attachments are untouched either way, and their names go back
+to whatever the channels call them. Deleting a *connection* clears the contacts
+read from that account, but leaves your people alone — they are yours, not the
+channel's.
 
 ## Configuration
 
@@ -319,5 +368,7 @@ them your source too.
 
 ## Follow along
 
-Source lives at <https://github.com/0xmythril/steno-personal>. Releases and
-changes are announced on X at <https://x.com/stenochat>.
+Source lives at <https://github.com/0xmythril/steno-personal>; watch the
+repository or its Releases page to hear about new versions. steno-personal is
+built and maintained by [0xmythril](https://github.com/0xmythril), who also
+posts about it on X at <https://x.com/0xmythril>.

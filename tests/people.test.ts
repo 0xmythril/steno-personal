@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { readFileSync } from 'node:fs'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { channelContacts, chats, connections, messages, personIdentities } from '@/lib/db/schema'
+import { channelContacts, chats, connections, messages, people, personIdentities } from '@/lib/db/schema'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
-  confirmSuggestion, createPerson, deletePerson, dismissSuggestion, getPerson,
-  linkIdentity, listIdentityCandidates, listPeople, listSuggestions, personForIdentity,
-  publicPeople, syncContacts, unlinkIdentity, updatePerson,
+  archivePerson, confirmSuggestion, createPerson, dismissSuggestion, getPerson,
+  linkIdentity, listArchivedPeople, listIdentityCandidates, listMergeSuggestions, listPeople,
+  mergePeople, personForIdentity, populatePeople, publicPeople, resetName, restorePerson,
+  syncContacts, unlinkIdentity, updatePerson,
 } from '@/lib/services/people'
 
 const ADA_JID = '447700900123@s.whatsapp.net'
@@ -16,7 +18,7 @@ const GRACE_JID = '447700900999@s.whatsapp.net'
 describe('people', () => {
   beforeEach(resetDb)
 
-  it('creates, reads, renames and deletes a person', async () => {
+  it('creates, reads, renames and hides a person', async () => {
     const { id } = await createPerson({ name: '  Ada  ', notes: '   ' })
     const person = await getPerson(id)
     expect(person).toMatchObject({ name: 'Ada', notes: null, identities: [], chatCount: 0 })
@@ -31,8 +33,9 @@ describe('people', () => {
     expect((await getPerson(id))!.notes).toBeNull()
     expect(await updatePerson('no-such-person', { name: 'x' })).toBe(false)
 
-    expect(await deletePerson(id)).toBe(true)
-    expect(await deletePerson(id)).toBe(false)
+    expect(await archivePerson(id)).toBe(true)
+    // Archiving twice is one answer given twice, not two.
+    expect(await archivePerson(id)).toBe(false)
     expect(await getPerson(id)).toBeNull()
   })
 
@@ -162,65 +165,6 @@ describe('people', () => {
     })
   })
 
-  it('suggests a pair by phone and by name, and never one already answered', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [
-      { externalId: '42', displayName: 'Ada', phone: '+44 7700 900123' },
-      { externalId: '7', displayName: 'Grace', phone: null },
-      { externalId: '8', displayName: 'Nobody in WhatsApp', phone: '+15550000000' },
-    ])
-    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: 'Ada Lovelace' })
-    await makeChat(wa, { kind: 'dm', externalChatId: GRACE_JID, title: ' grace ' })
-
-    const suggestions = await listSuggestions()
-    expect(suggestions.map(s => [s.telegram.externalId, s.whatsapp.externalId, s.reason])).toEqual([
-      ['42', ADA_JID, 'phone'],
-      ['7', GRACE_JID, 'name'],
-    ])
-
-    // a dismissal is remembered; the other suggestion is untouched
-    await dismissSuggestion('7', GRACE_JID)
-    await dismissSuggestion('7', GRACE_JID)
-    expect((await listSuggestions()).map(s => s.reason)).toEqual(['phone'])
-
-    // an identity that already belongs to a person has an answer
-    const { id } = await createPerson({ name: 'Ada' })
-    await linkIdentity(id, { channel: 'whatsapp', externalId: ADA_JID })
-    expect(await listSuggestions()).toEqual([])
-  })
-
-  it('confirms a suggestion into one person with both identities', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: '+447700900123' }])
-    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: 'Ada Lovelace' })
-
-    const created = await confirmSuggestion('42', ADA_JID)
-    expect(created).not.toBeNull()
-    const person = (await getPerson(created!.id))!
-    expect(person.name).toBe('Ada')
-    expect(person.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([
-      ['telegram', '42', 'phone_match'],
-      ['whatsapp', ADA_JID, 'phone_match'],
-    ])
-    expect(await listSuggestions()).toEqual([])
-
-    // a stale form post must not invent a second person
-    expect(await confirmSuggestion('42', ADA_JID)).toBeNull()
-    expect(await listPeople()).toHaveLength(1)
-  })
-
-  it('refuses to confirm a pair that does not match', async () => {
-    const tg = await makeConnection({ channel: 'telegram' })
-    const wa = await makeConnection({ channel: 'whatsapp' })
-    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: '+447700900123' }])
-    await makeChat(wa, { kind: 'dm', externalChatId: GRACE_JID, title: 'Grace' })
-    expect(await confirmSuggestion('42', GRACE_JID)).toBeNull()
-    expect(await confirmSuggestion('nope', GRACE_JID)).toBeNull()
-    expect(await listPeople()).toEqual([])
-  })
-
   it('deleting a connection drops its contact cache and keeps the person links', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: '+447700900123' }])
@@ -241,16 +185,18 @@ describe('people', () => {
     expect(await personForIdentity({ channel: 'telegram', externalId: '43' })).toBeNull()
   })
 
-  it('deleting a person leaves the archive alone', async () => {
+  it('hiding a person keeps their links and leaves the archive alone', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
     await addMessage(dm, { senderExternalId: '42', text: 'still here' })
     const { id } = await createPerson({ name: 'Ada' })
     await linkIdentity(id, { channel: 'telegram', externalId: '42' })
 
-    expect(await deletePerson(id)).toBe(true)
-    // the identity rows go with the person; the chats and messages do not
-    expect(await db.select().from(personIdentities)).toEqual([])
+    expect(await archivePerson(id)).toBe(true)
+    // The identity row stays — it is the record of "not this one", and
+    // without it the next contact sync would make the person again
+    // (addendum 2, decision 14) — and the chats and messages never moved.
+    expect(await db.select().from(personIdentities)).toHaveLength(1)
     expect(await db.select().from(chats)).toHaveLength(1)
     const rows = await db.select().from(messages)
     expect(rows).toHaveLength(1)
@@ -261,7 +207,7 @@ describe('people', () => {
 describe('publicPeople — the one mapping both agent surfaces use', () => {
   beforeEach(resetDb)
 
-  it('carries the id, name, notes, channels and chat count, and nothing else', async () => {
+  it('carries the id, name, notes, channels, chat count and the chats themselves, and nothing else', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
     await addMessage(dm, { senderExternalId: '42', text: 'hello' })
@@ -276,8 +222,13 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     expect(person).toEqual({
       id, name: 'Ada', notes: 'from the archive',
       channels: ['telegram', 'whatsapp'], chatCount: 1,
+      // The chat under the title the chat list shows, with nothing but the
+      // fields an agent can act on: the id get_messages takes, and how to
+      // recognise it. No external id, no phone.
+      chats: [{ id: dm.id, title: 'Ada', channel: 'telegram', kind: 'dm' }],
     })
-    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'id', 'name', 'notes'])
+    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'chats', 'id', 'name', 'notes'])
+    expect(Object.keys(person.chats[0]).sort()).toEqual(['channel', 'id', 'kind', 'title'])
   })
 
   it('never serves a phone number or a channel identifier, however the person was linked', async () => {
@@ -307,5 +258,438 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     await createPerson({ name: 'Bob' })
 
     expect((await publicPeople()).map(p => p.channels)).toEqual([['telegram'], []])
+  })
+})
+
+// Addendum 2: the address book fills itself in after every contact sync. The
+// line these tests hold is the one the spec draws — recording a name the
+// archive already has is bookkeeping and happens by itself; deciding that two
+// channels are one human needs an equal phone number, and nothing here may
+// undo an answer the owner gave.
+describe('the self-populating address book', () => {
+  beforeEach(resetDb)
+
+  it('creates a person for every named contact and DM, never for a group sender', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: '+447700900123' },
+      // Nameless: there is nothing to call them, so there is no person.
+      { externalId: '43', displayName: null, phone: null },
+    ])
+    const dm = await makeChat(tg, { kind: 'dm', externalChatId: '50', title: 'Grace' })
+    await addMessage(dm, { senderExternalId: '50' })
+    // Someone who has only ever spoken in a room the owner is in. A name in a
+    // group is not a correspondent, and the address book stays the owner's.
+    const group = await makeChat(tg, { kind: 'group', externalChatId: '-100', title: 'Team' })
+    await addMessage(group, { senderExternalId: '99', senderName: 'Loud In A Room' })
+
+    expect(await populatePeople()).toEqual({ created: 2, merged: 0, renamed: 0 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada', 'Grace'])
+
+    const [ada] = await listPeople()
+    expect(ada.nameSource).toBe('channel')
+    expect(ada.identities[0]).toMatchObject({
+      channel: 'telegram', externalId: '42', source: 'auto', phone: '+447700900123',
+    })
+
+    // Idempotent: the second run over an unchanged archive does nothing.
+    expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
+    expect(await listPeople()).toHaveLength(2)
+  })
+
+  // A WhatsApp history sync can leave the OWNER'S own display name in a direct
+  // chat's title — it is the wrong side of the conversation, which is why
+  // queries.ts titles a DM with nullif(title, ownerDisplayName). Creating a
+  // person from that title would do worse than bypass the guard: a person row
+  // wins the read path's coalesce ahead of it, so every message the
+  // counterparty ever sent would be labelled with the owner's name, and
+  // list_people would serve the owner back to an agent as a correspondent.
+  it('never names anyone after the owner, however the DM title was written', async () => {
+    const wa = await makeConnection({ channel: 'whatsapp', displayName: 'Cham' })
+    await makeChat(wa, { kind: 'dm', externalChatId: ADA_JID, title: '  cham  ' })
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham' })
+    await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Cham' })
+    // Someone genuinely called something else is still a person, so the rule is
+    // narrow rather than "skip DMs".
+    await makeChat(tg, { kind: 'dm', externalChatId: '43', title: 'Grace' })
+
+    expect((await listIdentityCandidates('whatsapp'))[0])
+      .toMatchObject({ externalId: ADA_JID, displayName: null, kind: 'dm' })
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Grace'])
+  })
+
+  // …and the counterparty's own sender name is still the right name for them,
+  // so dropping the title is a fallback and not a refusal.
+  it('falls back to the counterparty\'s own name when the title was the owner\'s', async () => {
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham' })
+    const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Cham' })
+    await addMessage(dm, { senderExternalId: '42', senderName: 'Ada' })
+
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada'])
+  })
+
+  it('merges by phone into the older person, and the alias the owner typed wins', async () => {
+    const older = await createPerson({ name: 'Ada', nameSource: 'channel' })
+    await linkIdentity(older.id, { channel: 'telegram', externalId: '42', phone: '+44 7700 900123' })
+    // Younger, but this is the name a human chose (createPerson's default).
+    const younger = await createPerson({ name: 'Ada Lovelace' })
+    await linkIdentity(younger.id, { channel: 'whatsapp', externalId: ADA_JID })
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, older.id))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, younger.id))
+
+    expect(await populatePeople()).toMatchObject({ created: 0, merged: 1 })
+    const all = await listPeople()
+    expect(all).toHaveLength(1)
+    expect(all[0]).toMatchObject({ id: older.id, name: 'Ada Lovelace', nameSource: 'owner' })
+    expect(all[0].identities.map(i => [i.channel, i.externalId])).toEqual([
+      ['telegram', '42'], ['whatsapp', ADA_JID],
+    ])
+    expect(await populatePeople()).toMatchObject({ merged: 0 })
+  })
+
+  it('never merges two people who only share a name', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: null }])
+    await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'Ada', phone: null }])
+
+    expect(await populatePeople()).toMatchObject({ created: 2, merged: 0 })
+    const all = await listPeople()
+    expect(all).toHaveLength(2)
+    const onTelegram = all.find(p => p.identities[0].channel === 'telegram')!
+    const onWhatsapp = all.find(p => p.identities[0].channel === 'whatsapp')!
+    // The two rows are the same age to the millisecond here; pin them so the
+    // survivor is the one the rule names and not the one the clock happened to
+    // pick.
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, onWhatsapp.id))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, onTelegram.id))
+
+    // It stays what it always was: something to OFFER the owner. Two rows, and
+    // a suggestion that says so — not silence, and not a merge.
+    expect(await listMergeSuggestions()).toEqual([{
+      from: { id: onTelegram.id, name: 'Ada' },
+      into: { id: onWhatsapp.id, name: 'Ada' },
+      reason: 'name',
+    }])
+  })
+
+  it('a channel name follows the contact list; an alias never moves', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: null },
+      { externalId: '43', displayName: 'Grace', phone: null },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    const grace = (await listPeople()).find(p => p.name === 'Grace')!
+    expect(await updatePerson(grace.id, { name: 'Rear Admiral Hopper' })).toBe(true)
+    expect((await getPerson(grace.id))!.nameSource).toBe('owner')
+
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada Lovelace', phone: null },
+      { externalId: '43', displayName: 'Grace Hopper', phone: null },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 0, renamed: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada Lovelace', 'Rear Admiral Hopper'])
+    // The identity's own copy of the name is refreshed too, so the person
+    // page does not show a label the channel stopped using.
+    expect((await getPerson(grace.id))!.identities[0].displayName).toBe('Grace Hopper')
+
+    // …and the owner can hand the name back to the channel.
+    expect(await resetName(grace.id)).toBe(true)
+    expect(await getPerson(grace.id)).toMatchObject({ name: 'Grace Hopper', nameSource: 'channel' })
+  })
+
+  // Decision 13's hard case: the worker's refresh is a SELECT, then a join,
+  // then a loop of writes, and the owner types an alias somewhere in the middle
+  // of it. A trigger is the only way to land that write at a moment a test can
+  // pin — it fires inside the loop, between the read that saw Ada as
+  // channel-named and the write that would have renamed her.
+  it('never renames a person the owner aliased while the refresh was running', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '41', displayName: 'Aaa', phone: null },
+      { externalId: '42', displayName: 'Ada', phone: null },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    const aaa = (await listPeople()).find(p => p.name === 'Aaa')!
+    const ada = (await listPeople()).find(p => p.name === 'Ada')!
+    // The loop goes oldest first, so Aaa is written before Ada is reached.
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, aaa.id))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, ada.id))
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '41', displayName: 'Aaa Two', phone: null },
+      { externalId: '42', displayName: 'Ada Lovelace', phone: null },
+    ])
+
+    // SQLite refuses bound parameters inside a trigger, so the two ids are
+    // inlined — both are uuids this test just read out of its own database.
+    await db.run(sql.raw(`create trigger owner_types_an_alias after update on people
+      when new.id = '${aaa.id}'
+      begin update people set name = 'Ada @ work', name_source = 'owner' where id = '${ada.id}'; end`))
+    try {
+      // Aaa follows the contact list; Ada's write finds a row that is no longer
+      // channel-named and does nothing, so the count is 1 rather than 2.
+      expect(await populatePeople()).toMatchObject({ renamed: 1 })
+    } finally {
+      await db.run(sql.raw('drop trigger owner_types_an_alias'))
+    }
+    expect((await getPerson(aaa.id))!.name).toBe('Aaa Two')
+    // The alias survived, and the row still says the owner chose it.
+    expect(await getPerson(ada.id)).toMatchObject({ name: 'Ada @ work', nameSource: 'owner' })
+  })
+
+  // The same read-then-blind-write shape, and the same repair: the row can be
+  // hidden while channelNamesFor's join runs.
+  it('the write guards repeat every predicate the read relied on', () => {
+    const src = readFileSync('lib/services/people.ts', 'utf8')
+    const refresh = src.split('async function refreshChannelNames')[1].split('\n}')[0]
+    const update = refresh.split('db.update(people)')[1]
+    expect(update).toMatch(/eq\(people\.nameSource, 'channel'\)/)
+    expect(update).toMatch(/isNull\(people\.archivedAt\)/)
+    const reset = src.split('export async function resetName')[1].split('\n}')[0]
+    expect(reset.split('db.update(people)')[1]).toMatch(/isNull\(people\.archivedAt\)/)
+  })
+
+  it('a hidden person is nobody, is never recreated, and comes back on restore', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: null }])
+    await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    const [ada] = await listPeople()
+
+    expect(await archivePerson(ada.id)).toBe(true)
+    expect(await listPeople()).toEqual([])
+    expect(await publicPeople()).toEqual([])
+    expect(await getPerson(ada.id)).toBeNull()
+    expect(await personForIdentity({ channel: 'telegram', externalId: '42' })).toBeNull()
+    expect(await updatePerson(ada.id, { name: 'Nope' })).toBe(false)
+    expect((await listArchivedPeople()).map(p => p.name)).toEqual(['Ada'])
+    // The identity is still theirs, which is what keeps them hidden.
+    expect((await listIdentityCandidates('telegram'))[0].personId).toBe(ada.id)
+
+    expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
+    expect(await listPeople()).toEqual([])
+
+    expect(await restorePerson(ada.id)).toBe(true)
+    expect(await restorePerson(ada.id)).toBe(false)
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada'])
+    expect(await personForIdentity({ channel: 'telegram', externalId: '42' }))
+      .toEqual({ id: ada.id, name: 'Ada' })
+  })
+
+  // PRIVACY says hiding someone "keeps their links, which is what stops the
+  // next sync recreating them". Their links only cover the channels they were
+  // on: pair the second one later and their number arrives attached to no
+  // person at all, and mergeByPhone excludes archived people by design, so
+  // nothing downstream could repair it.
+  it('keeps someone hidden when a second channel finds them later', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '42', displayName: 'Ada', phone: '+447700900123' },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    const [ada] = await listPeople()
+    expect(await archivePerson(ada.id)).toBe(true)
+
+    // Weeks later: WhatsApp is paired and reports the same number.
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(wa.id, 'whatsapp', [
+      { externalId: ADA_JID, displayName: 'Ada', phone: '+44 7700 900123' },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 0 })
+
+    expect(await listPeople()).toEqual([])
+    expect(await publicPeople()).toEqual([])
+    const [stillHidden] = await listArchivedPeople()
+    expect(stillHidden.id).toBe(ada.id)
+    expect(stillHidden.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([
+      ['telegram', '42', 'auto'],
+      ['whatsapp', ADA_JID, 'auto'],
+    ])
+    // Both sides resolve to nobody while she is hidden…
+    expect(await personForIdentity({ channel: 'whatsapp', externalId: ADA_JID })).toBeNull()
+    // …and restoring brings back one person holding both.
+    expect(await restorePerson(ada.id)).toBe(true)
+    const [back] = await listPeople()
+    expect(back.identities.map(i => i.channel)).toEqual(['telegram', 'whatsapp'])
+    expect(await personForIdentity({ channel: 'whatsapp', externalId: ADA_JID }))
+      .toEqual({ id: ada.id, name: 'Ada' })
+  })
+
+  // The number is the only identifier the two channels share, so nothing
+  // weaker may reach an archived row: a name match must still make a new,
+  // visible person rather than quietly joining someone the owner hid.
+  it('does not attach a name-only match to a hidden person', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: 'Ada', phone: null }])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    const [ada] = await listPeople()
+    await archivePerson(ada.id)
+
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'Ada', phone: null }])
+    expect(await populatePeople()).toMatchObject({ created: 1 })
+    expect((await listPeople()).map(p => p.name)).toEqual(['Ada'])
+    expect((await listArchivedPeople())[0].identities).toHaveLength(1)
+  })
+
+  it('merging moves the identities and deletes the merged-from person outright', async () => {
+    const from = await createPerson({ name: 'Ada on Telegram', notes: 'met at work' })
+    await linkIdentity(from.id, { channel: 'telegram', externalId: '42' })
+    const into = await createPerson({ name: 'Ada' })
+    await linkIdentity(into.id, { channel: 'whatsapp', externalId: ADA_JID })
+
+    expect(await mergePeople(from.id, into.id)).toBe(true)
+    // A hard delete, not an archive (decision 15): the identities are the
+    // other person's now, so there is nothing left to hide.
+    expect(await db.select().from(people).where(eq(people.id, from.id))).toEqual([])
+    expect(await listArchivedPeople()).toEqual([])
+
+    const person = (await getPerson(into.id))!
+    expect(person.name).toBe('Ada')
+    // Notes are the one thing the owner wrote by hand; they move into an
+    // empty box rather than disappearing with the row.
+    expect(person.notes).toBe('met at work')
+    expect(person.identities.map(i => [i.channel, i.externalId])).toEqual([
+      ['telegram', '42'], ['whatsapp', ADA_JID],
+    ])
+
+    expect(await mergePeople(from.id, into.id)).toBe(false)
+    expect(await mergePeople(into.id, into.id)).toBe(false)
+  })
+
+  it('refuses to merge a hidden person in either direction, and moves nothing', async () => {
+    const hidden = await createPerson({ name: 'Hidden' })
+    await linkIdentity(hidden.id, { channel: 'telegram', externalId: '42' })
+    const live = await createPerson({ name: 'Live' })
+    await linkIdentity(live.id, { channel: 'whatsapp', externalId: ADA_JID })
+    await archivePerson(hidden.id)
+
+    expect(await mergePeople(hidden.id, live.id)).toBe(false)
+    expect(await mergePeople(live.id, hidden.id)).toBe(false)
+    // The alive check and the three writes are one transaction, so a refusal
+    // leaves both sides exactly as they were: no identity changed owner.
+    expect((await listArchivedPeople())[0].identities.map(i => i.externalId)).toEqual(['42'])
+    expect((await getPerson(live.id))!.identities.map(i => i.externalId)).toEqual([ADA_JID])
+  })
+
+  // Structural, because the hazard is a race two processes have to lose: the
+  // web and the worker both write this file, person_identities.person_id is ON
+  // DELETE CASCADE, and an interleaved merge would take the owner's links with
+  // it. The behavioural tests above prove what one caller sees; this proves the
+  // four statements cannot be pulled apart.
+  it('does every merge write inside one transaction', () => {
+    const src = readFileSync('lib/services/people.ts', 'utf8')
+    const body = src.split('export async function mergePeople')[1].split('\n}')[0]
+    expect(body).toMatch(/db\.transaction\(tx =>/)
+    // The alive check is re-read INSIDE it, not carried in from before.
+    expect(body).toMatch(/tx\.select\(\)\.from\(people\)/)
+    expect(body).not.toMatch(/\bawait\b/)
+    expect(body).not.toMatch(/\bdb\.(select|update|delete|insert)\b/)
+  })
+})
+
+
+// Addendum 2, decision 12's other half. Auto-populate answers every identity,
+// so a match BETWEEN IDENTITIES is never open any more — the leftover is two
+// PEOPLE for one human, which is what the owner is now asked about.
+describe('merge suggestions between people', () => {
+  beforeEach(resetDb)
+
+  async function twoAdas(): Promise<{ telegram: string; whatsapp: string }> {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    // No phone on either side: Telegram will not show a contact's number
+    // unless you have each other saved, which is exactly when decision 12
+    // cannot fire and a name is all there is.
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: ' Ada ', phone: null }])
+    await syncContacts(wa.id, 'whatsapp', [{ externalId: GRACE_JID, displayName: 'ADA', phone: null }])
+    await populatePeople()
+    const all = await listPeople()
+    const telegram = all.find(p => p.identities[0].channel === 'telegram')!.id
+    const whatsapp = all.find(p => p.identities[0].channel === 'whatsapp')!.id
+    await db.update(people).set({ createdAt: new Date(1000) }).where(eq(people.id, telegram))
+    await db.update(people).set({ createdAt: new Date(2000) }).where(eq(people.id, whatsapp))
+    return { telegram, whatsapp }
+  }
+
+  it('offers the younger row merged into the older, once, and only across channels', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    // Trimmed and case-insensitive: ' Ada ' and 'ADA' are one name.
+    expect(await listMergeSuggestions()).toEqual([{
+      from: { id: whatsapp, name: 'ADA' },
+      into: { id: telegram, name: 'Ada' },
+      reason: 'name',
+    }])
+
+    // A third row with the same name on the SAME channel is offered against
+    // the WhatsApp one — and never against the other Telegram row, because two
+    // Telegram accounts are two accounts however they are named.
+    const sameChannel = await createPerson({ name: 'Ada' })
+    await linkIdentity(sameChannel.id, { channel: 'telegram', externalId: '99' })
+    const two = await listMergeSuggestions()
+    expect(two).toHaveLength(2)
+    expect(two.every(s => [s.from.id, s.into.id].includes(whatsapp))).toBe(true)
+
+    // Somebody who already holds both channels is not half of anything…
+    const both = await createPerson({ name: 'Grace' })
+    await linkIdentity(both.id, { channel: 'telegram', externalId: '77' })
+    await linkIdentity(both.id, { channel: 'whatsapp', externalId: ADA_JID })
+    // …nor is a row with no identity at all, nor one with a different name.
+    await createPerson({ name: 'Grace' })
+    await createPerson({ name: 'Somebody else' })
+    expect(await listMergeSuggestions()).toHaveLength(2)
+  })
+
+  it('never offers a hidden person, and confirming is a merge', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    expect(await archivePerson(whatsapp)).toBe(true)
+    // Hiding is already an answer.
+    expect(await listMergeSuggestions()).toEqual([])
+    expect(await restorePerson(whatsapp)).toBe(true)
+
+    expect(await confirmSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await getPerson(whatsapp)).toBeNull()
+    const survivor = (await getPerson(telegram))!
+    expect(survivor.name).toBe('Ada')
+    expect(survivor.identities.map(i => [i.channel, i.externalId])).toEqual([
+      ['telegram', '42'], ['whatsapp', GRACE_JID],
+    ])
+    expect(await listMergeSuggestions()).toEqual([])
+    // A second post of the same form finds the row gone and moves nothing.
+    expect(await confirmSuggestion(whatsapp, telegram)).toBe(false)
+  })
+
+  it('remembers a dismissal by the identities, so a rebuilt pair stays dismissed', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    expect(await dismissSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await dismissSuggestion(whatsapp, telegram)).toBe(true)
+    expect(await listMergeSuggestions()).toEqual([])
+
+    // The rows go and come back — hidden, restored, or in this case deleted
+    // outright and re-populated under brand new person ids. The owner's "no"
+    // was about the two humans, not about two uuids they never saw.
+    await db.delete(people)
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    const rebuilt = await listPeople()
+    expect(rebuilt).toHaveLength(2)
+    expect(rebuilt.map(p => p.id).sort()).not.toEqual([telegram, whatsapp].sort())
+    expect(await listMergeSuggestions()).toEqual([])
+  })
+
+  it('refuses to key a dismissal it cannot phrase', async () => {
+    const { telegram } = await twoAdas()
+    const both = await createPerson({ name: 'Grace' })
+    await linkIdentity(both.id, { channel: 'telegram', externalId: '77' })
+    await linkIdentity(both.id, { channel: 'whatsapp', externalId: ADA_JID })
+
+    expect(await dismissSuggestion(telegram, telegram)).toBe(false)
+    expect(await dismissSuggestion(telegram, 'no-such-person')).toBe(false)
+    // Same channel on both sides, and a person holding both channels: neither
+    // is a Telegram/WhatsApp pair the table can hold.
+    expect(await dismissSuggestion(telegram, both.id)).toBe(false)
+    expect(await listMergeSuggestions()).toHaveLength(1)
   })
 })

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import {
   mintAccessKey, verifyAccessKey, listActiveAccessKeys, revealAccessKey,
-  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, KEY_PREFIX,
+  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, mintFirstAccessKey, KEY_PREFIX,
 } from '@/lib/services/access-keys'
 
 describe('access keys', () => {
@@ -70,5 +70,28 @@ describe('access keys', () => {
     await mintAccessKey('a')
     const blob = JSON.stringify(await listActiveAccessKeys())
     expect(blob).not.toMatch(/keyHash|keyCiphertext|key_hash|key_ciphertext/)
+  })
+})
+
+// The first key is what closes /setup. Two finish requests racing through
+// the fresh-instance check must not both mint: the check and the insert
+// happen inside one transaction, so the second finds a key and stops.
+describe('mintFirstAccessKey', () => {
+  beforeEach(resetDb)
+
+  it('mints only while no key row exists, revoked ones included', async () => {
+    const first = await mintFirstAccessKey('First key')
+    expect(first.ok).toBe(true)
+    expect(await mintFirstAccessKey('Second')).toEqual({ ok: false, reason: 'not_first' })
+    await revokeAllAccessKeys()
+    expect(await mintFirstAccessKey('Third')).toEqual({ ok: false, reason: 'not_first' })
+    expect(await countActiveAccessKeys()).toBe(0)
+    expect(await hasAnyAccessKey()).toBe(true)
+  })
+
+  it('lets exactly one of two concurrent callers win', async () => {
+    const results = await Promise.all([mintFirstAccessKey('a'), mintFirstAccessKey('b')])
+    expect(results.filter(r => r.ok)).toHaveLength(1)
+    expect(await listActiveAccessKeys()).toHaveLength(1)
   })
 })

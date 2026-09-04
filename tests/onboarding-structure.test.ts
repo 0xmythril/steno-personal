@@ -16,10 +16,18 @@ describe('setup page', () => {
     expect(page).toContain('<WhatsAppConsent />')
     expect(page).toContain('<Consent channel={channel} />')
   })
-  it('the setup status route is gated on freshness and archive rows only', () => {
+  // Pairing binds the instance to the browser that started it (an httpOnly
+  // cookie, like recovery). The finish card, the QR, and the poll are shown to
+  // that browser and nobody else, so the window between "paired" and "key
+  // minted" cannot be claimed by another visitor.
+  it('shows the pairing and the finish step only to the browser that started them', () => {
+    expect(page).toContain('currentSetupAttempt()')
+  })
+  it('the setup status route is gated on freshness, archive rows, and the setup cookie', () => {
     const route = readFileSync('app/api/setup/connections/[id]/route.ts', 'utf8')
     expect(route).toMatch(/isFreshInstance\(\)/)
     expect(route).toContain("purpose !== 'archive'")
+    expect(route).toContain('currentSetupAttempt()')
   })
 })
 

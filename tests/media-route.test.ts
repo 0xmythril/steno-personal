@@ -70,7 +70,7 @@ describe('GET /media/[id]', () => {
     it('serves a request carrying a real portal cookie session', async () => {
       const { media: md } = await onDisk({ mimeType: 'image/jpeg' })
       const k = await key()
-      await startSession(k.id) // writes sp_session into the mocked cookie jar
+      await startSession({ keyId: k.id }) // writes sp_session into the mocked cookie jar
       const res = await GET(new Request('http://localhost/media/x'), params(md.id))
       expect(res.status).toBe(200)
     })
