@@ -63,6 +63,6 @@ export async function recoverClaimAction(): Promise<void> {
   // and this request — not a state a running instance can be in.
   if (!rawKey) redirect('/login')
   await setFirstKeyFlash(keyId, rawKey)
-  await startSession(keyId)
+  await startSession({ keyId })
   redirect('/welcome')
 }

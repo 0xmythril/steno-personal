@@ -1,12 +1,17 @@
 import { cookies } from 'next/headers'
 import { requireSession } from '@/lib/auth'
 import { listActiveAccessKeys, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/services/access-keys'
+import { listActivePasskeys } from '@/lib/services/passkeys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
+import { RegisterPasskey } from '@/app/register-passkey'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
-import { mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction } from './actions'
+import {
+  mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction,
+  revokePasskeyAction, revokeAllPasskeysAction,
+} from './actions'
 
 type Flash = { id: string; rawKey: string } | null
 function parseFlash(raw: string | undefined): Flash {
@@ -19,6 +24,7 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
   const keys = await listActiveAccessKeys()
+  const passkeyRows = await listActivePasskeys()
   const sp = await searchParams
   const mintError = typeof sp.mintError === 'string' ? sp.mintError : null
   const revealError = typeof sp.revealError === 'string' ? sp.revealError : null
@@ -35,7 +41,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <Nav label={session.label} current="settings" />
+      <Nav label={session.label} via={session.via} current="settings" />
       <main>
         <div className="page-head"><div><p className="eyebrow">This instance</p><h1>Settings</h1></div></div>
 
@@ -105,6 +111,45 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <form action={revokeAllKeysAction} className="actions">
             <button type="submit" className="danger small">Revoke all keys and log out</button>
           </form>
+        </section>
+
+        <section className="card">
+          <h2>Passkeys</h2>
+          <p className="muted">
+            A passkey logs you into this portal with Touch ID, Windows Hello, or your phone. It cannot be used by an agent; agents use keys.
+          </p>
+
+          <RegisterPasskey />
+
+          {passkeyRows.length > 0 && (
+            <>
+              <div className="tbl"><div className="scroll">
+                <table>
+                  <thead><tr><th>Label</th><th>Synced</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+                  <tbody>
+                    {passkeyRows.map(p => (
+                      <tr key={p.id}>
+                        <td className="name">{p.label}{p.id === session.passkeyId && <> <span className="chip">this session</span></>}</td>
+                        <td className="muted">{p.backedUp ? 'yes' : 'this device only'}</td>
+                        <td className="mono muted">{fmt(p.createdAt)}</td>
+                        <td className="mono muted">{fmt(p.lastUsedAt)}</td>
+                        <td className="end">
+                          <form action={revokePasskeyAction} className="inline">
+                            <input type="hidden" name="passkeyId" value={p.id} />
+                            <button type="submit" className="danger">Remove</button>
+                          </form>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div></div>
+
+              <form action={revokeAllPasskeysAction} className="actions">
+                <button type="submit" className="danger small">Remove all passkeys</button>
+              </form>
+            </>
+          )}
         </section>
 
         <div className="two-up">

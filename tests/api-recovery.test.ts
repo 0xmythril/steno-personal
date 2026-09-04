@@ -74,7 +74,7 @@ describe('recovery actions', () => {
     const fd = new FormData(); fd.set('channel', 'telegram')
     await expect(recoverStartAction(null, fd)).rejects.toThrow('redirect:/setup')
     const k = await mintAccessKey('a'); if (!k.ok) throw new Error(k.reason)
-    await startSession(k.id)
+    await startSession({ keyId: k.id })
     await expect(recoverStartAction(null, fd)).rejects.toThrow('redirect:/')
   })
 

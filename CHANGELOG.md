@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Passkeys.** Log into the portal with Touch ID, Windows Hello, or your phone. Register one on `/welcome` right after your first key, or from a new Passkeys section in Settings, where each can be removed. Passkeys log into the portal only — agents keep using access keys, and a key still works on the login page everywhere. Needs HTTPS or localhost; on a plain-http LAN address the button does not appear.
 - MCP: `list_chats` takes `channel`, `kind`, `q` (a substring of the title), `limit` and `cursor`, answers `{ chats, nextCursor }` twenty at a time, and each chat carries a `snippet` of its latest message.
 - MCP: `recent_messages`, the inbox — the newest messages across every chat, or one channel or kind, each naming its chat; and `search_messages` gains `channel`, `kind`, `sender`, `before`, `after` and `limit`, with every hit naming its chat's channel and kind.
 - MCP: `get_media` returns one attachment by its `media.id`; a ready image up to 3 MiB is returned as image content the agent can look at, anything else as metadata and the path to fetch it.

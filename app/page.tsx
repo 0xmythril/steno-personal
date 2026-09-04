@@ -19,7 +19,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <Nav label={session.label} current="chats" />
+      <Nav label={session.label} via={session.via} current="chats" />
       <main>
         <div className="page-head">
           <div><p className="eyebrow">Archive</p><h1>Chats</h1></div>

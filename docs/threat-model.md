@@ -43,6 +43,16 @@ immediately deletes the browser sessions created with it. Each key's last-used
 time is on the Settings page, so a key being used from somewhere unexpected is
 visible if you look. Browser sessions expire after 30 idle days.
 
+**Passkeys.** A passkey is a key pair held by the browser's authenticator; the
+server keeps only the public key, which is not a secret, so the `passkeys`
+table adds nothing to what a leaked volume reveals. A passkey signs a
+challenge bound to this instance's origin, so it cannot be phished onto
+another site or copied out of a file. It logs into the portal only; the MCP
+route never accepts one. A passkey synced through a platform keychain is as
+safe as that keychain. User verification is required, so a stolen unlocked
+authenticator still needs the person's biometric or PIN. Removing a passkey
+ends its sessions the same way revoking a key does.
+
 **Lost keys.** A locked-out owner recovers by pairing the same account again
 from `/login`. The recovery pairing is a second device on a row that never
 becomes a connection: the worker reads the account id the channel reports,
@@ -97,7 +107,11 @@ which, behind a reverse proxy, depends on that proxy setting and not forwarding
 a client-supplied `X-Forwarded-Proto`; see
 [self-hosting.md](self-hosting.md#behind-a-reverse-proxy). `POST /api/login` is
 the scriptable twin of the login form and is bounded by the same key entropy;
-it adds no new exposure.
+it adds no new exposure. `POST /api/passkeys/login` has no secret to guess: it
+verifies a signature over a server-issued challenge that rides in an httpOnly
+cookie, and a rejected assertion is logged as a count. The relying party is
+derived from the same forwarded host and scheme the cookie trusts, so the
+proxy requirements below apply to it too.
 
 **The fresh-instance window.** Until a key exists, `/setup` is open: whoever
 reaches a brand-new deploy first can pair their own account and become its

@@ -40,7 +40,7 @@ async function key(label = 'agent') {
 // as opposed to the same key used as a bearer token.
 async function signedIn() {
   const k = await key()
-  await startSession(k.id)
+  await startSession({ keyId: k.id })
   return k
 }
 

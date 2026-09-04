@@ -162,7 +162,7 @@ describe('linkIdentityAction', () => {
   async function signIn(): Promise<void> {
     const k = await mintAccessKey('portal')
     if (!k.ok) throw new Error(k.reason)
-    await startSession(k.id)
+    await startSession({ keyId: k.id })
   }
 
   it('stores the name and number the page showed beside the option', async () => {

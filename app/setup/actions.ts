@@ -71,7 +71,7 @@ export async function finishSetupAction(): Promise<void> {
     throw new Error(`first key mint failed: ${minted.reason}`)
   }
   await setFirstKeyFlash(minted.id, minted.rawKey)
-  await startSession(minted.id)
+  await startSession({ keyId: minted.id })
   await clearSetupCookie()
   redirect('/welcome')
 }
