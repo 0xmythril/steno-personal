@@ -98,6 +98,27 @@ describe('pageChats — the aimed chat list', () => {
     expect(byId.get(chat.id)).toBe('x'.repeat(160))
     expect(byId.get(empty.id)).toBeNull()
   })
+
+  it('snippet names what a textless latest message is, and looks past system rows', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Air Asia group' })
+    const snippet = async () => (await pageChats()).chats[0].snippet
+    await addMessage(chat, { text: 'see attached', sentAt: at('2026-01-01T00:00:00Z') })
+    await addMessage(chat, { text: null, type: 'image', sentAt: at('2026-01-02T00:00:00Z') })
+    expect(await snippet()).toBe('[image]')
+    await addMessage(chat, { text: 'a caption', type: 'image', sentAt: at('2026-01-03T00:00:00Z') })
+    expect(await snippet()).toBe('a caption')
+    await addMessage(chat, { text: '👍', type: 'reaction', sentAt: at('2026-01-04T00:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    await addMessage(chat, { text: null, type: 'unknown', sentAt: at('2026-01-05T00:00:00Z') })
+    expect(await snippet()).toBe('[unsupported message]')
+    // A system row (someone joined, the subject changed) is not conversation.
+    await addMessage(chat, { text: null, type: 'system', sentAt: at('2026-01-06T00:00:00Z') })
+    expect(await snippet()).toBe('[unsupported message]')
+    const onlySystem = await makeChat(conn, { kind: 'group', title: 'New group' })
+    await addMessage(onlySystem, { text: null, type: 'system', sentAt: at('2026-01-07T00:00:00Z') })
+    expect((await pageChats()).chats.find(c => c.id === onlySystem.id)!.snippet).toBeNull()
+  })
 })
 
 describe('recentMessages — the inbox', () => {
