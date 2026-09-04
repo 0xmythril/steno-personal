@@ -194,6 +194,31 @@ describe('people on chats and messages', () => {
 
   const ADA = '15551230000@s.whatsapp.net'
 
+  it('names one sender the same in every chat: the address book first, then any push name they ever carried', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const live = await makeChat(conn, { kind: 'group', title: 'Air Asia' })
+    const synced = await makeChat(conn, { kind: 'group', title: 'Old group' })
+    // A live message carries the push name; a history-synced one never does.
+    // The reader must not meet "Avir" in one chat and "+1555…" in the next.
+    await addMessage(live, { text: 'slide attached', senderExternalId: ADA, senderName: 'Avir', sentAt: new Date(2000) })
+    await addMessage(synced, { text: 'older', senderExternalId: ADA, senderName: null, sentAt: new Date(1000) })
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Avir')
+    // A push name on the other channel is somebody else's.
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
+    await addMessage(tg, { text: 'tg', senderExternalId: ADA, senderName: null })
+    expect((await getMessages(tg.id))!.messages[0].senderName).toBeNull()
+
+    // What the owner wrote in the address book outranks every channel name,
+    // the same rule a direct chat's title already follows.
+    const p = await createPerson({ name: 'Avir Shah' })
+    await linkIdentity(p.id, { channel: 'whatsapp', externalId: ADA })
+    expect((await getMessages(live.id))!.messages[0].senderName).toBe('Avir Shah')
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Avir Shah')
+    // And the sender filter matches what is shown.
+    expect((await searchMessages('older', { sender: 'shah' })).map(m => m.text)).toEqual(['older'])
+    expect((await searchMessages('slide', { sender: 'avir' })).map(m => m.text)).toEqual(['slide attached'])
+  })
+
   it('names a direct chat after the linked person, ahead of every other rule', async () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
     // Every weaker rule is available: a title, a counterparty push name, and
@@ -361,7 +386,11 @@ describe('people on chats and messages', () => {
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
 
+    // The address-book name is the sender label once the person is linked
+    // (the contact name was, until then); the person rides alongside.
     const [hit] = await searchMessages('dentist')
-    expect(hit).toMatchObject({ senderName: 'Saved Contact', person: { id: ada.id, name: 'Ada Lovelace' } })
+    expect(hit).toMatchObject({ senderName: 'Ada Lovelace', person: { id: ada.id, name: 'Ada Lovelace' } })
+    await archivePerson(ada.id)
+    expect((await searchMessages('dentist'))[0]).toMatchObject({ senderName: 'Saved Contact', person: null })
   })
 })

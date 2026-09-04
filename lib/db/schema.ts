@@ -123,6 +123,9 @@ export const messages = sqliteTable('messages', {
 }, t => [
   uniqueIndex('messages_external_unique').on(t.chatId, t.externalMessageId),
   index('messages_chat_sent_idx').on(t.chatId, t.sentAt),
+  // The sender-name lookup in lib/services/queries.ts walks one sender's
+  // messages newest-first, once per row on a page.
+  index('messages_sender_sent_idx').on(t.senderExternalId, t.sentAt),
 ])
 
 // Downloaded attachment bytes, one row per message that carries one. Queued

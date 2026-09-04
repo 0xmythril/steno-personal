@@ -1,0 +1,1 @@
+CREATE INDEX `messages_sender_sent_idx` ON `messages` (`sender_external_id`,`sent_at`);

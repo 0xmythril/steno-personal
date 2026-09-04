@@ -164,10 +164,8 @@ const personRef = (id: string | null, name: string | null): PersonRef | null =>
 const toSummary = ({ personId, personName, activityAt: _activity, ...row }: ChatRow): ChatSummary =>
   ({ ...row, person: personRef(personId, personName) })
 
-// WhatsApp history sync carries no push name, so almost every synced message
-// from someone else arrives nameless — but never id-less. A sender with no
-// name shows as the phone number that is their JID rather than "Unknown";
-// Telegram ids are opaque, so a nameless Telegram sender stays null.
+// The chat a message sits in decides its channel and its connection; both are
+// needed to look a sender up by (channel, external id).
 const senderChannel = sql`(select ${chats.channel} from ${chats} where ${chats.id} = ${messages.chatId})`
 const senderConnection = sql`(select ${chats.connectionId} from ${chats} where ${chats.id} = ${messages.chatId})`
 
@@ -184,12 +182,6 @@ const contactName = sql`(select ${channelContacts.displayName} from ${channelCon
     ${channelContacts.syncedAt} desc
   limit 1)`
 
-// Aliased: searchMessages selects this inside a subquery, and drizzle refuses
-// an unaliased raw column there.
-const senderLabel = sql<string | null>`coalesce(${messages.senderName}, ${contactName},
-  case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
-    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`.as('sender_name')
-
 // A message's sender identity is (the chat's channel, sender_external_id). The
 // owner is never one of them: from_owner is the archive's own answer to "who
 // wrote this", and it wins even if the owner's id is in the address book.
@@ -205,6 +197,32 @@ const senderPersonNameSql = nested(sql<string | null>`(select ${people.name} fro
   inner join ${people} on ${people.id} = ${personIdentities.personId}
   where ${senderIdentity} and ${people.archivedAt} is null)`)
 const senderPersonName = senderPersonNameSql.as('person_name')
+
+// The latest push name this sender put on ANY live message on this channel.
+// A history sync carries no push name and a live message does, so without
+// this the same person read as "Avir" in one chat and "+1555…" in the next,
+// and an agent matching names across calls could not tell they were one.
+// Table aliases are spelled out because the outer query is `messages` too.
+const latestPushName = sql`(select m2.sender_name from ${messages} m2
+  inner join ${chats} c2 on c2.id = m2.chat_id
+  where m2.sender_external_id = ${messages.senderExternalId}
+    and c2.channel = ${senderChannel}
+    and m2.sender_name is not null and m2.deleted_at is null
+  order by m2.sent_at desc, m2.id desc limit 1)`
+
+// What a reader sees as the sender, in one expression so every read path and
+// the sender filter agree: the name the owner wrote in the address book (the
+// rule a direct chat's title already follows), then the push name this
+// message carried, then the latest one the sender ever carried, then the
+// owner's contact list, and for WhatsApp the number that is the id — a number
+// beats "Unknown". Telegram ids are opaque, so a nameless Telegram sender
+// stays null.
+const senderLabelSql = sql<string | null>`coalesce(${senderPersonNameSql}, ${messages.senderName}, ${latestPushName}, ${contactName},
+  case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
+    then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`
+// Aliased: searchMessages selects this inside a subquery, and drizzle refuses
+// an unaliased raw column there.
+const senderLabel = senderLabelSql.as('sender_name')
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
@@ -407,8 +425,8 @@ export type SearchOptions = {
   chatId?: string
   channel?: ChatChannel
   kind?: ChatKind
-  // A substring of the sender as the reader would see them: the name the
-  // channel sent, the name in the owner's contacts, or the address-book name.
+  // A substring of the sender exactly as the reader sees them — the same
+  // expression senderName is built from.
   sender?: string
   before?: Date
   after?: Date
@@ -428,9 +446,7 @@ export async function searchMessages(query: string, opts: SearchOptions = {}): P
   // The one filter that costs a name lookup per matched row rather than per
   // page: it has to, because a page cut before the filter would be short.
   const sender = opts.sender?.trim()
-  if (sender) {
-    conds.push(or(like(sql`${messages.senderName}`, sender), like(contactName, sender), like(senderPersonNameSql, sender))!)
-  }
+  if (sender) conds.push(like(senderLabelSql, sender))
 
   // bm25() only evaluates inside the query that holds the MATCH constraint on
   // the fts5 table itself — SQLite raises "unable to use function bm25 in the
