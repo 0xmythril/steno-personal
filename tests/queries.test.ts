@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
-import { listChats, getMessages, searchMessages } from '@/lib/services/queries'
+import { listChats, getMessages, recentMessages, searchMessages } from '@/lib/services/queries'
 import { archivePerson, createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
 import { db } from '@/lib/db/client'
 import { channelContacts, connections, messages } from '@/lib/db/schema'
@@ -157,6 +157,40 @@ describe('replies', () => {
 
     await db.update(messages).set({ deletedAt: new Date() }).where(eq(messages.id, quoted.id))
     expect((await getMessages(chat.id))!.messages[0].replyTo).toBeNull()
+  })
+})
+
+describe('mentions', () => {
+  beforeEach(resetDb)
+
+  it('rewrites a WhatsApp @digits mention to the name the archive knows, and leaves the rest alone', async () => {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
+    // A LID-addressed sender, known only by the push name on their own message.
+    await addMessage(chat, { text: 'hi', senderExternalId: '100257522254022@lid', senderName: 'Alan Lui', sentAt: new Date(1000) })
+    // A phone-addressed contact in the owner's contact list.
+    await syncContacts(conn.id, 'whatsapp', [{ externalId: '15559990000@s.whatsapp.net', displayName: 'Saved Ada', phone: null }])
+    const m = await addMessage(chat, {
+      text: '@100257522254022 can you confirm with @15559990000? @999 too, and ada@example.com',
+      sentAt: new Date(2000),
+    })
+    const page = (await getMessages(chat.id))!.messages
+    expect(page.find(x => x.id === m.id)!.text)
+      .toBe('@Alan Lui can you confirm with @Saved Ada? @999 too, and ada@example.com')
+    // The inbox and search rewrite the same way.
+    expect((await recentMessages()).messages[0].text).toContain('@Alan Lui')
+    expect((await searchMessages('confirm'))[0].text).toContain('@Saved Ada')
+
+    // The address book outranks both once the person is linked.
+    const p = await createPerson({ name: 'Alan L.' })
+    await linkIdentity(p.id, { channel: 'whatsapp', externalId: '100257522254022@lid' })
+    expect((await getMessages(chat.id))!.messages[0].text).toContain('@Alan L. can')
+
+    // Telegram text is never touched: its mentions are @usernames, and a
+    // number after @ there is somebody's handle.
+    const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
+    await addMessage(tg, { text: '@100257522254022 hi' })
+    expect((await getMessages(tg.id))!.messages[0].text).toBe('@100257522254022 hi')
   })
 })
 

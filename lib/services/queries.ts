@@ -393,6 +393,61 @@ function messagePageConds(opts: { cursor?: string; before?: Date; after?: Date }
   return conds
 }
 
+// WhatsApp writes a mention into the text as "@<digits>" — the user part of
+// a phone JID or, more and more, of a LID — and names it only in a side
+// field the archive does not keep. Read as-is that is "@100257522254022"
+// beside a sender who is fully named, so the digits are resolved here, on
+// the page only, to the same names the sender label uses: the address book,
+// then the owner's contact list, then the latest push name anyone with that
+// id ever carried. Stored text is untouched. Telegram is left alone: its
+// mentions are @usernames, and digits after an @ there are someone's handle.
+// The word boundary before the @ keeps an e-mail address whole.
+const MENTION = /(^|[^\w.])@(\d{5,})/g
+
+async function mentionNames(digits: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (digits.length === 0) return out
+  const idsOf = (d: string) => [`${d}@s.whatsapp.net`, `${d}@lid`]
+  const ids = digits.flatMap(idsOf)
+  const digitsOf = (externalId: string) => externalId.slice(0, externalId.indexOf('@'))
+  // Weakest first, so a stronger source overwrites.
+  const pushed = await db.select({ externalId: messages.senderExternalId, name: messages.senderName })
+    .from(messages)
+    .innerJoin(chats, eq(chats.id, messages.chatId))
+    .where(and(eq(chats.channel, 'whatsapp'), inArray(messages.senderExternalId, ids), isNull(messages.deletedAt), sql`${messages.senderName} is not null`))
+    .orderBy(asc(messages.sentAt))
+  for (const r of pushed) if (r.externalId && r.name) out.set(digitsOf(r.externalId), r.name)
+  const contacts = await db.select({ externalId: channelContacts.externalId, name: channelContacts.displayName })
+    .from(channelContacts)
+    .where(and(eq(channelContacts.channel, 'whatsapp'), inArray(channelContacts.externalId, ids), sql`${channelContacts.displayName} is not null`))
+    .orderBy(asc(channelContacts.syncedAt))
+  for (const r of contacts) if (r.name) out.set(digitsOf(r.externalId), r.name)
+  const linked = await db.select({ externalId: personIdentities.externalId, name: people.name })
+    .from(personIdentities)
+    .innerJoin(people, and(eq(people.id, personIdentities.personId), isNull(people.archivedAt)))
+    .where(and(eq(personIdentities.channel, 'whatsapp'), inArray(personIdentities.externalId, ids)))
+  for (const r of linked) out.set(digitsOf(r.externalId), r.name)
+  return out
+}
+
+async function resolveMentions<T extends { text: string | null }>(items: T[], channelOf: (item: T) => Channel): Promise<T[]> {
+  const digits = new Set<string>()
+  for (const item of items) {
+    if (channelOf(item) !== 'whatsapp' || !item.text) continue
+    for (const m of item.text.matchAll(MENTION)) digits.add(m[2])
+  }
+  const names = await mentionNames([...digits])
+  if (names.size === 0) return items
+  return items.map(item => {
+    if (channelOf(item) !== 'whatsapp' || !item.text) return item
+    const text = item.text.replace(MENTION, (whole, before: string, d: string) => {
+      const name = names.get(d)
+      return name ? `${before}@${name}` : whole
+    })
+    return text === item.text ? item : { ...item, text }
+  })
+}
+
 export async function getMessages(chatId: string, opts: {
   cursor?: string; limit?: number; before?: Date; after?: Date
 } = {}): Promise<{ chat: ChatSummary; messages: MessageView[]; nextCursor: string | null } | null> {
@@ -408,7 +463,8 @@ export async function getMessages(chatId: string, opts: {
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
   const mediaById = await mediaForMessages(page.map(r => r.id))
-  return { chat, messages: page.map(r => toView(r, mediaById.get(r.id))), nextCursor }
+  const views = await resolveMentions(page.map(r => toView(r, mediaById.get(r.id))), () => chat.channel)
+  return { chat, messages: views, nextCursor }
 }
 
 // chatTitle is the SAME expression the chat list uses, not chats.title: a
@@ -442,11 +498,9 @@ export async function recentMessages(opts: {
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
   const mediaById = await mediaForMessages(page.map(r => r.id))
-  return {
-    messages: page.map(({ chatId, chatTitle, channel, kind, ...r }) =>
-      ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })),
-    nextCursor,
-  }
+  const views = page.map(({ chatId, chatTitle, channel, kind, ...r }) =>
+    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind }))
+  return { messages: await resolveMentions(views, m => m.channel), nextCursor }
 }
 
 // FTS5 treats bare words as syntax (AND, OR, NOT, NEAR, *, ^, :, quotes), so a
@@ -532,8 +586,8 @@ export async function searchMessages(query: string, opts: SearchOptions = {}): P
     .orderBy(asc(best.rank))
 
   const mediaById = await mediaForMessages(rows.map(r => r.id))
-  return rows.map(({ chatId, chatTitle, channel, kind, ...r }) =>
-    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind }))
+  return resolveMentions(rows.map(({ chatId, chatTitle, channel, kind, ...r }) =>
+    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })), m => m.channel)
 }
 
 const mediaColumns = {
