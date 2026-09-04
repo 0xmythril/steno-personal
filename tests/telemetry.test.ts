@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+// These tests reason about "no key" and "a key"; the build's real default
+// would turn every "no key" case into "a key". Hoisted, so lib/env.ts sees it.
+vi.mock('@/lib/telemetry-defaults', () => ({ POSTHOG_DEFAULT_KEY: '', POSTHOG_DEFAULT_HOST: 'https://us.i.posthog.com' }))
 import { resetDb } from './helpers/db'
 import { seedConnection, seedChat, seedMessage } from './helpers/archive'
 import { mintAccessKey } from '@/lib/services/access-keys'
