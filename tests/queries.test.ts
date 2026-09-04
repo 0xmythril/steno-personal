@@ -150,7 +150,7 @@ describe('replies', () => {
   it('resolves a reply to the quoted message in the same chat, and to nothing once that is deleted', async () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
     const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
-    const quoted = await addMessage(chat, { text: 'the deck is attached', senderName: 'Avir', externalMessageId: 'WA0', sentAt: new Date(1000) })
+    const quoted = await addMessage(chat, { text: 'the deck is attached', senderName: 'Bob', externalMessageId: 'WA0', sentAt: new Date(1000) })
     const reply = await addMessage(chat, { text: 'I refer to here', externalMessageId: 'WA1', replyToExternalId: 'WA0', sentAt: new Date(2000) })
     // Same external id in ANOTHER chat is another message.
     const other = await makeChat(conn, { kind: 'group', title: 'Other' })
@@ -158,7 +158,7 @@ describe('replies', () => {
     await addMessage(other, { text: 'dangling', externalMessageId: 'WA2', replyToExternalId: 'WA-missing' })
 
     const page = (await getMessages(chat.id))!.messages
-    expect(page.find(m => m.id === reply.id)!.replyTo).toEqual({ id: quoted.id, senderName: 'Avir', text: 'the deck is attached' })
+    expect(page.find(m => m.id === reply.id)!.replyTo).toEqual({ id: quoted.id, senderName: 'Bob', text: 'the deck is attached' })
     expect(page.find(m => m.id === quoted.id)!.replyTo).toBeNull()
     expect((await getMessages(other.id))!.messages.every(m => m.replyTo === null)).toBe(true)
     expect(((await searchMessages('refer')).hits)[0].replyTo).toMatchObject({ id: quoted.id })
@@ -175,30 +175,45 @@ describe('mentions', () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
     const chat = await makeChat(conn, { kind: 'group', title: 'Team' })
     // A LID-addressed sender, known only by the push name on their own message.
-    await addMessage(chat, { text: 'hi', senderExternalId: '100257522254022@lid', senderName: 'Alan Lui', sentAt: new Date(1000) })
+    await addMessage(chat, { text: 'hi', senderExternalId: '155500000001@lid', senderName: 'Grace Hopper', sentAt: new Date(1000) })
     // A phone-addressed contact in the owner's contact list.
     await syncContacts(conn.id, 'whatsapp', [{ externalId: '15559990000@s.whatsapp.net', displayName: 'Saved Ada', phone: null }])
     const m = await addMessage(chat, {
-      text: '@100257522254022 can you confirm with @15559990000? @999 too, and ada@example.com',
+      text: '@155500000001 can you confirm with @15559990000? @999 too, and ada@example.com',
       sentAt: new Date(2000),
     })
     const page = (await getMessages(chat.id))!.messages
     expect(page.find(x => x.id === m.id)!.text)
-      .toBe('@Alan Lui can you confirm with @Saved Ada? @999 too, and ada@example.com')
+      .toBe('@Grace Hopper can you confirm with @Saved Ada? @999 too, and ada@example.com')
     // The inbox and search rewrite the same way.
-    expect((await recentMessages()).messages[0].text).toContain('@Alan Lui')
+    expect((await recentMessages()).messages[0].text).toContain('@Grace Hopper')
     expect(((await searchMessages('confirm')).hits)[0].text).toContain('@Saved Ada')
 
     // The address book outranks both once the person is linked.
-    const p = await createPerson({ name: 'Alan L.' })
-    await linkIdentity(p.id, { channel: 'whatsapp', externalId: '100257522254022@lid' })
-    expect((await getMessages(chat.id))!.messages[0].text).toContain('@Alan L. can')
+    const p = await createPerson({ name: 'Grace H.' })
+    await linkIdentity(p.id, { channel: 'whatsapp', externalId: '155500000001@lid' })
+    expect((await getMessages(chat.id))!.messages[0].text).toContain('@Grace H. can')
 
     // Telegram text is never touched: its mentions are @usernames, and a
     // number after @ there is somebody's handle.
     const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
-    await addMessage(tg, { text: '@100257522254022 hi' })
-    expect((await getMessages(tg.id))!.messages[0].text).toBe('@100257522254022 hi')
+    await addMessage(tg, { text: '@155500000001 hi' })
+    expect((await getMessages(tg.id))!.messages[0].text).toBe('@155500000001 hi')
+  })
+})
+
+describe('search cursors', () => {
+  beforeEach(resetDb)
+
+  it('a malformed cursor starts at the top rather than returning nothing', async () => {
+    const chat = await makeChat(await makeConnection())
+    await addMessage(chat, { text: 'dentist one' })
+    await addMessage(chat, { text: 'dentist two' })
+    const b64 = (raw: string) => Buffer.from(raw, 'utf8').toString('base64url')
+    for (const cursor of [b64('r::x'), b64('t::x'), b64('r:abc:x'), b64('r:1:'), 'garbage']) {
+      expect((await searchMessages('dentist', { cursor })).hits, cursor).toHaveLength(2)
+      expect((await searchMessages('dentist', { cursor, order: 'newest' })).hits, cursor).toHaveLength(2)
+    }
   })
 })
 
@@ -265,10 +280,10 @@ describe('people on chats and messages', () => {
     const live = await makeChat(conn, { kind: 'group', title: 'Air Asia' })
     const synced = await makeChat(conn, { kind: 'group', title: 'Old group' })
     // A live message carries the push name; a history-synced one never does.
-    // The reader must not meet "Avir" in one chat and "+1555…" in the next.
-    await addMessage(live, { text: 'slide attached', senderExternalId: ADA, senderName: 'Avir', sentAt: new Date(2000) })
+    // The reader must not meet "Bob" in one chat and "+1555…" in the next.
+    await addMessage(live, { text: 'slide attached', senderExternalId: ADA, senderName: 'Bob', sentAt: new Date(2000) })
     await addMessage(synced, { text: 'older', senderExternalId: ADA, senderName: null, sentAt: new Date(1000) })
-    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Avir')
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Bob')
     // A push name on the other channel is somebody else's.
     const tg = await makeChat(await makeConnection({ channel: 'telegram' }), { kind: 'group', title: 'TG' })
     await addMessage(tg, { text: 'tg', senderExternalId: ADA, senderName: null })
@@ -276,13 +291,18 @@ describe('people on chats and messages', () => {
 
     // What the owner wrote in the address book outranks every channel name,
     // the same rule a direct chat's title already follows.
-    const p = await createPerson({ name: 'Avir Shah' })
+    const p = await createPerson({ name: 'Bob Kane' })
     await linkIdentity(p.id, { channel: 'whatsapp', externalId: ADA })
-    expect((await getMessages(live.id))!.messages[0].senderName).toBe('Avir Shah')
-    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Avir Shah')
-    // And the sender filter matches what is shown.
-    expect(((await searchMessages('older', { sender: 'shah' })).hits).map(m => m.text)).toEqual(['older'])
-    expect(((await searchMessages('slide', { sender: 'avir' })).hits).map(m => m.text)).toEqual(['slide attached'])
+    expect((await getMessages(live.id))!.messages[0].senderName).toBe('Bob Kane')
+    expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Bob Kane')
+    // The sender filter matches what is shown AND what the channel called
+    // them: an agent that learned a name from an older transcript can still
+    // filter by it after the owner named the person differently.
+    expect(((await searchMessages('older', { sender: 'kane' })).hits).map(m => m.text)).toEqual(['older'])
+    expect(((await searchMessages('slide', { sender: 'bob' })).hits).map(m => m.text)).toEqual(['slide attached'])
+    // channelName is the name without the address book: what the channel showed.
+    expect((await getMessages(live.id))!.messages[0].channelName).toBe('Bob')
+    expect((await getMessages(synced.id))!.messages[0].channelName).toBe('Bob')
   })
 
   it('names a direct chat after the linked person, ahead of every other rule', async () => {

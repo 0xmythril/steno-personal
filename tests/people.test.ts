@@ -297,6 +297,43 @@ describe('the owner as a person', () => {
     expect(await listPeople()).toEqual([])
   })
 
+  it('adopts a contact row that already held the owner’s account id, and folds later ones in', async () => {
+    // An install from before the owner row existed: populate had already made
+    // a visible contact for the owner's own number. That row IS the owner.
+    await makeConnection({ channel: 'whatsapp', displayName: 'Cham', externalAccountId: ADA_JID })
+    const mine = await createPerson({ name: 'Me (saved)', nameSource: 'channel' })
+    await linkIdentity(mine.id, { channel: 'whatsapp', externalId: ADA_JID }, 'auto')
+    await populatePeople()
+    const me = (await ownerPerson())!
+    expect(me.id).toBe(mine.id)
+    expect(me.name).toBe('Me (saved)')
+    expect(await listPeople()).toEqual([])
+    expect(await db.select({ n: sql<number>`count(*)` }).from(people).where(eq(people.isOwner, true))).toEqual([{ n: 1 }])
+
+    // A second channel arrives later with its own contact row for the owner:
+    // it joins the owner rather than sitting beside them.
+    await makeConnection({ channel: 'telegram', externalAccountId: '777' })
+    const other = await createPerson({ name: 'Also me', nameSource: 'channel' })
+    await linkIdentity(other.id, { channel: 'telegram', externalId: '777' }, 'auto')
+    await populatePeople()
+    expect(await getPerson(other.id)).toBeNull()
+    expect((await ownerPerson())!.identities.map(i => i.externalId).sort()).toEqual([ADA_JID, '777'].sort())
+  })
+
+  it('is not renamed by a contact-list entry for the owner’s own number', async () => {
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    await populatePeople()
+    await syncContacts(tg.id, 'telegram', [{ externalId: '777', displayName: "'", phone: null }])
+    expect(await populatePeople()).toMatchObject({ renamed: 0 })
+    expect((await ownerPerson())!.name).toBe('Cham')
+    // A garbage name never lands on anyone through the refresh either.
+    const ada = await createPerson({ name: 'Ada', nameSource: 'channel' })
+    await linkIdentity(ada.id, { channel: 'telegram', externalId: '42' }, 'auto')
+    await syncContacts(tg.id, 'telegram', [{ externalId: '42', displayName: '…', phone: null }])
+    await populatePeople()
+    expect((await getPerson(ada.id))!.name).toBe('Ada')
+  })
+
   it('needs a connection to exist, and takes the name from the owner’s own messages when the account has none', async () => {
     await populatePeople()
     expect(await ownerPerson()).toBeNull()

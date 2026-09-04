@@ -197,8 +197,8 @@ const handler = createMcpHandler(server => {
         'Full-text search across the archive. Every word must match. Narrow it with chat_id, channel, kind, sender ' +
         '(a substring of the sender as shown), and before/after as ISO-8601 timestamps. Returns { hits, nextCursor }: ' +
         'fifty per page, pass nextCursor back to continue. Order is relevance (best match first) for a bare query and ' +
-        'newest first when before or after is given; pass order to choose. Each hit names its chat (chatId, chatTitle, ' +
-        'channel, kind). ' +
+        'newest first when before or after is given; pass order to choose. Relevance pages can shift while the archive ' +
+        'is being written to; newest is stable. Each hit names its chat (chatId, chatTitle, channel, kind). ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,

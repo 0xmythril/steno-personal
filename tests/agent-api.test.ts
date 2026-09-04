@@ -141,6 +141,13 @@ describe('pageChats — the aimed chat list', () => {
     expect(await snippet()).toBe('Reacted 👍')
     await addMessage(chat, { text: null, type: 'system', sentAt: at('2026-01-06T00:00:00Z') })
     expect(await snippet()).toBe('Reacted 👍')
+    // A text row with nothing in it (an extendedTextMessage that carried only
+    // context) and an un-reaction (a reaction with empty text) say nothing
+    // either; neither may be the snippet.
+    await addMessage(chat, { text: null, type: 'text', sentAt: at('2026-01-06T12:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
+    await addMessage(chat, { text: null, type: 'reaction', sentAt: at('2026-01-06T13:00:00Z') })
+    expect(await snippet()).toBe('Reacted 👍')
     const onlyNoise = await makeChat(conn, { kind: 'group', title: 'New group' })
     await addMessage(onlyNoise, { text: null, type: 'system', sentAt: at('2026-01-07T00:00:00Z') })
     await addMessage(onlyNoise, { text: null, type: 'unknown', sentAt: at('2026-01-08T00:00:00Z') })
@@ -348,6 +355,22 @@ describe('publicPeople — which chats', () => {
 
     expect((await publicPeople()).people.map(p => p.name)).toEqual(['Ada Lovelace', 'Charles Babbage'])
     expect(await publicPeople({ q: 'nobody' })).toEqual({ people: [], nextCursor: null })
+  })
+
+  it('pages by name with a cursor in one ordering, accents included', async () => {
+    // The sort and the cursor keyset must agree, or a page boundary on a
+    // non-ASCII name skips everyone after it.
+    for (const name of ['Ada', 'Émile', 'Fred', 'Ólafur', 'Zed']) await createPerson({ name })
+    const seen: string[] = []
+    let cursor: string | undefined
+    for (let i = 0; i < 10; i++) {
+      const page = await publicPeople({ limit: 2, cursor })
+      seen.push(...page.people.map(p => p.name))
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+    }
+    expect(seen).toHaveLength(5)
+    expect(new Set(seen).size).toBe(5)
   })
 
   it('pages by name with a cursor, and clamps the limit', async () => {

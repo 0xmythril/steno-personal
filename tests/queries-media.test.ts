@@ -98,6 +98,17 @@ describe('MessageView.media', () => {
     const long = await makeAttachment({ type: 'audio', mimeType: 'audio/ogg', status: 'done', storagePath: 'l.ogg', isVoiceNote: true, durationSeconds: 601 })
     expect(await state(long.chat.id)).toBe('unsupported')
 
+    // Bytes that never arrived are never analysed: a failed download is
+    // 'failed', not 'queued' forever; a pending one is queued behind it.
+    await updateSettings({ analyzeImages: true })
+    const lost = await makeAttachment({ mimeType: 'image/jpeg', status: 'failed' })
+    expect(await state(lost.chat.id)).toBe('failed')
+    const waiting = await makeAttachment({ mimeType: 'image/jpeg', status: 'pending' })
+    expect(await state(waiting.chat.id)).toBe('queued')
+    await updateSettings({ analyzeImages: false })
+    expect(await state(lost.chat.id)).toBe('off')
+    await updateSettings({ analyzeImages: true })
+
     // get_media's view says the same thing.
     expect((await mediaView(pdf.media.id))!.analysis).toBe('unsupported')
     expect((await mediaView(image.media.id))!.analysis).toBe('done')

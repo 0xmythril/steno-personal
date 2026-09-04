@@ -5,7 +5,7 @@ import {
   channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
 } from '@/lib/db/schema'
 import type { Channel } from '@/lib/channels/port'
-import { chatSummaries, type ChatKind } from '@/lib/services/queries'
+import { chatSummaries, clampLimit, type ChatKind } from '@/lib/services/queries'
 import { agentConnections } from '@/lib/services/connections'
 
 // The address book. Everything here is the owner's own annotation over
@@ -231,8 +231,31 @@ async function ensureOwnerPerson(): Promise<void> {
   const accounts = await db.select({
     id: connections.id, channel: connections.channel, externalAccountId: connections.externalAccountId,
   }).from(connections).where(eq(connections.purpose, 'archive')).orderBy(asc(connections.createdAt), asc(connections.id))
-  if (accounts.length === 0) return
+  const accountIds = accounts.filter(a => a.externalAccountId).map(a => ({ channel: a.channel, externalId: a.externalAccountId! }))
+  if (accountIds.length === 0) return
+  // Somebody already holding one of the owner's own account ids IS the owner:
+  // an install from before this row existed made a visible contact for the
+  // owner's own number, and a second channel's contact list may do it again.
+  // The oldest such row becomes the owner row rather than a second one being
+  // made beside it; later ones are folded in.
+  const holders: string[] = []
+  for (const a of accountIds) {
+    const [h] = await db.select({ personId: personIdentities.personId }).from(personIdentities)
+      .innerJoin(people, eq(people.id, personIdentities.personId))
+      .where(and(
+        eq(personIdentities.channel, a.channel), eq(personIdentities.externalId, a.externalId),
+        eq(people.isOwner, false), isNull(people.archivedAt),
+      ))
+      .limit(1)
+    if (h && !holders.includes(h.personId)) holders.push(h.personId)
+  }
   let [row] = await db.select({ id: people.id }).from(people).where(eq(people.isOwner, true)).limit(1)
+  if (!row && holders.length > 0) {
+    const [oldest] = await db.select({ id: people.id }).from(people)
+      .where(inArray(people.id, holders)).orderBy(asc(people.createdAt), asc(people.id)).limit(1)
+    await db.update(people).set({ isOwner: true, updatedAt: new Date() }).where(eq(people.id, oldest.id))
+    row = oldest
+  }
   if (!row) {
     const named = await agentConnections()
     const name = named.find(c => c.status === 'active' && c.displayName)?.displayName
@@ -242,11 +265,10 @@ async function ensureOwnerPerson(): Promise<void> {
       .values({ name: clampName(name), nameSource: 'channel', isOwner: true })
       .returning({ id: people.id })
   }
-  for (const a of accounts) {
-    if (!a.externalAccountId) continue
-    // already_linked — to the owner from an earlier run, or to a contact the
-    // owner linked by hand — is left as it is.
-    await linkIdentity(row.id, { channel: a.channel, externalId: a.externalAccountId }, 'auto')
+  for (const h of holders) if (h !== row.id) await mergePeople(h, row.id)
+  for (const a of accountIds) {
+    // already_linked — to the owner from an earlier run — is left as it is.
+    await linkIdentity(row.id, a, 'auto')
   }
 }
 
@@ -288,7 +310,6 @@ export type PublicPerson = {
 }
 
 const DEFAULT_PEOPLE_LIMIT = 50
-const MAX_PEOPLE_LIMIT = 200
 
 // The page cursor is (lower-cased name, id) — the sort key — as base64url
 // JSON. Opaque to the caller and never a channel identifier.
@@ -303,6 +324,8 @@ function decodePeopleCursor(cursor: string): [string, string] | null {
   }
 }
 
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+
 // `q` is a case-insensitive substring of the name, matched here in memory:
 // an address book is hundreds of rows, not millions, and the filter must see
 // the same name the list shows. Paged in the same order listPeople sorts —
@@ -313,14 +336,16 @@ export async function publicPeople(
   opts: { q?: string; limit?: number; cursor?: string; includeChats?: boolean } = {},
 ): Promise<{ people: PublicPerson[]; nextCursor: string | null }> {
   const q = opts.q?.trim().toLowerCase()
-  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_PEOPLE_LIMIT, MAX_PEOPLE_LIMIT))
+  const limit = clampLimit(opts.limit, DEFAULT_PEOPLE_LIMIT)
   const after = opts.cursor ? decodePeopleCursor(opts.cursor) : null
   // The owner rides along for agents — their id is on every own message and
   // must resolve here — sorted among everyone else so the cursor stays one
-  // rule.
+  // rule. The sort and the keyset use the SAME comparison (code units of the
+  // lower-cased name, then id): a locale sort here with a code-unit keyset
+  // below skipped everyone after the first accented name on a page edge.
   const me = await ownerPerson()
   const everyone = [...(await listPeople()), ...(me ? [me] : [])]
-    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id))
+    .sort((a, b) => cmp(a.name.toLowerCase(), b.name.toLowerCase()) || cmp(a.id, b.id))
   const views = everyone
     .filter(p => !q || p.name.toLowerCase().includes(q))
     .filter(p => {
@@ -975,8 +1000,10 @@ async function mergeByPhone(): Promise<number> {
 // chose the channel's name — destroyed silently and never corrected by a later
 // sync. Repeating both predicates in the WHERE makes the racing write a no-op.
 async function refreshChannelNames(): Promise<number> {
+  // The owner's row is named after the account, not after a contact-list
+  // entry for their own number ("Me", or worse); it is left alone here.
   const rows = await db.select({ id: people.id, name: people.name }).from(people)
-    .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt)))
+    .where(and(eq(people.nameSource, 'channel'), isNull(people.archivedAt), eq(people.isOwner, false)))
     // Oldest first, so the loop below runs in the same order every time rather
     // than in whatever order the planner happens to return.
     .orderBy(asc(people.createdAt), asc(people.id))
@@ -984,12 +1011,14 @@ async function refreshChannelNames(): Promise<number> {
   let renamed = 0
   for (const r of rows) {
     const next = names.get(r.id)
-    if (!next || next === r.name) continue
+    // A contact renamed to nothing usable keeps the name they had.
+    if (!next || next === r.name || !usableName(next)) continue
     const written = await db.update(people).set({ name: next, updatedAt: new Date() })
       .where(and(
         eq(people.id, r.id),
         eq(people.nameSource, 'channel'),
         isNull(people.archivedAt),
+        eq(people.isOwner, false),
       ))
       .returning({ id: people.id })
     // Counted from what actually landed, so a lost race is not reported as a

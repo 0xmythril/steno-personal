@@ -1,4 +1,5 @@
 import { Document, MemoryStorage, Photo, TelegramClient, tl } from '@mtcute/node'
+import { locationLabel, nonEmpty } from '@/lib/channels/content-text'
 import type { Message, Peer } from '@mtcute/node'
 // mtcute's own TL codec, the same pair its session storage uses:
 // serializeObject() is TlBinaryWriter.serializeObject(__tlWriterMap, obj) and
@@ -96,30 +97,33 @@ function messageType(msg: Message): IncomingMessage['type'] {
 function mediaText(msg: Message): string | null {
   const m = msg.media as {
     type: string; title?: string; address?: string; latitude?: number; longitude?: number
+    // A venue carries its point one level down (mtcute Venue.location).
+    location?: { latitude?: number; longitude?: number }
     firstName?: string; lastName?: string; question?: string; answers?: ReadonlyArray<{ text?: string }>
   } | null
   if (!m) return null
-  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
   switch (m.type) {
     case 'venue':
-      return str(m.title) ?? str(m.address) ?? coords(m)
+      return locationLabel({ name: m.title, address: m.address, lat: m.location?.latitude, lng: m.location?.longitude })
     case 'location': case 'live_location':
-      return coords(m)
+      return locationLabel({ lat: m.latitude, lng: m.longitude })
     case 'contact':
-      return [str(m.firstName), str(m.lastName)].filter(Boolean).join(' ') || null
+      return [nonEmpty(m.firstName), nonEmpty(m.lastName)].filter(Boolean).join(' ') || null
     case 'poll': {
-      const answers = Array.isArray(m.answers) ? m.answers.map(a => str(a?.text)).filter(Boolean) : []
-      return [str(m.question), ...answers].filter(Boolean).join('\n') || null
+      const answers = Array.isArray(m.answers) ? m.answers.map(a => nonEmpty(a?.text)).filter(Boolean) : []
+      return [nonEmpty(m.question), ...answers].filter(Boolean).join('\n') || null
     }
     default:
       return null
   }
 }
 
-function coords(m: { latitude?: number; longitude?: number }): string | null {
-  return typeof m.latitude === 'number' && typeof m.longitude === 'number' && Number.isFinite(m.latitude) && Number.isFinite(m.longitude)
-    ? `${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}`
-    : null
+// Only a reply to a message in THIS chat resolves here: a quote from another
+// chat carries that chat's message id, which in a supergroup's own id space
+// would name an unrelated message.
+function replyTarget(msg: Message): string | null {
+  const r = msg.replyToMessage
+  return r && r.originIs('same_chat') && r.id != null ? String(r.id) : null
 }
 
 const DOWNLOADABLE = new Set(['photo', 'video', 'audio', 'voice', 'document', 'sticker'])
@@ -182,7 +186,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     type: messageType(msg),
     text: msg.text || mediaText(msg),
     media: mediaMeta(msg),
-    replyToExternalId: msg.replyToMessage?.id != null ? String(msg.replyToMessage.id) : null,
+    replyToExternalId: replyTarget(msg),
     raw: encodeTlRaw(msg.raw),
   }
 }

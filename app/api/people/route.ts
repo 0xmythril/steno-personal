@@ -1,5 +1,5 @@
 import { authenticateRequest } from '@/lib/auth'
-import { unauthorized, withErrorBoundary } from '@/lib/api'
+import { badRequest, parseLimit, unauthorized, withErrorBoundary } from '@/lib/api'
 import { publicPeople } from '@/lib/services/people'
 
 // The REST twin of the `list_people` MCP tool, and deliberately the same
@@ -9,11 +9,11 @@ import { publicPeople } from '@/lib/services/people'
 export const GET = withErrorBoundary(async (request: Request): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
   const sp = new URL(request.url).searchParams
-  const limitRaw = sp.get('limit')
-  const limit = limitRaw !== null && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined
+  const limit = parseLimit(sp.get('limit'))
+  if (!limit.ok) return badRequest(limit.error)
   return Response.json(await publicPeople({
     q: sp.get('q') ?? undefined,
-    limit,
+    limit: limit.value,
     cursor: sp.get('cursor') ?? undefined,
     includeChats: sp.get('include_chats') === '1' || sp.get('include_chats') === 'true',
   }))

@@ -59,6 +59,12 @@ export default async function PersonPage({ params, searchParams }: {
             </h1>
           </div>
         </div>
+        {person.isOwner && (
+          <p className="help">
+            This is you: every message you sent carries this name for your agents, and the name
+            here is yours to change.
+          </p>
+        )}
         {person.notes && <p className="lede">{person.notes}</p>}
         {error && <p className="danger" role="alert">{error}</p>}
 

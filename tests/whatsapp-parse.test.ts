@@ -203,7 +203,8 @@ describe('parseWaMessage', () => {
 describe('content that used to be unknown', () => {
   it('a reaction is its emoji', () => {
     const p = parseWaMessage(groupText({ message: { reactionMessage: { key: { id: 'WA0' }, text: '👍' } } }))!
-    expect(p).toMatchObject({ type: 'reaction', text: '👍', media: null })
+    // The reacted-to message is the reply target: "Reacted 👍" to what.
+    expect(p).toMatchObject({ type: 'reaction', text: '👍', media: null, replyToExternalId: 'WA0' })
     // A removed reaction has empty text; it is still a reaction, with nothing to say.
     expect(parseWaMessage(groupText({ message: { reactionMessage: { key: { id: 'WA0' }, text: '' } } }))!)
       .toMatchObject({ type: 'reaction', text: null })

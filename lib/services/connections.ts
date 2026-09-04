@@ -132,11 +132,13 @@ export async function agentConnections(): Promise<AgentConnection[]> {
     // the contact cache seldom holds the account itself — but every message
     // the owner sends carries their push name. The latest live one is the
     // name they are showing the world right now.
-    if (!displayName) {
+    // Keyed on the account id — the owner's own messages carry it as their
+    // sender id — so this is one descending walk of messages_sender_sent_idx
+    // that stops at the first named row, not a scan of every chat.
+    if (!displayName && r.externalAccountId) {
       const [own] = await db.select({ displayName: messages.senderName }).from(messages)
-        .innerJoin(chats, eq(chats.id, messages.chatId))
         .where(and(
-          eq(chats.connectionId, r.id), eq(messages.fromOwner, true),
+          eq(messages.senderExternalId, r.externalAccountId), eq(messages.fromOwner, true),
           isNotNull(messages.senderName), isNull(messages.deletedAt),
         ))
         .orderBy(desc(messages.sentAt), desc(messages.id))

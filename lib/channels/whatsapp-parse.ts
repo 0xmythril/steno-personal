@@ -1,4 +1,5 @@
 import type { IncomingMessage } from '@/lib/services/ingest'
+import { locationLabel, nonEmpty } from '@/lib/channels/content-text'
 
 // Pure parsing of the message shapes Baileys hands over — unwrapping,
 // text extraction, protocol events, contact identity — for any remoteJid:
@@ -273,8 +274,15 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
   // of text a reader would want: without it every reaction, poll, pin and
   // shared contact was an `unknown` row with nothing in it, and a chat whose
   // latest message was one had no snippet at all.
+  // A reaction's target is the message it was put on — the reply target,
+  // so "Reacted 👍" resolves to what was reacted to.
   const reaction = content?.reactionMessage
-  if (reaction) return { ...base, type: 'reaction', text: nonEmpty(reaction.text), media: null }
+  if (reaction) {
+    return {
+      ...base, type: 'reaction', text: nonEmpty(reaction.text), media: null,
+      replyToExternalId: nonEmpty(reaction.key?.id) ?? base.replyToExternalId,
+    }
+  }
   const poll = content?.pollCreationMessageV3 ?? content?.pollCreationMessageV2 ?? content?.pollCreationMessage
   if (poll) {
     const options: string[] = Array.isArray(poll.options)
@@ -283,7 +291,10 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
     return { ...base, type: 'poll', text: [nonEmpty(poll.name), ...options].filter(Boolean).join('\n') || null, media: null }
   }
   const location = content?.locationMessage ?? content?.liveLocationMessage
-  if (location) return { ...base, type: 'location', text: locationText(location), media: null }
+  if (location) {
+    const text = locationLabel({ name: location.name, address: location.address, lat: location.degreesLatitude, lng: location.degreesLongitude })
+    return { ...base, type: 'location', text, media: null }
+  }
   // A contact card's vcard carries the number; only the display name is kept.
   const contact = content?.contactMessage
   if (contact) return { ...base, type: 'contact', text: nonEmpty(contact.displayName), media: null }
@@ -298,17 +309,6 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
   return { ...base, type: 'unknown', text: null, media: null }
 }
 
-const nonEmpty = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
-
-// A place reads as its name, else its address, else its coordinates to five
-// decimals (about a metre): a pin with no label is still a pin.
-function locationText(node: any): string | null {
-  const label = nonEmpty(node?.name) ?? nonEmpty(node?.address)
-  if (label) return label
-  const lat = Number(node?.degreesLatitude)
-  const lng = Number(node?.degreesLongitude)
-  return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : null
-}
 
 export type ToIncomingCtx = {
   chatTitle: string | null

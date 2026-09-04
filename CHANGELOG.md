@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
 - **`list_chats`** reports `total` for the filters, and each chat carries
   `createdAt` and `connectionId`; `whoami` carries the matching `id`, so two
   rows for one chat after a re-pairing can be told apart.
+- **`channelName`** on every message: what the channel called the sender,
+  with the address book left out, beside the resolved `senderName`.
 - **Replies** carry `replyTo` — the quoted message's id, sender and text —
   on every message read path.
 - **Mentions** in WhatsApp text (`@<digits>`) are shown as the name the

@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm'
-import { QueryBuilder } from 'drizzle-orm/sqlite-core'
+import { QueryBuilder, alias } from 'drizzle-orm/sqlite-core'
 import { db } from '@/lib/db/client'
 import {
   channelContacts, chats, media, mediaAnalysis, messages, connections, people, personIdentities,
@@ -53,8 +53,10 @@ export type MediaStatus = 'ready' | 'pending' | 'failed' | 'unavailable'
 // null` alone meant five things to a reader — no key in Settings, not run
 // yet, nothing found, failed, or a kind of file nothing here analyses — so
 // the state is named. 'off' is the enrichment switch (no OpenRouter key, or
-// the medium's toggle off); 'queued' is a row the worker has not finished;
-// 'unsupported' is a file the pipeline never takes (a PDF, a song).
+// the medium's toggle off); 'queued' is a row the worker has not finished,
+// or bytes still downloading; 'failed' is an analysis that gave up or a
+// download that did; 'unsupported' is a file the pipeline never takes (a
+// PDF, a song).
 export type AnalysisState = 'off' | 'queued' | 'done' | 'failed' | 'skipped' | 'unsupported'
 export type MediaView = {
   id: string | null; status: MediaStatus; url: string | null
@@ -72,6 +74,11 @@ export type ReplyRef = { id: string; senderName: string | null; text: string | n
 
 export type MessageView = {
   id: string; externalMessageId: string; senderName: string | null; fromOwner: boolean; sentAt: Date
+  // What the channel called the sender — push name, contact name, number —
+  // with the address book left out. senderName puts the address book first,
+  // so this is where the transcript's "(Kim Smith)" hint and an agent's
+  // "the name I saw last week" come from.
+  channelName: string | null
   type: IncomingMessage['type']; text: string | null; editedAt: Date | null
   person: PersonRef | null
   media: MediaView | null
@@ -85,7 +92,7 @@ export type MessageInChat = MessageView & {
 }
 
 const DEFAULT_LIMIT = 50
-const MAX_LIMIT = 200
+export const MAX_LIMIT = 200
 const DEFAULT_SEARCH_LIMIT = 50
 // An agent's first call must be answerable: a chat list or an inbox defaults
 // to one screenful, and the cursor is there for the rest.
@@ -93,7 +100,7 @@ const DEFAULT_CHAT_LIMIT = 20
 const DEFAULT_RECENT_LIMIT = 20
 const SNIPPET_CHARS = 160
 
-const clampLimit = (limit: number | undefined, fallback: number): number =>
+export const clampLimit = (limit: number | undefined, fallback: number): number =>
   Math.max(1, Math.min(limit ?? fallback, MAX_LIMIT))
 
 // A raw sql`...` template does not table-qualify interpolated columns on its
@@ -161,23 +168,22 @@ const displayTitle = sql<string | null>`case when ${chats.kind} = 'dm'
   else ${chats.title} end`
 
 // The latest live message's text, already cut to size in SQL so a chat list
-// never drags a whole essay per row out of the database. A message with no
-// text still says what it is — "[image]", "Reacted 👍" — because a blank
-// snippet beside a busy chat read as a bug. Two kinds of row are walked
-// past rather than shown: system rows (a join, a subject change), which are
-// not conversation, and a row the parser could not name that says nothing,
-// which is the latest message of a busy group far too often to be the
-// thing an agent sees first.
+// never drags a whole essay per row out of the database. An attachment with
+// no caption still says what it is — "[image]" — because a blank snippet
+// beside a busy chat read as a bug.
 const snippetText = sql`coalesce(substr(${messages.text}, 1, ${SNIPPET_CHARS}),
   case ${messages.type}
     when 'image' then '[image]' when 'video' then '[video]' when 'audio' then '[audio]'
     when 'document' then '[document]' when 'sticker' then '[sticker]' when 'location' then '[location]'
     when 'contact' then '[contact]' when 'poll' then '[poll]' end)`
+// Rows that say nothing are walked past: system rows, and any text,
+// reaction or unrecognised row with no text (a context-only
+// extendedTextMessage, an un-reaction, a node the parser could not name).
 const latestSnippet = nested(sql<string | null>`(select case when ${messages.type} = 'reaction'
-    then 'Reacted ' || coalesce(${messages.text}, '') else ${snippetText} end
+    then 'Reacted ' || ${messages.text} else ${snippetText} end
   from ${messages}
   where ${messages.chatId} = ${chats.id} and ${messages.deletedAt} is null and ${messages.type} <> 'system'
-    and not (${messages.type} = 'unknown' and ${messages.text} is null)
+    and not (${messages.text} is null and ${messages.type} in ('text', 'reaction', 'unknown'))
   order by ${messages.sentAt} desc, ${messages.id} desc limit 1)`)
 
 // A chat with no messages yet still belongs in the list; sort it by when we
@@ -247,7 +253,7 @@ const senderPersonName = senderPersonNameSql.as('person_name')
 
 // The latest push name this sender put on ANY live message on this channel.
 // A history sync carries no push name and a live message does, so without
-// this the same person read as "Avir" in one chat and "+1555…" in the next,
+// this the same person read as "Ada" in one chat and "+1555…" in the next,
 // and an agent matching names across calls could not tell they were one.
 // Table aliases are spelled out because the outer query is `messages` too.
 const latestPushName = sql`(select m2.sender_name from ${messages} m2
@@ -264,32 +270,36 @@ const latestPushName = sql`(select m2.sender_name from ${messages} m2
 // owner's contact list, and for WhatsApp the number that is the id — a number
 // beats "Unknown". Telegram ids are opaque, so a nameless Telegram sender
 // stays null.
-const senderLabelSql = sql<string | null>`coalesce(${senderPersonNameSql}, ${messages.senderName}, ${latestPushName}, ${contactName},
+const channelLabelSql = sql<string | null>`coalesce(${messages.senderName}, ${latestPushName}, ${contactName},
   case when ${senderChannel} = 'whatsapp' and ${messages.senderExternalId} like '%@s.whatsapp.net'
     then '+' || substr(${messages.senderExternalId}, 1, instr(${messages.senderExternalId}, '@') - 1) end)`
-// Aliased: searchMessages selects this inside a subquery, and drizzle refuses
-// an unaliased raw column there.
+const senderLabelSql = sql<string | null>`coalesce(${senderPersonNameSql}, ${channelLabelSql})`
+// Aliased: searchMessages selects these inside a subquery, and drizzle
+// refuses an unaliased raw column there.
 const senderLabel = senderLabelSql.as('sender_name')
+const channelLabel = channelLabelSql.as('channel_name')
 
-// The quoted message, looked up by (this chat, the channel's id it carries).
-// (chat_id, external_message_id) is the messages unique index, so each is one
-// probe per row. Aliased `r` because the outer query is `messages` too. The
-// quoted text is cut like a snippet: the reply needs its context, not the
-// whole essay it answered.
-const quoted = (column: SQL): SQL => sql`(select ${column} from ${messages} r
-  where r.chat_id = ${messages.chatId} and r.external_message_id = ${messages.replyToExternalId}
-    and r.deleted_at is null)`
-const replyToId = nested(sql<string | null>`${quoted(sql`r.id`)}`).as('reply_to_id')
-const replyToSender = nested(sql<string | null>`${quoted(sql`r.sender_name`)}`).as('reply_to_sender')
-const replyToText = nested(sql<string | null>`${quoted(sql`substr(r.text, 1, ${SNIPPET_CHARS})`)}`).as('reply_to_text')
+// The quoted message, joined by (this chat, the channel's id it carries):
+// (chat_id, external_message_id) is the messages unique index, so it is one
+// probe per row. Every read path that selects messageSelection joins it with
+// quotedJoin. The quoted text is cut like a snippet: the reply needs its
+// context, not the whole essay it answered.
+const quoted = alias(messages, 'quoted')
+const quotedJoin = and(
+  eq(quoted.chatId, messages.chatId),
+  eq(quoted.externalMessageId, messages.replyToExternalId),
+  isNull(quoted.deletedAt),
+)!
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
-  senderName: senderLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
+  senderName: senderLabel, channelName: channelLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
   personId: senderPersonId, personName: senderPersonName,
   hasMedia: messages.hasMedia,
-  replyToId, replyToSender, replyToText,
+  replyToId: quoted.id,
+  replyToSender: quoted.senderName,
+  replyToText: sql<string | null>`substr(${quoted.text}, 1, ${SNIPPET_CHARS})`.as('reply_to_text'),
 }
 
 // Exactly what messageSelection returns: MessageView minus the field the
@@ -430,11 +440,11 @@ function messagePageConds(opts: { cursor?: string; before?: Date; after?: Date }
 
 // WhatsApp writes a mention into the text as "@<digits>" — the user part of
 // a phone JID or, more and more, of a LID — and names it only in a side
-// field the archive does not keep. Read as-is that is "@100257522254022"
+// field the archive does not keep. Read as-is that is "@<digits>"
 // beside a sender who is fully named, so the digits are resolved here, on
 // the page only, to the same names the sender label uses: the address book,
-// then the owner's contact list, then the latest push name anyone with that
-// id ever carried. Stored text is untouched. Telegram is left alone: its
+// then the latest push name anyone with that id ever carried, then the
+// owner's contact list. Stored text is untouched. Telegram is left alone: its
 // mentions are @usernames, and digits after an @ there are someone's handle.
 // The word boundary before the @ keeps an e-mail address whole.
 const MENTION = /(^|[^\w.])@(\d{5,})/g
@@ -445,22 +455,27 @@ async function mentionNames(digits: string[]): Promise<Map<string, string>> {
   const idsOf = (d: string) => [`${d}@s.whatsapp.net`, `${d}@lid`]
   const ids = digits.flatMap(idsOf)
   const digitsOf = (externalId: string) => externalId.slice(0, externalId.indexOf('@'))
-  // Weakest first, so a stronger source overwrites.
-  const pushed = await db.select({ externalId: messages.senderExternalId, name: messages.senderName })
-    .from(messages)
-    .innerJoin(chats, eq(chats.id, messages.chatId))
-    .where(and(eq(chats.channel, 'whatsapp'), inArray(messages.senderExternalId, ids), isNull(messages.deletedAt), sql`${messages.senderName} is not null`))
-    .orderBy(asc(messages.sentAt))
-  for (const r of pushed) if (r.externalId && r.name) out.set(digitsOf(r.externalId), r.name)
-  const contacts = await db.select({ externalId: channelContacts.externalId, name: channelContacts.displayName })
-    .from(channelContacts)
-    .where(and(eq(channelContacts.channel, 'whatsapp'), inArray(channelContacts.externalId, ids), sql`${channelContacts.displayName} is not null`))
-    .orderBy(asc(channelContacts.syncedAt))
+  // The same precedence as the sender label — address book, then the latest
+  // push name, then the contact list — applied weakest first so a stronger
+  // source overwrites. The push-name query is one row per sender (SQLite
+  // returns the columns of the max(sent_at) row), served by
+  // messages_sender_sent_idx; the JID suffix already fixes the channel.
+  const [contacts, pushed, linked] = await Promise.all([
+    db.select({ externalId: channelContacts.externalId, name: channelContacts.displayName })
+      .from(channelContacts)
+      .where(and(eq(channelContacts.channel, 'whatsapp'), inArray(channelContacts.externalId, ids), sql`${channelContacts.displayName} is not null`))
+      .orderBy(asc(channelContacts.syncedAt)),
+    db.select({ externalId: messages.senderExternalId, name: messages.senderName, latest: sql<number>`max(${messages.sentAt})` })
+      .from(messages)
+      .where(and(inArray(messages.senderExternalId, ids), isNull(messages.deletedAt), sql`${messages.senderName} is not null`))
+      .groupBy(messages.senderExternalId),
+    db.select({ externalId: personIdentities.externalId, name: people.name })
+      .from(personIdentities)
+      .innerJoin(people, and(eq(people.id, personIdentities.personId), isNull(people.archivedAt)))
+      .where(and(eq(personIdentities.channel, 'whatsapp'), inArray(personIdentities.externalId, ids))),
+  ])
   for (const r of contacts) if (r.name) out.set(digitsOf(r.externalId), r.name)
-  const linked = await db.select({ externalId: personIdentities.externalId, name: people.name })
-    .from(personIdentities)
-    .innerJoin(people, and(eq(people.id, personIdentities.personId), isNull(people.archivedAt)))
-    .where(and(eq(personIdentities.channel, 'whatsapp'), inArray(personIdentities.externalId, ids)))
+  for (const r of pushed) if (r.externalId && r.name) out.set(digitsOf(r.externalId), r.name)
   for (const r of linked) out.set(digitsOf(r.externalId), r.name)
   return out
 }
@@ -491,6 +506,7 @@ export async function getMessages(chatId: string, opts: {
   const limit = clampLimit(opts.limit, DEFAULT_LIMIT)
 
   const rows = await db.select(messageSelection).from(messages)
+    .leftJoin(quoted, quotedJoin)
     .where(and(eq(messages.chatId, chatId), ...messagePageConds(opts)))
     .orderBy(desc(messages.sentAt), desc(messages.id))
     .limit(limit + 1)
@@ -532,6 +548,7 @@ export async function recentMessages(opts: {
 
   const rows = await db.select({ ...messageSelection, ...chatColumns }).from(messages)
     .innerJoin(chats, eq(chats.id, messages.chatId))
+    .leftJoin(quoted, quotedJoin)
     .where(and(...conds))
     .orderBy(desc(messages.sentAt), desc(messages.id))
     .limit(limit + 1)
@@ -565,8 +582,8 @@ export type SearchOptions = {
   chatId?: string
   channel?: ChatChannel
   kind?: ChatKind
-  // A substring of the sender exactly as the reader sees them — the same
-  // expression senderName is built from.
+  // A substring of any name the sender has been shown under: the channel's
+  // push name, the owner's contact-list name, or the address-book name.
   sender?: string
   before?: Date
   after?: Date
@@ -589,7 +606,9 @@ function decodeSearchCursor(cursor: string, order: SearchOrder): SearchCursor | 
   const raw = Buffer.from(cursor, 'base64url').toString('utf8')
   const [tag, num, ...rest] = raw.split(':')
   const id = rest.join(':')
-  const n = Number(num)
+  // Number('') is 0, which would read as a real keyset; an empty field is
+  // not a cursor.
+  const n = num ? Number(num) : NaN
   if (!Number.isFinite(n) || !id) return null
   if (tag === 'r' && order === 'relevance') return { order, rank: n, id }
   if (tag === 't' && order === 'newest') return { order, ms: n, id }
@@ -613,8 +632,14 @@ export async function searchMessages(
   if (opts.after) conds.push(gt(messages.sentAt, opts.after))
   // The one filter that costs a name lookup per matched row rather than per
   // page: it has to, because a page cut before the filter would be short.
+  // Every name the reader could have met for this sender, not only the one
+  // the label settles on: the push name, the contact-list name and the
+  // address-book name. An agent that learned "Kim" from an older transcript
+  // still finds her after the owner named her "Mum".
   const sender = opts.sender?.trim()
-  if (sender) conds.push(like(senderLabelSql, sender))
+  if (sender) {
+    conds.push(or(like(sql`${messages.senderName}`, sender), like(contactName, sender), like(senderPersonNameSql, sender))!)
+  }
 
   // bm25() only evaluates inside the query that holds the MATCH constraint on
   // the fts5 table itself — SQLite raises "unable to use function bm25 in the
@@ -667,24 +692,27 @@ export async function searchMessages(
 
   // Only now, on the page and nothing more, are the names resolved.
   // messageSelection carries several correlated subqueries per row (the
-  // sender's person, the owner's contact name, the reply, and the two the
-  // display title needs); inside `ranked` they would run once per
+  // sender's person and channel name, and the two the display title needs)
+  // and the quoted-message join; inside `ranked` they would run once per
   // FTS-matched row, which for a common word is the whole corpus rather than
-  // the fifty rows anybody sees.
-  const rows = await db.select({ ...messageSelection, ...chatColumns, rank: best.rank, bestSent: best.sentAt }).from(best)
+  // the fifty rows anybody sees. The sender filter is the one exception, and
+  // it is kept to the three plain lookups for that reason.
+  const rows = await db.select({ ...messageSelection, ...chatColumns, rank: best.rank }).from(best)
     .innerJoin(messages, eq(messages.id, best.messageId))
     .innerJoin(chats, eq(chats.id, messages.chatId))
+    .leftJoin(quoted, quotedJoin)
     .orderBy(...(order === 'relevance' ? [asc(best.rank), asc(best.messageId)] : [desc(best.sentAt), desc(best.messageId)]))
 
   const page = rows.slice(0, limit)
   const last = page[page.length - 1]
+  // max(sent_at) grouped per message is that message's own sent_at.
   const nextCursor = rows.length > limit && last
     ? encodeSearchCursor(order === 'relevance'
       ? { order, rank: last.rank, id: last.id }
-      : { order, ms: last.bestSent, id: last.id })
+      : { order, ms: last.sentAt.getTime(), id: last.id })
     : null
   const mediaById = await mediaForMessages(page.map(r => r.id))
-  const hits = await resolveMentions(page.map(({ chatId, chatTitle, channel, kind, rank: _rank, bestSent: _sent, ...r }) =>
+  const hits = await resolveMentions(page.map(({ chatId, chatTitle, channel, kind, rank: _rank, ...r }) =>
     ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })), m => m.channel)
   return { hits, nextCursor }
 }
@@ -715,7 +743,10 @@ function analysisState(r: MediaRowIn, settings: Settings): AnalysisState {
   const medium = analysisMedium(r)
   if (medium === null) return 'unsupported'
   const on = settings.hasOpenrouterKey && (medium === 'image' ? settings.analyzeImages : settings.analyzeAudio)
-  return on ? 'queued' : 'off'
+  if (!on) return 'off'
+  // Bytes that never arrived are never analysed: the enqueue gate takes only
+  // downloaded files, so a failed download is 'failed', not queued forever.
+  return r.status === 'failed' ? 'failed' : 'queued'
 }
 
 // The url exists only for bytes /media/[id] will actually serve — the same
