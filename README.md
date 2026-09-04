@@ -348,5 +348,7 @@ them your source too.
 
 ## Follow along
 
-Source lives at <https://github.com/0xmythril/steno-personal>. Releases and
-changes are announced on X at <https://x.com/stenochat>.
+Source lives at <https://github.com/0xmythril/steno-personal>; watch the
+repository or its Releases page to hear about new versions. steno-personal is
+built and maintained by [0xmythril](https://github.com/0xmythril), who also
+posts about it on X at <https://x.com/0xmythril>.
