@@ -144,6 +144,46 @@ export async function requireRecoveryAttempt(): Promise<string> {
   return id
 }
 
+// ---- Setup (app/setup) ----
+//
+// Pairing binds the instance to the browser that started it, the same way a
+// recovery attempt is bound: an httpOnly cookie carrying the connection id.
+// This closes the window between "paired" and "first key minted". The worker
+// activates the connection and starts archiving the owner's real account
+// before any key exists, and during that window the instance is still fresh
+// — so without the cookie whoever reached /setup next could mint the first
+// key against the owner's account. With it, only the browser that scanned
+// the QR sees the pairing, the poll, and the finish step.
+export const SETUP_COOKIE = 'sp_setup'
+// Pairing takes minutes; the owner may take longer to come back to the tab.
+export const SETUP_COOKIE_MAX_AGE_S = 24 * 60 * 60
+
+export async function currentSetupAttempt(): Promise<string | null> {
+  const jar = await cookies()
+  return jar.get(SETUP_COOKIE)?.value ?? null
+}
+
+export async function setSetupCookie(id: string): Promise<void> {
+  const jar = await cookies()
+  jar.set(SETUP_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: await isHttps(), maxAge: SETUP_COOKIE_MAX_AGE_S, path: '/' })
+}
+
+export async function clearSetupCookie(): Promise<void> {
+  const jar = await cookies()
+  jar.delete({ name: SETUP_COOKIE, path: '/' })
+}
+
+// The guard for every setup action past Connect: the instance must still be
+// fresh AND this browser must hold a pairing. tests/auth-structure.test.ts
+// accepts this guard (and requireFreshInstance, for Connect) in exactly
+// app/setup/actions.ts.
+export async function requireSetupAttempt(): Promise<string> {
+  await requireFreshInstance()
+  const id = await currentSetupAttempt()
+  if (!id) redirect('/setup')
+  return id
+}
+
 // The first key — from setup or from recovery — is shown exactly once, on
 // /welcome, out of this flash. Same shape as the Settings flashes: httpOnly,
 // path-scoped, minutes long.

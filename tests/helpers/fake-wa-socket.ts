@@ -125,9 +125,6 @@ export function fakeWaDeps(opts: { download?: (message: unknown) => Promise<Buff
       await mkdir(dir, { recursive: true })
       return { state: { creds: {}, keys: {} }, saveCreds: async () => { saveCredsCalls++ } }
     },
-    async fetchVersion() {
-      return [2, 3000, 1]
-    },
     async makeSocket(socketOpts) {
       const socket = new FakeWaSocket(socketOpts)
       sockets.push(socket)

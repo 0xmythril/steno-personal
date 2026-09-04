@@ -10,14 +10,16 @@ import {
   type ChannelSession,
   type LoginDriver,
 } from '@/lib/channels/port'
-import type { IncomingMessage } from '@/lib/services/ingest'
+import type { DeleteRef, IncomingMessage, MessageActor } from '@/lib/services/ingest'
 import { errorShape, log } from '@/lib/log'
 import {
   chatKindForJid,
+  hasTrustedMediaSource,
   parseProtocolEvent,
   parseWaMessage,
   toIncoming,
   tsToDate,
+  WA_MEDIA_HOST,
   type ParsedWaMessage,
   type WaChatKind,
 } from '@/lib/channels/whatsapp-parse'
@@ -40,8 +42,6 @@ import {
 type BaileysModule = typeof import('@whiskeysockets/baileys')
 type MakeWASocketConfig = Parameters<BaileysModule['default']>[0]
 type WAMessageLike = Parameters<BaileysModule['downloadMediaMessage']>[0]
-
-export type WaVersion = [number, number, number]
 
 /** lib/Types/State.d.ts — ConnectionState, partial per event. */
 export type WaConnectionUpdate = {
@@ -137,14 +137,13 @@ export type WaSocketSeamCheck = {
 }
 
 export type WaAuth = { state: unknown; saveCreds: () => Promise<void> }
-export type WaSocketOpts = { auth: unknown; version: WaVersion | undefined; syncFullHistory: boolean }
+export type WaSocketOpts = { auth: unknown; syncFullHistory: boolean }
 
 /** Baileys' WAMessage — what downloadMediaMessage takes. */
 export type WaMessage = WAMessageLike
 
 export type WaDeps = {
   useAuthState(dir: string): Promise<WaAuth>
-  fetchVersion(): Promise<WaVersion | undefined>
   makeSocket(opts: WaSocketOpts): Promise<WaSocket>
   /**
    * Rebuild a WAMessage from what came back out of `messages.raw`.
@@ -272,18 +271,14 @@ export function baileysDeps(): WaDeps {
       const { state, saveCreds } = await useMultiFileAuthState(dir)
       return { state, saveCreds }
     },
-    async fetchVersion() {
-      // lib/Utils/generics.js:179 — never throws; on a network failure it
-      // returns the version bundled with the library.
-      const { fetchLatestBaileysVersion } = await loadBaileys()
-      const { version } = await fetchLatestBaileysVersion()
-      return version
-    },
     async makeSocket(opts) {
       const { default: makeWASocket } = await loadBaileys()
       const sock = makeWASocket({
         auth: opts.auth as MakeWASocketConfig['auth'],
-        ...(opts.version ? { version: opts.version } : {}),
+        // No `version`: Baileys' own default is the tuple bundled with the
+        // library. Asking it for the latest would fetch a file from GitHub
+        // on every connect — an update check to a third host, which ground
+        // rule 3 forbids and tests/whatsapp-structure.test.ts bans by name.
         // Spec invariant 3. Baileys turns this into a presence update
         // ('unavailable', lib/Socket/chats.js:1065) on connect — which is why
         // this file never touches presence itself.
@@ -319,11 +314,18 @@ export function baileysDeps(): WaDeps {
     async downloadMedia(message, ctx) {
       // lib/Utils/messages.d.ts:87 — unwraps ephemeral/viewOnce itself, and
       // uses reuploadRequest when WhatsApp's media URL has expired.
+      //
+      // `host` is REQUIRED here. Without it Baileys takes the download host
+      // from the message's own `url` field (lib/Utils/messages-media.js:
+      // `opts.host ?? extractHost(url)`), which the sender wrote. The
+      // session's downloadMedia also refuses any node that does not name
+      // this CDN by direct path, so the two together keep every media fetch
+      // on WhatsApp's own host.
       const { downloadMediaMessage } = await loadBaileys()
       return await downloadMediaMessage(
         message as WAMessageLike,
         'buffer',
-        {},
+        { host: WA_MEDIA_HOST },
         {
           reuploadRequest: ctx.reuploadRequest as (m: WAMessageLike) => Promise<WAMessageLike>,
           logger: waLogger(),
@@ -460,7 +462,6 @@ export class BaileysWhatsAppPort implements ChannelPort {
     await rm(dir, { recursive: true, force: true })
 
     const { state, saveCreds } = await this.deps.useAuthState(dir)
-    const version = await this.deps.fetchVersion()
     const deps = this.deps
 
     return await new Promise<{ sessionString: string; account: ChannelAccount }>((resolve, reject) => {
@@ -508,7 +509,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       }
 
       async function connect(): Promise<void> {
-        const sock = await deps.makeSocket({ auth: state, version, syncFullHistory: true })
+        const sock = await deps.makeSocket({ auth: state, syncFullHistory: true })
         // The timeout can fire while this await is in flight. A socket built
         // after we have already settled belongs to nobody, so close it here
         // rather than leaving it open on a promise that will never resolve.
@@ -561,7 +562,6 @@ export class BaileysWhatsAppPort implements ChannelPort {
     const dir = this.authDir(sessionString)
     const deps = this.deps
     const { state, saveCreds } = await deps.useAuthState(dir)
-    const version = await deps.fetchVersion()
 
     const markerPath = path.join(dir, HISTORY_MARKER)
     // "First open" per spec 4.3: the auth dir has no history-synced marker.
@@ -594,13 +594,13 @@ export class BaileysWhatsAppPort implements ChannelPort {
 
     let onMessageCb: ((m: IncomingMessage) => void) | null = null
     let onEditCb: ((m: IncomingMessage) => void) | null = null
-    let onDeleteCb: ((ref: { externalChatId?: string; externalMessageId: string }) => void) | null = null
+    let onDeleteCb: ((ref: DeleteRef) => void) | null = null
     // The SessionManager registers its callbacks immediately after open()
     // resolves, but Baileys can deliver a history batch in that gap. Buffer
     // rather than drop.
     const pendingMessages: IncomingMessage[] = []
     const pendingEdits: IncomingMessage[] = []
-    const pendingDeletes: Array<{ externalChatId?: string; externalMessageId: string }> = []
+    const pendingDeletes: Array<DeleteRef> = []
 
     const titles = new Map<string, string>()
     const metadataTried = new Set<string>()
@@ -674,7 +674,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       if (onEditCb) onEditCb(m)
       else pendingEdits.push(m)
     }
-    const emitDelete = (ref: { externalChatId?: string; externalMessageId: string }): void => {
+    const emitDelete = (ref: DeleteRef): void => {
       if (closing) return
       if (onDeleteCb) onDeleteCb(ref)
       else pendingDeletes.push(ref)
@@ -747,26 +747,32 @@ export class BaileysWhatsAppPort implements ChannelPort {
         const kind = chatKindForJid(event.remoteJid)
         if (!kind) return
         const chatId = await canonicalJid(event.remoteJid)
+        // Who acted, canonicalised exactly as a message's sender is, so
+        // ingest can hold the revoke or edit to the row's own author.
+        const actor: MessageActor = {
+          fromOwner: event.fromOwner,
+          senderExternalId: event.fromOwner || !event.actor ? null : await canonicalJid(event.actor.jid),
+        }
         if (event.kind === 'delete') {
-          emitDelete({ externalChatId: chatId, externalMessageId: event.waId })
+          emitDelete({ externalChatId: chatId, externalMessageId: event.waId, actor })
           return
         }
         // An edit payload with no recognisable text must never blank a row.
         if (!event.newText) return
-        const key = (raw as { key?: { fromMe?: boolean } } | null)?.key
         emitEdit({
           externalChatId: chatId,
           chatKind: kind,
           chatTitle: titles.get(chatId) ?? null,
           externalMessageId: event.waId,
-          senderExternalId: null,
+          senderExternalId: actor.senderExternalId,
           senderName: null,
-          fromOwner: !!key?.fromMe,
+          fromOwner: actor.fromOwner,
           sentAt: tsToDate((raw as { messageTimestamp?: unknown } | null)?.messageTimestamp),
           type: 'text',
           text: event.newText,
           media: null,
           raw,
+          actor,
         })
         return
       }
@@ -922,7 +928,7 @@ export class BaileysWhatsAppPort implements ChannelPort {
       if (closing || dead) return
       // sock.end() destroys the event emitter (lib/Socket/socket.js:506), so
       // every reconnect is a brand-new socket, never a re-listen.
-      const s = await deps.makeSocket({ auth: state, version, syncFullHistory: historyPending })
+      const s = await deps.makeSocket({ auth: state, syncFullHistory: historyPending })
       // close(), logOut() or a terminal close can land while makeSocket is in
       // flight. A socket built after the session is finished belongs to
       // nobody, and holding it would leak a live WhatsApp connection past
@@ -987,6 +993,9 @@ export class BaileysWhatsAppPort implements ChannelPort {
         // WhatsApp right now" rather than a specific fatal kind, since a
         // reconnect can still bring the session back.
         if (closing || !connected || !s) throw new ChannelError('no live WhatsApp socket', 'other')
+        // The sender wrote the media node, url included. Only WhatsApp's own
+        // CDN, named by direct path, is ever fetched from; see WA_MEDIA_HOST.
+        if (!hasTrustedMediaSource(raw)) throw new ChannelError('whatsapp media source is not the WhatsApp CDN', 'other')
         // `raw` is protobufjs' JSON projection of a WebMessageInfo (bytes as
         // base64 strings); fromObject is protobufjs' own inverse. See WaDeps.
         const message = await deps.fromObject(raw)

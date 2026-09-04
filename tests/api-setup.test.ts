@@ -22,10 +22,10 @@ const { eq } = await import('drizzle-orm')
 const { resetDb } = await import('./helpers/db')
 const { makeConnection } = await import('./helpers/fixtures')
 const { mintAccessKey, listActiveAccessKeys, revokeAllAccessKeys } = await import('@/lib/services/access-keys')
-const { SESSION_COOKIE, isFreshInstance, requireSession, requireFreshInstance } = await import('@/lib/auth')
+const { SESSION_COOKIE, SETUP_COOKIE, isFreshInstance, requireSession, requireFreshInstance } = await import('@/lib/auth')
 const { FIRST_KEY_COOKIE } = await import('@/lib/services/keys-flash')
 const setupRoute = await import('@/app/api/setup/connections/[id]/route')
-const { finishSetupAction, setupConnectAction } = await import('@/app/setup/actions')
+const { finishSetupAction, setupConnectAction, setupCancelAction, setupPasswordAction } = await import('@/app/setup/actions')
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
 const req = () => new Request('http://local/api/setup/connections/x')
@@ -56,6 +56,7 @@ describe('GET /api/setup/connections/[id]', () => {
     const conn = await makeConnection({ status: 'pending' })
     await db.update(connections).set({ loginQrToken: 'tg://login?token=abc', sessionCiphertext: 'SESSION_SECRET' })
       .where(eq(connections.id, conn.id))
+    jar.set(SETUP_COOKIE, conn.id)
     const res = await setupRoute.GET(req(), params(conn.id))
     expect(res.status).toBe(200)
     const body = await res.text()
@@ -69,15 +70,34 @@ describe('GET /api/setup/connections/[id]', () => {
   it('404s an unknown id and a recovery row', async () => {
     expect((await setupRoute.GET(req(), params('nope'))).status).toBe(404)
     const rec = await makeConnection({ channel: 'whatsapp', purpose: 'recovery', status: 'pending' })
+    jar.set(SETUP_COOKIE, rec.id)
     expect((await setupRoute.GET(req(), params(rec.id))).status).toBe(404)
+  })
+
+  // The pairing belongs to the browser that started it. Another visitor to a
+  // fresh instance gets the same 404 an unknown id gets, cookie or no cookie.
+  it('404s a browser that did not start the pairing', async () => {
+    const conn = await makeConnection({ status: 'pending' })
+    expect((await setupRoute.GET(req(), params(conn.id))).status).toBe(404)
+    const other = await makeConnection({ channel: 'whatsapp', status: 'pending' })
+    jar.set(SETUP_COOKIE, other.id)
+    expect((await setupRoute.GET(req(), params(conn.id))).status).toBe(404)
   })
 })
 
 describe('setup actions', () => {
   beforeEach(async () => { jar.clear(); await resetDb() })
 
+  it('connect binds the pairing to this browser with an httpOnly cookie', async () => {
+    const fd = new FormData(); fd.set('channel', 'telegram')
+    const res = await setupConnectAction(null, fd)
+    if (!res.ok) throw new Error(res.message)
+    expect(jar.get(SETUP_COOKIE)).toBe(res.id)
+  })
+
   it('finishSetup mints the first key, flashes it to /welcome, and logs the browser in', async () => {
-    await makeConnection({ status: 'active' })
+    const conn = await makeConnection({ status: 'active' })
+    jar.set(SETUP_COOKIE, conn.id)
     await expect(finishSetupAction()).rejects.toThrow('redirect:/welcome')
     const keys = await listActiveAccessKeys()
     expect(keys).toHaveLength(1)
@@ -92,10 +112,54 @@ describe('setup actions', () => {
   })
 
   it('finishSetup refuses without an active connection', async () => {
-    await makeConnection({ status: 'pending' })
+    const conn = await makeConnection({ status: 'pending' })
+    jar.set(SETUP_COOKIE, conn.id)
     await expect(finishSetupAction()).rejects.toThrow('redirect:/setup')
     expect(await listActiveAccessKeys()).toEqual([])
     expect(jar.get(SESSION_COOKIE)).toBeUndefined()
+  })
+
+  // The window between "paired" and "first key minted" is the dangerous one:
+  // the owner's real account is already syncing, and the instance is still
+  // fresh. Only the browser that started that pairing may close it.
+  it('finishSetup refuses a browser that did not start the pairing', async () => {
+    await makeConnection({ status: 'active' })
+    await expect(finishSetupAction()).rejects.toThrow('redirect:/setup')
+    const other = await makeConnection({ channel: 'whatsapp', status: 'pending' })
+    jar.set(SETUP_COOKIE, other.id)
+    await expect(finishSetupAction()).rejects.toThrow('redirect:/setup')
+    jar.set(SETUP_COOKIE, 'not-a-connection')
+    await expect(finishSetupAction()).rejects.toThrow('redirect:/setup')
+    expect(await listActiveAccessKeys()).toEqual([])
+    expect(jar.get(SESSION_COOKIE)).toBeUndefined()
+    expect(jar.get(FIRST_KEY_COOKIE)).toBeUndefined()
+  })
+
+  it('finishSetup mints exactly one first key when two requests race', async () => {
+    const conn = await makeConnection({ status: 'active' })
+    jar.set(SETUP_COOKIE, conn.id)
+    const outcomes = await Promise.allSettled([finishSetupAction(), finishSetupAction()])
+    const reasons = outcomes.map(o => (o.status === 'rejected' ? String(o.reason.message) : 'resolved')).sort()
+    expect(reasons).toEqual(['redirect:/login', 'redirect:/welcome'])
+    expect(await listActiveAccessKeys()).toHaveLength(1)
+  })
+
+  it('password and cancel act only on the pairing this browser started', async () => {
+    const conn = await makeConnection({ status: 'pending' })
+    await db.update(connections).set({ loginNeedsPassword: true }).where(eq(connections.id, conn.id))
+    const pw = new FormData(); pw.set('connectionId', conn.id); pw.set('password', 'hunter2')
+    await expect(setupPasswordAction(null, pw)).rejects.toThrow('redirect:/setup')
+    const cancel = new FormData(); cancel.set('connectionId', conn.id)
+    await expect(setupCancelAction(cancel)).rejects.toThrow('redirect:/setup')
+    let [row] = await db.select().from(connections).where(eq(connections.id, conn.id))
+    expect(row.status).toBe('pending')
+    expect(row.loginSecretCiphertext).toBeNull()
+
+    jar.set(SETUP_COOKIE, conn.id)
+    expect((await setupPasswordAction(null, pw)).ok).toBe(true)
+    await setupCancelAction(cancel)
+    ;[row] = await db.select().from(connections).where(eq(connections.id, conn.id))
+    expect(row.status).toBe('revoked')
   })
 
   it('connect is closed once a key exists', async () => {

@@ -82,8 +82,9 @@ volume mounted at `/data`, and a generated `SECRET_KEY`. Open the generated
 pairing a channel and hands you your first access key.
 
 Two things to know before you click. First, a Railway deploy has a public URL.
-Until you have paired a channel, **Setup** is open to whoever reaches that URL
-first, and afterwards the only thing standing between the internet and your
+Until you have your first access key, **Setup** is open to whoever reaches that
+URL first (a pairing you have started can only be finished from your own
+browser), and afterwards the only thing standing between the internet and your
 archive is an access key — so claim the deploy promptly, and read
 [docs/threat-model.md](docs/threat-model.md). Second, re-read the WhatsApp
 paragraph above: cloud hosting is where account restrictions are most likely.

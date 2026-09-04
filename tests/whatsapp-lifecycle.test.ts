@@ -33,6 +33,8 @@ describe('downloadMedia', () => {
         imageMessage: {
           mimetype: 'image/jpeg',
           fileLength: '2048',
+          directPath: '/v/t62.7118-24/abc',
+          url: 'https://mmg.whatsapp.net/v/t62.7118-24/abc?ccb=11-4',
           mediaKey: 'AQID',           // [1, 2, 3]
           fileSha256: 'CQg=',         // [9, 8]
           fileEncSha256: 'BwY=',      // [7, 6]
@@ -59,9 +61,25 @@ describe('downloadMedia', () => {
     await c.session.close()
   })
 
+  // The message's own url field is the sender's word: Baileys would fetch
+  // whatever host it names. Nothing is downloaded unless the media node names
+  // WhatsApp's CDN by direct path, and the deps are told the host explicitly.
+  it('refuses to download a message whose media URL points off WhatsApp’s CDN', async () => {
+    const c = await connect('media-ssrf')
+    const raw = {
+      key: { remoteJid: '12345-67890@g.us', id: 'M2', fromMe: false, participant: '15559990000@s.whatsapp.net' },
+      messageTimestamp: '1700000000',
+      message: { imageMessage: { mimetype: 'image/jpeg', fileLength: '1000', mediaKey: 'AQID', url: 'http://127.0.0.1:3000/media/x' } },
+    }
+    await expect(c.session.downloadMedia(raw)).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
+    expect(c.h.downloads()).toEqual([])
+    expect(c.socket().reuploaded).toEqual([])
+    await c.session.close()
+  })
+
   it('reports a failed download as ChannelError(other)', async () => {
     const c = await connect('media-fail', { download: async () => { throw new Error('gone') } })
-    await expect(c.session.downloadMedia({ message: {} })).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
+    await expect(c.session.downloadMedia({ message: { imageMessage: { directPath: '/v/x' } } })).rejects.toMatchObject({ name: 'ChannelError', kind: 'other' })
     await c.session.close()
   })
 
@@ -80,7 +98,7 @@ describe('downloadMedia', () => {
     expect(c.h.sockets.length).toBeGreaterThan(1) // the reconnect actually happened
     c.socket().emitOpen()
 
-    const result = await c.session.downloadMedia({ message: {} })
+    const result = await c.session.downloadMedia({ message: { imageMessage: { directPath: '/v/x' } } })
     expect(result.data.toString()).toBe('media-bytes')
     await c.session.close()
   })

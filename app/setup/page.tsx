@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { isFreshInstance } from '@/lib/auth'
+import { currentSetupAttempt, isFreshInstance } from '@/lib/auth'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS } from '@/lib/format'
@@ -15,7 +15,10 @@ import { setupConnectAction, setupPasswordAction, setupCancelAction, finishSetup
 // First run. Open to whoever reaches a fresh instance first — exactly the
 // exposure the old log-printed key had, minus the log — and closed for good
 // the moment a key exists. Pairing an account is what makes the visitor the
-// owner: that account becomes the proof recovery checks against later.
+// owner: that account becomes the proof recovery checks against later, and
+// the pairing is bound to the browser that started it (SETUP_COOKIE). From
+// the moment someone has started pairing, every other visitor sees only that
+// the instance is being claimed: no QR, no poll, no "create my key".
 
 // Reads the database (is the instance fresh?) before any request API, so
 // Next must be told not to prerender this at build time — an env-less Docker
@@ -66,11 +69,35 @@ function SetupChannelCard({ channel, live }: { channel: Channel; live: Connectio
   )
 }
 
+function ClaimInProgress() {
+  return (
+    <main>
+      <div className="onboard">
+        <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
+        <h1>Being claimed</h1>
+        <section className="card">
+          <p>
+            Another browser has started pairing an account with this instance. A pairing belongs to the browser that
+            began it, so it can only be finished there.
+          </p>
+          <p className="muted">
+            If that was you, go back to the tab you scanned from. If it was not, this instance was reached by someone
+            else first; the host can empty it with <code>STENO_RESET</code> and start again.
+          </p>
+        </section>
+      </div>
+    </main>
+  )
+}
+
 export default async function SetupPage() {
   if (!(await isFreshInstance())) redirect('/login')
+  const mine = await currentSetupAttempt()
   const all = await listConnections()
   const archive = all.filter(c => c.purpose === 'archive' && c.revokedAt === null)
-  const active = archive.find(c => c.status === 'active')
+  const claiming = archive.some(c => (c.status === 'pending' || c.status === 'active') && c.id !== mine)
+  if (claiming) return <ClaimInProgress />
+  const active = archive.find(c => c.status === 'active' && c.id === mine)
   const liveOf = (channel: Channel) => archive.find(c => c.channel === channel)
 
   if (active) {

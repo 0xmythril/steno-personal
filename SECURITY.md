@@ -92,8 +92,11 @@ test enforces that.
 - Put it behind a reverse proxy with TLS, and make sure the proxy sets
   `X-Forwarded-Proto: https` so the session cookie is issued as `Secure`. See
   [docs/self-hosting.md](docs/self-hosting.md).
-- Claim a public deploy as soon as it is green: until a channel has been
-  paired, `/setup` is open to whoever reaches the URL first.
+- Claim a public deploy as soon as it is green: until the first access key
+  has been minted, `/setup` is open to whoever reaches the URL first. A
+  pairing is bound to the browser that started it, so once you have begun
+  scanning nobody else can finish your pairing or take the key it mints —
+  but anyone who arrives before you can pair their own account instead.
 - Mint one key per device or agent, and revoke any key that was ever printed
   to a log once you have replaced it.
 - Do not expose the port to the internet if you only use it at home; the
