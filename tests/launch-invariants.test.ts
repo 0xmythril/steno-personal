@@ -3,10 +3,10 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 // A repo-wide sweep, not a unit test. It exists because the promises this
-// project makes (AGPL, no telemetry, no cloud storage, one importer per chat
-// library, an honest WhatsApp warning) are the product on the open-source
-// side, and every one of them is a single careless import or paragraph edit
-// away from being false.
+// project makes (AGPL, no third-party analytics, no cloud storage, one
+// importer per chat library, an honest WhatsApp warning) are the product on
+// the open-source side, and every one of them is a single careless import or
+// paragraph edit away from being false.
 
 const SOURCE_EXT = new Set(['.ts', '.tsx', '.mts', '.mjs', '.js'])
 // Everything at the top level that is not source: build output, git, the
@@ -93,6 +93,13 @@ describe('the WhatsApp warning is on the front page', () => {
 // list, not a general outbound-traffic guard: a bare fetch() to a telemetry
 // endpoint is not caught by it, and PRIVACY.md says so rather than claiming
 // more than this list delivers.
+//
+// This project now reports anonymous usage events to PostHog, so the list no
+// longer means "nothing is ever reported". What it still means is that no
+// vendor code runs inside this process: the event is hand-built in
+// lib/services/telemetry.ts as one HTTP POST, and the whole of what it can
+// carry is written down there as a type. PostHog sees an event name and an
+// enum; it never gets a library in here that could see more.
 const BANNED_EVERYWHERE = [
   '@/lib/services/analytics',
   'posthog', 'mixpanel', '@segment/', 'analytics-node',
@@ -101,7 +108,13 @@ const BANNED_EVERYWHERE = [
 const isBanned = (name: string): boolean =>
   BANNED_EVERYWHERE.some(b => name === b || name.startsWith(b))
 
-describe('no telemetry, no cloud identity, one importer per chat library', () => {
+// Prose that NAMES a thing is not code that USES it: the telemetry service and
+// the schema both explain at length which columns they refuse to read, and a
+// grep that cannot tell the two apart would punish the explanation.
+const stripComments = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+
+describe('no third-party analytics, no cloud identity, one importer per chat library', () => {
   const SCOPED = [
     { needle: 'mtcute', allowed: 'lib/channels/telegram.ts' },
     { needle: 'baileys', allowed: 'lib/channels/whatsapp.ts' },
@@ -119,6 +132,71 @@ describe('no telemetry, no cloud identity, one importer per chat library', () =>
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  // Usage reporting is the one thing in the repo that sends anything
+  // anywhere on its own. Keeping the key in one variable, reached from one
+  // file that does the POST, is what makes "here is exactly what leaves, and
+  // here is the off switch" a claim a reader can check in one sitting — the
+  // same reasoning as one importer per chat library.
+  //
+  // env.ts declares the variable, the defaults module holds the token, and
+  // the Settings card reads the key to say whether this build reports at
+  // all; none of them sends. Only the service does.
+  it('only the reporter, its variable and its Settings card know the key', () => {
+    const mentions = sourceFiles
+      .filter(f => stripComments(readFileSync(f, 'utf8')).includes('STENO_POSTHOG_KEY'))
+      .map(f => f.split(path.sep).join('/'))
+      .sort()
+    expect(mentions).toEqual([
+      'app/settings/telemetry.tsx', 'lib/env.ts', 'lib/services/telemetry.ts',
+    ])
+    for (const f of mentions.filter(f => f !== 'lib/services/telemetry.ts')) {
+      expect(readFileSync(f, 'utf8')).not.toMatch(/fetch\s*\(/)
+    }
+  })
+
+  // Every call site, every property. The type already refuses an unknown
+  // key; this catches a value smuggled in under an allowed one — `{ tool:
+  // args.query }` would type-check if someone widened the type — by refusing
+  // any identifier that could carry content at a track() call at all.
+  it('no track() call site passes anything that could carry content', () => {
+    const allowedKeys = new Set(['surface', 'tool', 'source', 'channel', 'images', 'audio'])
+    const forbidValue = /\b(q|query|args|text|title|name|label|phone|id|chatId|externalId|rawKey|key|cursor|displayName|notes)\b/
+    const calls: string[] = []
+    for (const file of sourceFiles) {
+      if (file.endsWith('lib/services/telemetry.ts')) continue
+      const src = stripComments(readFileSync(file, 'utf8'))
+      for (const m of src.matchAll(/\btrack\(\s*'([a-z_]+)'\s*,\s*(\{[^}]*\})/g)) {
+        calls.push(`${file}: ${m[0]}`)
+        const obj = m[2]
+        for (const key of obj.matchAll(/([A-Za-z_]+)\s*:/g)) expect(allowedKeys).toContain(key[1])
+        // Shorthand `{ images, audio }` and the values of `k: v` pairs.
+        const values = obj.replace(/[{}]/g, '').split(',').map(p => p.includes(':') ? p.split(':')[1] : p).join(' ')
+        expect(values, m[0]).not.toMatch(forbidValue)
+      }
+    }
+    // The plan has seven events wired in; a call that vanished is a bug too.
+    expect(calls.length).toBeGreaterThanOrEqual(7)
+  })
+
+  // Aggregates only. A column that holds someone's words, name or number must
+  // never be read by the reporter, and this is what keeps a later "just one
+  // more field" honest. Comments are stripped first: the file explains at
+  // length which columns it refuses to touch, and naming one is not reading it.
+  it('the usage ping reads no column that holds content', () => {
+    const code = stripComments(readFileSync('lib/services/telemetry.ts', 'utf8'))
+    // Whole identifiers, so the enum value 'phone_match' in the tracking plan
+    // is not mistaken for a read of the `phone` column; `Ciphertext` is a
+    // suffix so any *Ciphertext column trips it.
+    const FORBIDDEN = [
+      'senderName', 'displayName', 'externalId', 'externalChatId', 'phone',
+      'title', 'extractedText', 'description', 'notes', 'keyHash',
+      'Ciphertext', 'label',
+    ]
+    const reads = (name: string) =>
+      (name === 'Ciphertext' ? /Ciphertext\b/ : new RegExp(`\\b${name}\\b`)).test(code)
+    expect(FORBIDDEN.filter(reads)).toEqual([])
   })
 
   it('only the two channel files import their chat library', () => {

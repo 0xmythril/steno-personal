@@ -40,6 +40,7 @@ run_container() {
     -p "127.0.0.1:${PORT}:3000" \
     -v "${VOLUME}:/data" \
     -e DATA_DIR=/data \
+    -e DO_NOT_TRACK=1 \
     "$@" \
     "$IMAGE" >/dev/null || fail "docker run failed — the container was never started"
 }

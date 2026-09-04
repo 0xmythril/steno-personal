@@ -1,4 +1,5 @@
 import { db } from '@/lib/db/client'
+import { track } from '@/lib/services/telemetry'
 import { accessKeys } from '@/lib/db/schema'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash, randomBytes } from 'node:crypto'
@@ -42,6 +43,8 @@ export async function mintAccessKey(label: string): Promise<MintResult> {
   if (!checked.ok) return checked
   const { rawKey, values } = newKeyRow(checked.label)
   const [row] = await db.insert(accessKeys).values(values).returning({ id: accessKeys.id })
+  // That a key was made. Never its label, prefix or value.
+  track('access_key_minted', {})
   return { ok: true, id: row.id, rawKey }
 }
 
@@ -60,6 +63,7 @@ export async function mintFirstAccessKey(label: string): Promise<MintResult> {
     return tx.insert(accessKeys).values(values).returning({ id: accessKeys.id }).get()
   }, { behavior: 'immediate' })
   if (!row) return { ok: false, reason: 'not_first' }
+  track('access_key_minted', {})
   return { ok: true, id: row.id, rawKey }
 }
 

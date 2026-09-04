@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { track } from '@/lib/services/telemetry'
 import { db } from '@/lib/db/client'
 import {
   channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
@@ -334,6 +335,9 @@ export async function linkIdentity(
     if (isUniqueViolation(err)) return { ok: false, reason: 'already_linked' }
     throw err
   }
+  // How the link was made — by hand or by confirming which kind of
+  // suggestion. Never who was linked to whom.
+  track('person_linked', { source })
   return { ok: true }
 }
 

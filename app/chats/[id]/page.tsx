@@ -7,6 +7,7 @@ import { getMessages } from '@/lib/services/queries'
 import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
 import { formatTime } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
+import { track } from '@/lib/services/telemetry'
 
 const PAGE_SIZE = 50
 
@@ -27,6 +28,8 @@ export default async function ChatPage({ params, searchParams }: {
 
   const page = await getMessages(id, { limit: PAGE_SIZE, cursor })
   if (!page) notFound()
+  // That a transcript was opened. Not which one, and not which page of it.
+  track('transcript_viewed', {})
 
   // The query returns newest-first; a conversation reads oldest-first.
   const chronological = [...page.messages].reverse()

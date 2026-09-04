@@ -17,6 +17,7 @@ export type Settings = {
   analyzeAudio: boolean
   visionModel: string
   transcriptionModel: string
+  telemetryEnabled: boolean
 }
 
 async function readRow() {
@@ -36,6 +37,9 @@ export async function getSettings(): Promise<Settings> {
     analyzeAudio: row?.analyzeAudio ?? false,
     visionModel: getVisionCatalogEntry(row?.visionModel)?.id ?? DEFAULT_VISION_MODEL,
     transcriptionModel: getTranscriptionCatalogEntry(row?.transcriptionModel)?.id ?? DEFAULT_TRANSCRIPTION_MODEL,
+    // Defaults to true, matching the column, so a row the migration has not
+    // reached yet reads the same as one it has.
+    telemetryEnabled: row?.telemetryEnabled ?? true,
   }
 }
 
@@ -45,6 +49,7 @@ export type SettingsPatch = Partial<{
   analyzeAudio: boolean
   visionModel: string
   transcriptionModel: string
+  telemetryEnabled: boolean
 }>
 
 // Absent field = leave alone; `openrouterKey: null` = clear it. That
@@ -68,6 +73,7 @@ export async function updateSettings(patch: SettingsPatch): Promise<void> {
   if (patch.transcriptionModel !== undefined && getTranscriptionCatalogEntry(patch.transcriptionModel)) {
     values.transcriptionModel = patch.transcriptionModel
   }
+  if (patch.telemetryEnabled !== undefined) values.telemetryEnabled = patch.telemetryEnabled
   if (Object.keys(values).length === 0) return
   await db.insert(settings).values({ id: SETTINGS_ID, ...values })
     .onConflictDoUpdate({ target: settings.id, set: values })
