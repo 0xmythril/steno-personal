@@ -3,11 +3,17 @@
 [![CI](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 
-**Your chats, on your machine, readable by your AI agents.**
+**Your Telegram and WhatsApp, in one file your AI agents can read.**
 
-Archive your **Telegram** (and optionally **WhatsApp**) into one SQLite file on a
-computer you control. Agents connect over **MCP** and only read. No bot, no
-second phone number, no account on our servers.
+Your conversations from both apps live in a single SQLite file on a computer you
+control, and stay current as new messages arrive. Your agents reach them over
+**MCP**. Context that was split across two apps — what you agreed to, who said
+it, when — becomes one thing an agent can search, so it works from what you
+actually said instead of what you can be bothered to paste into a prompt.
+
+It connects to **your** accounts — your Telegram account, your number as a
+linked WhatsApp device — reads what is already there, and writes nothing back.
+No bot, no second phone number, no account on our servers.
 
 - **Read-only by construction** — the code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
@@ -15,22 +21,20 @@ second phone number, no account on our servers.
   leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
   off until you turn it on, and anonymous usage events — that a feature was
   used, never what it was used on — which you can turn off.
+- **One person, not two accounts** — the address book links the same human
+  across both apps, so a chat and a transcript say *Ada* whether she wrote from
+  Telegram or from WhatsApp.
 - **Agent-ready** — MCP tools to list, search and read chats, fetch an
   attachment, and list the people in your address book.
-
-**Best for:** people already using Cursor, Claude, or a similar agent who want
-personal chat context without uploading it to a third-party archive.
 
 [Quick start](#quick-start) · [Connect an agent](#connect-your-agent) · [Deploy on Railway](#deploy-on-railway) · [Teams → Steno.chat](https://steno.chat)
 
 Licensed under the GNU Affero General Public License v3.0.
 
----
-
 ## Quick start
 
 You need Docker and a couple of minutes. **Start with Telegram** — it carries
-the lower risk. WhatsApp is optional; read [WhatsApp risk](#whatsapp-risk)
+the lower risk. WhatsApp is optional; read [the WhatsApp risk](#the-whatsapp-risk-in-one-paragraph)
 before you pair it.
 
 ```bash
@@ -63,8 +67,6 @@ everything away with `docker compose down -v`.
 
 More ways to run it — bare Node, reverse proxy, upgrades, every environment
 variable: [docs/self-hosting.md](docs/self-hosting.md).
-
----
 
 ## Connect your agent
 
@@ -120,8 +122,6 @@ agent's own instructions (`channel`, `kind`, named chats), and revoke on any
 doubt. All seven tools, their filters and the agent safety notes:
 [docs/mcp.md](docs/mcp.md).
 
----
-
 ## Telegram
 
 Nothing to set up. The project ships its own registered Telegram application —
@@ -140,9 +140,7 @@ The connection is read-only: it never marks anything read, never shows you as
 online, and never sends. It appears in Telegram's own device list as
 **steno-personal**, and removing it there revokes it here within seconds.
 
----
-
-## WhatsApp risk
+## The WhatsApp risk, in one paragraph
 
 WhatsApp publishes no personal-archive API, so this connects as a linked device
 on your own number through an unofficial client library.
@@ -158,15 +156,11 @@ is higher on a public cloud host than on a machine at home.
 Telegram carries no comparable risk: it connects through Telegram's own
 published user API, the same one every third-party Telegram client uses.
 
----
-
 ## Need it for a team?
 
 For teams, shared **group** archives, or if you would rather not link your own
 account, use [Steno.chat](https://steno.chat). It records through its own number,
 so your personal account stays unlinked.
-
----
 
 ## Deploy on Railway
 
@@ -196,8 +190,6 @@ share of your first year's bills to this project — and it is entirely optional
 Publishing the template yourself, or self-hosting on Railway without it, is in
 [docs/self-hosting.md](docs/self-hosting.md).
 
----
-
 ## People (address book)
 
 The **People** page links the same human across Telegram and WhatsApp, so a chat
@@ -208,8 +200,6 @@ to either channel.
 
 Matching rules, merges, and exactly what an agent sees:
 [docs/people.md](docs/people.md).
-
----
 
 ## Configuration
 
@@ -230,8 +220,6 @@ touch — the full table is in
 transcription are off until you save an OpenRouter key in **Settings**. Leave it
 blank and that traffic never leaves your machine.
 
----
-
 ## Backups
 
 Everything is under `DATA_DIR`. Stop the app first — SQLite in WAL mode leaves a
@@ -248,8 +236,6 @@ docker compose start app
 Restoring, bare Node, and Railway volumes:
 [docs/self-hosting.md](docs/self-hosting.md#backups).
 
----
-
 ## Documentation
 
 | | |
@@ -265,23 +251,17 @@ Restoring, bare Node, and Railway volumes:
 | [docs/releasing.md](docs/releasing.md) | How a release is cut. |
 | [CHANGELOG.md](CHANGELOG.md) | Releases. |
 
----
-
 ## Contributing
 
 Issues and pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md)
 first — it lists the promises the code keeps and what the project will not
 become. Conduct is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
----
-
 ## Licence
 
 GNU Affero General Public License v3.0; see [LICENSE](LICENSE) for the full
 text. Because it is the AGPL, if you modify it and let other people use your
 modified version over a network, you have to offer them your source too.
-
----
 
 ## Follow along
 
