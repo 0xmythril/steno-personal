@@ -11,17 +11,22 @@ Three, in a line. Code only ever moves left to right.
 | | Runs | Deployed from | Data |
 |---|---|---|---|
 | **development** | your machine — `npm run dev`, or `docker compose up` | your working tree | `./data`, throwaway |
-| **staging** | Railway, `steno-personal` project, `staging` environment | the `staging` branch, on every push | its own 5 GB volume, its own generated `SECRET_KEY` |
-| **production** | Railway, `steno-personal` project, `production` environment | the `main` branch, on every push | the real archive |
+| **staging** | a hosted instance the maintainer keeps | the `staging` branch, on every push | its own volume, its own generated `SECRET_KEY` |
+| **production** | the maintainer's own instance | the `main` branch, on every push | the real archive |
 
-The two Railway environments share nothing but the project. Separate volumes,
-separate secret keys, separate paired accounts — staging cannot read the
-production archive, and a migration that eats the staging database has not
-touched the real one.
+Staging and production share nothing. Separate volumes, separate secret keys,
+separate paired accounts — staging cannot read the production archive, and a
+migration that eats the staging database has not touched the real one. Setting
+that up is ordinary hosting, not something this repo configures: the deploy
+platform watches the two branches, and nothing in git can reach either
+instance.
 
 `main` is still the release line: it is what gets tagged, and it is what the
 one-click deploy button builds. `staging` is the integration branch that
 everything passes through first.
+
+If you fork this, the same shape works anywhere that can watch two branches.
+Nothing below depends on a particular host.
 
 ## The promotion
 
@@ -36,12 +41,11 @@ feature branch  ──PR──▶  staging  ──PR──▶  main
    (`npm run lint && npm run typecheck && npm test && npm run build`).
 2. Open a pull request **into `staging`**. CI runs lint, typecheck, tests, the
    build and the Docker smoke test on the push.
-3. Merge. Railway builds the `staging` branch and deploys it to the staging
-   environment; watch the deploy log until the health check at `/api/health`
-   is green.
-4. Exercise it on the staging URL — the paths the unit tests cannot reach:
-   boot on a real volume, migrations applied over existing data, a pairing
-   flow, login, and the MCP endpoint under a real bearer token.
+3. Merge. The staging instance rebuilds from the branch; wait for its health
+   check at `/api/health` to go green.
+4. Exercise it — the paths the unit tests cannot reach: boot on a real volume,
+   migrations applied over existing data, a pairing flow, login, and the MCP
+   endpoint under a real bearer token.
 5. When staging has been green for as long as the change deserves, open a pull
    request from `staging` into `main`. Merging it deploys production.
 
@@ -49,16 +53,20 @@ A hotfix is the same shape, not an exception: branch from `staging`, merge to
 `staging`, promote. The pipeline is short enough that skipping it buys minutes
 and costs the archive.
 
-### Staging's first boot
+### Standing up a staging instance
 
-The staging volume starts empty, which means `/setup` is open to whoever
-reaches the public URL first. `STENO_MINT_KEY=staging-host` is set on the
-staging environment so a key is minted and printed to the deploy log on first
-boot; once any key row exists `/setup` is closed. Read the key out of the
-Railway log and keep it — the banner prints once per value.
+A staging instance is a normal deploy of this app, so
+[self-hosting.md](self-hosting.md) covers it. Two things are specific to
+staging:
 
-If you ever wipe staging (`STENO_RESET`), the mint marker is cleared with it
-and a fresh key is printed on the next boot.
+- **Its volume starts empty, so `/setup` is open to whoever reaches the URL
+  first.** Set `STENO_MINT_KEY` on it so a key is minted and printed to the
+  boot log on first start; `/setup` closes as soon as any key row exists. Read
+  the key out of the log — the banner prints once per value. `STENO_RESET`
+  clears the marker, so a wipe mints a fresh key on the next boot. Both are
+  documented under "Lost access" in [self-hosting.md](self-hosting.md).
+- **Give it its own `SECRET_KEY` and its own volume.** Sharing either with
+  production defeats the point of having a staging instance at all.
 
 ## Release candidates
 
