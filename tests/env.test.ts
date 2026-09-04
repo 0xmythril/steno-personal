@@ -28,13 +28,18 @@ describe('env schema', () => {
     expect(envSchema.parse({}).DATA_DIR).toBe('./data')
   })
 
-  it('falls back to the project Telegram defaults, and treats blanks as unset', () => {
+  it('falls back to the project Telegram pair, and treats blanks as unset', () => {
+    // The project ships a registered pair, so a deploy that sets nothing
+    // pairs Telegram out of the box. The values are asserted by shape only;
+    // the pair itself lives in one file and is never repeated in a test.
     const bare = envSchema.parse({ DATA_DIR: '/tmp/x' })
-    expect(bare.TELEGRAM_API_ID).toBe(0)
-    expect(bare.TELEGRAM_API_HASH).toBe('')
+    expect(bare.TELEGRAM_API_ID).toBeGreaterThan(0)
+    expect(bare.TELEGRAM_API_HASH).toMatch(/^[0-9a-f]{32}$/)
     const blanked = envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '', TELEGRAM_API_HASH: '' })
-    expect(blanked.TELEGRAM_API_ID).toBe(0)
-    expect(blanked.TELEGRAM_API_HASH).toBe('')
+    expect(blanked.TELEGRAM_API_ID).toBe(bare.TELEGRAM_API_ID)
+    expect(blanked.TELEGRAM_API_HASH).toBe(bare.TELEGRAM_API_HASH)
+    // A fork that strips the pair opts out with an explicit 0.
+    expect(envSchema.parse({ DATA_DIR: '/tmp/x', TELEGRAM_API_ID: '0' }).TELEGRAM_API_ID).toBe(0)
   })
 
   it('carries the host operations as optional strings, blank meaning unset', () => {
