@@ -183,7 +183,7 @@ export default async function PersonPage({ params, searchParams }: {
                 ))}
               </select>
             </label>{' '}
-            <button type="submit" className="danger">Merge</button>
+            <button type="submit" className="danger">Merge and delete this row</button>
           </form>
         )}
       </section>

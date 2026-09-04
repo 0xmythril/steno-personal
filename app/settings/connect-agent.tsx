@@ -49,7 +49,7 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error }: {
           {rawKey && (
             <button type="submit" formAction={clearInstructionsKeyAction}>Clear</button>
           )}
-          {error && <span className="danger">Cannot decrypt that key: SECRET_KEY changed since it was made.</span>}
+          {error && <span className="danger" role="alert">Cannot decrypt that key: SECRET_KEY changed since it was made.</span>}
         </form>
       )}
       {rawKey

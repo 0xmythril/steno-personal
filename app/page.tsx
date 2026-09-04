@@ -39,12 +39,12 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
           </div>
         )}
 
-        <div className="chips" aria-label="Show">
-          {channel ? <Link className="chip off" href="/">All</Link> : <span className="chip">All</span>}
+        <div className="chips" role="group" aria-label="Filter by channel">
+          {channel ? <Link className="chip filter" href="/">All</Link> : <span className="chip">All</span>}
           {CHAT_CHANNELS.map(ch => (
             channel === ch
               ? <span key={ch} className="chip">{CHANNEL_LABELS[ch]}</span>
-              : <Link key={ch} className="chip off" href={`/?channel=${ch}`}>{CHANNEL_LABELS[ch]}</Link>
+              : <Link key={ch} className="chip filter" href={`/?channel=${ch}`}>{CHANNEL_LABELS[ch]}</Link>
           ))}
         </div>
 
