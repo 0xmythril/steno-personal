@@ -162,6 +162,57 @@ describe('setup actions', () => {
     expect(row.status).toBe('revoked')
   })
 
+  // The claim is instance-wide, not per channel. While one browser's pairing
+  // is live (pending or active), no other browser may start its own on ANY
+  // channel — otherwise the second visitor pairs a throwaway account and
+  // mints the instance's first key against the owner's already-archiving one.
+  it('connect refuses a second browser while another pairing is live, on any channel', async () => {
+    const tg = new FormData(); tg.set('channel', 'telegram')
+    const wa = new FormData(); wa.set('channel', 'whatsapp')
+    const first = await setupConnectAction(null, tg)
+    if (!first.ok) throw new Error(first.message)
+
+    jar.clear() // a second browser
+    expect((await setupConnectAction(null, wa)).ok).toBe(false)
+    expect((await setupConnectAction(null, tg)).ok).toBe(false)
+    expect(jar.get(SETUP_COOKIE)).toBeUndefined()
+
+    await db.update(connections).set({ status: 'active' }).where(eq(connections.id, first.id))
+    expect((await setupConnectAction(null, wa)).ok).toBe(false)
+    expect(jar.get(SETUP_COOKIE)).toBeUndefined()
+
+    // the owner's row is untouched: neither replaced nor deleted
+    const live = await db.select({ id: connections.id, status: connections.status }).from(connections)
+    expect(live).toEqual([{ id: first.id, status: 'active' }])
+  })
+
+  it('connect lets the browser that started a pending pairing switch channel', async () => {
+    const tg = new FormData(); tg.set('channel', 'telegram')
+    const wa = new FormData(); wa.set('channel', 'whatsapp')
+    const first = await setupConnectAction(null, tg)
+    if (!first.ok) throw new Error(first.message)
+    const second = await setupConnectAction(null, wa)
+    if (!second.ok) throw new Error(second.message)
+    expect(jar.get(SETUP_COOKIE)).toBe(second.id)
+    // the abandoned attempt held nothing, so it is gone rather than left
+    // pending — a pending row the cookie no longer names would read as
+    // "someone else is claiming" to its own owner.
+    const live = await db.select({ id: connections.id }).from(connections)
+    expect(live).toEqual([{ id: second.id }])
+  })
+
+  // Defence in depth for the same hole: even with a row of its own, a browser
+  // may not mint the first key while another live pairing exists.
+  it('finishSetup refuses while another live pairing exists', async () => {
+    await makeConnection({ channel: 'telegram', status: 'active' })
+    const other = await makeConnection({ channel: 'whatsapp', status: 'active' })
+    jar.set(SETUP_COOKIE, other.id)
+    await expect(finishSetupAction()).rejects.toThrow('redirect:/setup')
+    expect(await listActiveAccessKeys()).toEqual([])
+    expect(jar.get(SESSION_COOKIE)).toBeUndefined()
+    expect(jar.get(FIRST_KEY_COOKIE)).toBeUndefined()
+  })
+
   it('connect is closed once a key exists', async () => {
     const fd = new FormData(); fd.set('channel', 'telegram')
     expect((await setupConnectAction(null, fd)).ok).toBe(true)
