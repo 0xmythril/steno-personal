@@ -2,7 +2,7 @@
 
 > Agents read this file before generating any UI. The tokens live in `app/globals.css`;
 > `tests/design-tokens.test.ts` keeps the two in step and checks contrast on both palettes.
-> Status: adopted 2026-09-04. Steno Cloud migrates to the same tokens later.
+> Status: adopted 2026-09-04.
 
 ## Overview
 

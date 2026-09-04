@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- **The first-run claim is instance-wide.** Setup bound a pairing to the
+  browser that started it, but only per channel: while the owner's Telegram
+  was already archiving, a second visitor could pair a throwaway WhatsApp
+  account and mint the instance's first key. Connect now refuses every other
+  browser on every channel from the moment a pairing is live, and the finish
+  step refuses while any other live pairing exists.
+
 ### Added
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
@@ -84,8 +92,8 @@ First release. Everything below is new.
   credential; optional image text extraction and voice-note transcription
   through OpenRouter, off until you save a key, with a daily cap and per-item
   cost recorded.
-- **Telegram without credentials is said, not waited for.** The project ships
-  no Telegram application pair yet; on a deploy without `TELEGRAM_API_ID` and
+- **Telegram without credentials is said, not waited for.** At 0.1.0 the
+  project shipped no Telegram application pair (it does now, above); on a deploy without `TELEGRAM_API_ID` and
   `TELEGRAM_API_HASH`, Setup, Connections and the recovery page show Telegram
   as *Not available* with the two variable names on the card, and no pairing
   row is written for it. WhatsApp is unaffected.
@@ -169,8 +177,8 @@ First release. Everything below is new.
 - One instance is one person. There is no multi-user mode, no sharing, and no
   hosted tier.
 - There is no rate limit on login. Key entropy is the control.
-- The project ships no Telegram application pair yet, so Telegram needs a pair
-  from my.telegram.org until one is registered.
+- At 0.1.0 the project shipped no Telegram application pair, so Telegram
+  needed one from my.telegram.org. Lifted in the next release, above.
 
 [Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.1.0
