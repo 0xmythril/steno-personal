@@ -137,9 +137,12 @@ export default async function ConnectionsPage() {
             <h2>Connect your agent</h2>
             <p className="muted">
               An account is connected, so the archive is filling in. Next, let an agent read it: make an access
-              key under <Link href="/settings">Settings</Link>, one per agent, and copy the setup instructions
-              there. An agent only ever reads, and a key is revoked in the same place.
+              key under Settings, one per agent, and copy the setup instructions there. An agent only ever
+              reads, and a key is revoked in the same place.
             </p>
+            <div className="actions">
+              <Link href="/settings" className="btn primary">Connect an agent</Link>
+            </div>
           </section>
         )}
 

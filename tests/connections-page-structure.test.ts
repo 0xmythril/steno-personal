@@ -58,7 +58,8 @@ describe('connections page', () => {
     // sent to make a key for nothing.
     const src = readFileSync('app/connections/page.tsx', 'utf8')
     expect(src).toMatch(/Connect your agent/)
-    expect(src).toMatch(/href="\/settings"/)
+    // A button, not a word in a sentence: the way on is the one control here.
+    expect(src).toMatch(/href="\/settings" className="btn primary">Connect an agent/)
     const pointer = src.slice(src.indexOf('Connect your agent') - 400, src.indexOf('Connect your agent'))
     expect(pointer).toMatch(/anyLive/)
   })
