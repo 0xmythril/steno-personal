@@ -127,8 +127,8 @@ export default async function SetupPage() {
   return (
     <main>
       <div className="page-head">
-        <div>
-          <span className="brand" style={{ marginBottom: 10 }}><BrandLogo size={24} /><Wordmark /></span>
+        <div className="brand-head">
+          <span className="brand"><BrandLogo size={24} /><Wordmark /></span>
           <h1>This instance has no owner yet</h1>
         </div>
       </div>

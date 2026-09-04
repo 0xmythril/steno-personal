@@ -185,6 +185,10 @@ Favicon: the same paths on a rounded square with literal hex values, palette inv
 
 The one icon in the interface. A person and a key, drawn in `currentColor` strokes at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px. It does not license a general icon set; see Known Gaps.
 
+### Note chip
+
+`.chip.note`: transparent, hairline border, `muted` text, no dot. A provenance label — where a name came from, not how something is doing — so it takes none of the status colours and none of their dots. Used for *Auto* and *alias* on People. An eyebrow is a section label and is never a badge on a row; a badge whose meaning lives only in a `title` attribute is unreachable on touch, so the meaning goes in a `.help` line beside the table instead.
+
 ### Confirm
 
 Anything that cannot be undone opens its consequence before it can be pressed. A `<details class="confirm">`, so it needs no JavaScript and no dialog: the summary is an *outlined* danger control that only opens, and the button inside the `bad-soft` body is the *filled* one that acts. Outline opens, fill acts — that pairing is the whole grammar.
@@ -254,6 +258,8 @@ Don't
 - Touch targets stay at least 36px tall outside tables.
 
 ## Iteration Guide
+
+`tests/design-system-adoption.test.ts` sweeps every view for the promises this file makes: tables wrapped so they scroll inside their own container, controls labelled with `.field` rather than a bare `<label>`, siblings spaced with `gap` rather than an inline margin, the eyebrow used as a section label rather than a badge, and every irreversible action behind a `details.confirm`. It names no file, so a new screen is held to the same bar as the ones already here.
 
 When adding a screen, start from the shell (nav, page, footer) and reuse the components above. If a new component is needed, derive it from a card or a row rather than inventing a new surface. Any new colour must be a tint of an existing token and must be added to `tests/design-tokens.test.ts`. Any new typeface is out of scope. When in doubt, remove one thing.
 

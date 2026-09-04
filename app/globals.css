@@ -94,7 +94,10 @@ button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
 td button, td .btn, .attachment .btn { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
 a.btn:hover { text-decoration: none; }
-form.inline { display: inline-flex; align-items: center; gap: 8px; }
+form.inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+/* A native select sizes to its widest option. Without this an identity picker
+   whose options run to 70 characters scrolls the page on a phone. */
+form.inline select, .row select { min-width: 0; max-width: 100%; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; }
   button, .btn, nav.top .links a, .chip { transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease; } }
@@ -111,6 +114,9 @@ a.chip:hover { text-decoration: none; }
 /* A filter is a link, so it reads as pine on an edge — never as `off`, which
    DESIGN.md reserves for a status and which draws a dot that means nothing on
    a control. The ::after restores a 36px touch target over a 22px chip. */
+/* A provenance label — where a name came from — is not a status, so it takes
+   no dot and none of the status colours. */
+.chip.note { background: transparent; border: 1px solid var(--hairline); color: var(--muted); }
 a.chip.filter { background: transparent; border: 1px solid var(--edge); color: var(--pine); position: relative; }
 a.chip.filter:hover { background: var(--well); }
 a.chip.filter::after { content: ""; position: absolute; inset: -7px 0; }
@@ -210,7 +216,9 @@ td.end { text-align: right; white-space: nowrap; }
    page read as one undifferentiated stack. */
 .login { width: 100%; max-width: 440px; margin: clamp(24px, 7vh, 56px) auto 0; display: flex; flex-direction: column; gap: 28px; }
 .login h1 { font-size: 28px; line-height: 1.15; }
-.login-head { display: flex; flex-direction: column; gap: 14px; }
+/* A mark above a heading. Shared by the login and setup headers, which is
+   why it is not scoped to .login. */
+.brand-head { display: flex; flex-direction: column; gap: 14px; }
 /* The two ways in are one part of the page, so they sit closer to each other
    than the page's parts sit to one another. */
 .login-ways { display: flex; flex-direction: column; gap: 18px; }
