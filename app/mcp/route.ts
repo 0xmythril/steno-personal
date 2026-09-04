@@ -87,6 +87,7 @@ const getMessagesInput = z.object({
 const recentInput = z.object({
   channel: channel.optional(),
   kind: kind.optional(),
+  include_channels: z.boolean().optional(),
   limit: limit.optional(),
   cursor: z.string().optional(),
   before: timestamp.optional(),
@@ -164,9 +165,10 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        'The inbox: the newest messages across every chat, each with the chat it came from (chatId, chatTitle, channel, ' +
-        'kind). Optionally one channel or one kind of chat, and before/after as ISO-8601 timestamps. Twenty per page; ' +
-        'pass nextCursor back to go further back in time. ' +
+        'The inbox: the newest messages across your direct chats and groups, each with the chat it came from (chatId, ' +
+        'chatTitle, channel, kind). Broadcast channels are left out unless you pass include_channels or kind: channel. ' +
+        'Optionally one channel or one kind of chat, and before/after as ISO-8601 timestamps. Twenty per page; pass ' +
+        'nextCursor back to go further back in time. ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
@@ -177,6 +179,7 @@ const handler = createMcpHandler(server => {
       const out = await recentMessages({
         channel: args.channel,
         kind: args.kind,
+        includeChannels: args.include_channels,
         limit: args.limit,
         cursor: args.cursor,
         before: toDate(args.before),

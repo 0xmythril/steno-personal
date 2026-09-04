@@ -507,14 +507,20 @@ const chatColumns = {
 
 // The inbox: the newest messages across every chat, or one channel or kind of
 // chat, each line naming the chat it came from. What a person sees when they
-// open the app, and the one-hop answer to "what happened today".
+// open the app, and the one-hop answer to "what happened today" — which is
+// why broadcast channels stay out unless asked for: a Telegram news feed
+// posts more than every friend put together, and an inbox that is mostly
+// announcements is not an inbox. Ask for kind: 'channel' or includeChannels
+// and they are there.
 export async function recentMessages(opts: {
-  channel?: ChatChannel; kind?: ChatKind; limit?: number; cursor?: string; before?: Date; after?: Date
+  channel?: ChatChannel; kind?: ChatKind; includeChannels?: boolean
+  limit?: number; cursor?: string; before?: Date; after?: Date
 } = {}): Promise<{ messages: MessageInChat[]; nextCursor: string | null }> {
   const limit = clampLimit(opts.limit, DEFAULT_RECENT_LIMIT)
   const conds = messagePageConds(opts)
   if (opts.channel) conds.push(eq(chats.channel, opts.channel))
   if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+  else if (!opts.includeChannels) conds.push(sql`${chats.kind} <> 'channel'`)
 
   const rows = await db.select({ ...messageSelection, ...chatColumns }).from(messages)
     .innerJoin(chats, eq(chats.id, messages.chatId))

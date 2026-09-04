@@ -151,6 +151,22 @@ describe('pageChats — the aimed chat list', () => {
 describe('recentMessages — the inbox', () => {
   beforeEach(resetDb)
 
+  it('leaves broadcast channels out unless asked, the way a person opens their inbox', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const dm = await chatAt(tg, 'Mum', '2026-01-01T00:00:00Z')
+    const group = await chatAt(tg, 'Team', '2026-01-02T00:00:00Z', { kind: 'group' })
+    const feed = await chatAt(tg, 'Announcements', '2026-01-03T00:00:00Z', { kind: 'channel' })
+
+    const ids = (o: { messages: Array<{ chatId: string }> }) => o.messages.map(m => m.chatId)
+    // The default is what a person sees when they open the app: their
+    // conversations, not the announcement firehose beside them.
+    expect(ids(await recentMessages())).toEqual([group.id, dm.id])
+    expect(ids(await recentMessages({ includeChannels: true }))).toEqual([feed.id, group.id, dm.id])
+    // Asking for a kind is asking for it.
+    expect(ids(await recentMessages({ kind: 'channel' }))).toEqual([feed.id])
+    expect(ids(await recentMessages({ kind: 'dm' }))).toEqual([dm.id])
+  })
+
   it('lists the newest messages across every chat, with the chat named on each line', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     const wa = await makeConnection({ channel: 'whatsapp' })
@@ -461,6 +477,18 @@ describe('the MCP surface', () => {
     const row = await makeMedia(pic.id, conn.id, { mimeType: 'image/png', status: 'pending' })
     const out = JSON.parse(await callTool(await agentKey(), 'get_media', { media_id: row.id })) as { status: string; url: string | null }
     expect(out).toMatchObject({ status: 'pending', url: null })
+  })
+
+  it('recent_messages leaves channels out by default and takes include_channels', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    await chatAt(tg, 'Mum', '2026-01-01T00:00:00Z')
+    await chatAt(tg, 'Announcements', '2026-01-02T00:00:00Z', { kind: 'channel' })
+    const key = await agentKey()
+    const titles = async (args: Record<string, unknown>) =>
+      (JSON.parse(await callTool(key, 'recent_messages', args)) as { messages: Array<{ chatTitle: string }> }).messages.map(m => m.chatTitle)
+    expect(await titles({})).toEqual(['Mum'])
+    expect(await titles({ include_channels: true })).toEqual(['Announcements', 'Mum'])
+    expect(await titles({ kind: 'channel' })).toEqual(['Announcements'])
   })
 
   it('list_people takes q and names each person’s chats', async () => {

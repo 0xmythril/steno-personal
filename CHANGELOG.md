@@ -31,6 +31,9 @@ All notable changes to this project are documented here. The format follows
   Pass `include_chats` for the full chat list. Agents reading the old bare
   array must update. A contact whose name has no letter or digit in it (`'`,
   `…`) no longer becomes a person.
+- **`recent_messages`** leaves broadcast channels out unless `include_channels`
+  or `kind: channel` is passed: an inbox that is mostly announcements is not
+  an inbox.
 - **Sender names** are resolved once per sender on every read path: the
   address-book name, then the push name, then the latest push name that
   sender ever carried, then the contact list. One person reads the same in

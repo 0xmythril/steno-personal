@@ -118,8 +118,9 @@ anything.
   substring of the title, and pages twenty at a time with a cursor and a
   `total`; each chat carries a snippet of its latest message and the
   `connectionId` that `whoami` reports.
-- `recent_messages` is the inbox: the newest messages across every chat, or
-  one channel or kind, each naming the chat it came from.
+- `recent_messages` is the inbox: the newest messages across your direct
+  chats and groups, or one channel or kind, each naming the chat it came
+  from. Broadcast channels stay out unless you pass `include_channels`.
 - `search_messages` narrows by chat, channel, kind, sender and a date range,
   returns `{hits, nextCursor}` fifty at a time, and orders by relevance for a
   bare query or newest first when a date bound is given; `order` picks.
