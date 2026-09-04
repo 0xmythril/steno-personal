@@ -7,6 +7,8 @@ import {
 import { searchIndex } from '@/lib/db/fts'
 import type { Channel } from '@/lib/channels/port'
 import type { IncomingMessage } from '@/lib/services/ingest'
+import { analysisMedium } from '@/lib/services/media-analysis'
+import { getSettings, type Settings } from '@/lib/services/settings'
 
 // Every read path here excludes tombstoned rows and no view type has a
 // deletedAt field, so a deleted message cannot reach a page, an API response,
@@ -41,11 +43,19 @@ export type ChatSummary = {
 // point: an agent looking at `type: 'image'` must be able to tell "no
 // attachment" from "not downloaded yet" from "never will be".
 export type MediaStatus = 'ready' | 'pending' | 'failed' | 'unavailable'
+// Whether text was, or could be, extracted from the bytes. `extractedText:
+// null` alone meant five things to a reader — no key in Settings, not run
+// yet, nothing found, failed, or a kind of file nothing here analyses — so
+// the state is named. 'off' is the enrichment switch (no OpenRouter key, or
+// the medium's toggle off); 'queued' is a row the worker has not finished;
+// 'unsupported' is a file the pipeline never takes (a PDF, a song).
+export type AnalysisState = 'off' | 'queued' | 'done' | 'failed' | 'skipped' | 'unsupported'
 export type MediaView = {
   id: string | null; status: MediaStatus; url: string | null
   mimeType: string | null; sizeBytes: number | null
   durationSeconds: number | null; isVoiceNote: boolean | null
   extractedText: string | null; description: string | null
+  analysis: AnalysisState
 }
 
 // The message a reply quotes, when the archive has it: enough to read the
@@ -277,6 +287,7 @@ type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo'> & {
 const unavailableMedia = (): MediaView => ({
   id: null, status: 'unavailable', url: null, mimeType: null, sizeBytes: null,
   durationSeconds: null, isVoiceNote: null, extractedText: null, description: null,
+  analysis: 'unsupported',
 })
 
 const toView = ({ personId, personName, hasMedia, replyToId, replyToSender, replyToText, ...row }: MessageRow, media?: MediaView): MessageView => ({
@@ -651,26 +662,39 @@ export async function searchMessages(
 const mediaColumns = {
   id: media.id,
   messageId: media.messageId,
+  messageType: messages.type,
   status: media.status,
   mimeType: media.mimeType,
   sizeBytes: media.sizeBytes,
   durationSeconds: media.durationSeconds,
   isVoiceNote: media.isVoiceNote,
+  analysisStatus: mediaAnalysis.status,
   extractedText: mediaAnalysis.extractedText,
   description: mediaAnalysis.description,
 }
 type MediaRowIn = {
-  id: string; messageId: string; status: 'pending' | 'done' | 'failed'
+  id: string; messageId: string; messageType: string; status: 'pending' | 'done' | 'failed'
   mimeType: string | null; sizeBytes: number | null
   durationSeconds: number | null; isVoiceNote: boolean | null
+  analysisStatus: 'pending' | 'done' | 'failed' | 'skipped' | null
   extractedText: string | null; description: string | null
+}
+
+function analysisState(r: MediaRowIn, settings: Settings): AnalysisState {
+  if (r.analysisStatus === 'done' || r.analysisStatus === 'failed' || r.analysisStatus === 'skipped') return r.analysisStatus
+  const medium = analysisMedium(r)
+  if (medium === null) return 'unsupported'
+  const on = settings.hasOpenrouterKey && (medium === 'image' ? settings.analyzeImages : settings.analyzeAudio)
+  return on ? 'queued' : 'off'
 }
 
 // The url exists only for bytes /media/[id] will actually serve — the same
 // `done` condition that route checks — so a transcript never links to a file
-// that is not there.
-function toMediaView(r: MediaRowIn): MediaView {
+// that is not there. Extracted text is shown only from a done analysis row:
+// a pending, failed or skipped one still comes back, as its state.
+function toMediaView(r: MediaRowIn, settings: Settings): MediaView {
   const ready = r.status === 'done'
+  const analysed = r.analysisStatus === 'done'
   return {
     id: r.id,
     status: r.status === 'done' ? 'ready' : r.status,
@@ -679,28 +703,28 @@ function toMediaView(r: MediaRowIn): MediaView {
     sizeBytes: r.sizeBytes,
     durationSeconds: r.durationSeconds,
     isVoiceNote: r.isVoiceNote,
-    extractedText: r.extractedText ?? null,
-    description: r.description ?? null,
+    extractedText: analysed ? r.extractedText ?? null : null,
+    description: analysed ? r.description ?? null : null,
+    analysis: analysisState(r, settings),
   }
 }
 
-// The status is part of the JOIN, not a WHERE clause: a media row with a
-// pending, failed or skipped analysis must still come back, just without
-// extracted text. Stating it here means this query no longer depends on
-// "extracted_text is only ever written on a done row" holding elsewhere.
-const doneAnalysis = and(eq(mediaAnalysis.mediaId, media.id), eq(mediaAnalysis.status, 'done'))
-
 // One query for a whole page's attachments, so a 100-message transcript costs
 // two round trips rather than 101. Every row comes back whatever its state;
-// toMediaView decides what each state may say.
+// toMediaView decides what each state may say. The message is joined for its
+// type, which the analysis predicate needs; settings are read once per page.
 export async function mediaForMessages(messageIds: string[]): Promise<Map<string, MediaView>> {
   const out = new Map<string, MediaView>()
   if (messageIds.length === 0) return out
-  const rows = await db.select(mediaColumns)
-    .from(media)
-    .leftJoin(mediaAnalysis, doneAnalysis)
-    .where(inArray(media.messageId, messageIds))
-  for (const r of rows) out.set(r.messageId, toMediaView(r))
+  const [rows, settings] = await Promise.all([
+    db.select(mediaColumns)
+      .from(media)
+      .innerJoin(messages, eq(messages.id, media.messageId))
+      .leftJoin(mediaAnalysis, eq(mediaAnalysis.mediaId, media.id))
+      .where(inArray(media.messageId, messageIds)),
+    getSettings(),
+  ])
+  for (const r of rows) out.set(r.messageId, toMediaView(r, settings))
   return out
 }
 
@@ -713,9 +737,9 @@ export async function mediaView(id: string): Promise<MediaDetail | null> {
   const [r] = await db.select({ ...mediaColumns, chatId: messages.chatId, sentAt: messages.sentAt })
     .from(media)
     .innerJoin(messages, and(eq(messages.id, media.messageId), isNull(messages.deletedAt)))
-    .leftJoin(mediaAnalysis, doneAnalysis)
+    .leftJoin(mediaAnalysis, eq(mediaAnalysis.mediaId, media.id))
     .where(eq(media.id, id))
     .limit(1)
   if (!r) return null
-  return { ...toMediaView(r), id: r.id, messageId: r.messageId, chatId: r.chatId, sentAt: r.sentAt }
+  return { ...toMediaView(r, await getSettings()), id: r.id, messageId: r.messageId, chatId: r.chatId, sentAt: r.sentAt }
 }

@@ -125,7 +125,9 @@ anything.
 - `get_media` returns one attachment by its `media.id`: a ready image up to
   3 MiB comes back as image content the agent can look at, anything else as
   metadata plus the `/media/<id>` path. Every message with an attachment says
-  whether its bytes are ready, pending, failed or unavailable.
+  whether its bytes are ready, pending, failed or unavailable, and its
+  `analysis` says whether text extraction is off, queued, done, failed,
+  skipped or unsupported.
 - `list_people` takes `q`, pages fifty at a time with a cursor, and lists each
   person with the ids of their direct chats; pass `include_chats` for every
   chat they appear in.

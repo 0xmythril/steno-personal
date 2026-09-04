@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **`media.analysis`** on every attachment: off, queued, done, failed, skipped
+  or unsupported, so an agent can tell "no key in Settings" from "not run
+  yet" from "nothing found".
+
 ### Changed
 - **`search_messages`** returns `{hits, nextCursor}` and pages fifty at a
   time. Order is relevance for a bare query and newest first when a date

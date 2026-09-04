@@ -4,7 +4,8 @@ import { db } from '@/lib/db/client'
 import { media, mediaAnalysis, messages } from '@/lib/db/schema'
 import { resetDb } from './helpers/db'
 import { makeAttachment } from './helpers/media-fixtures'
-import { getMessages, searchMessages } from '@/lib/services/queries'
+import { getMessages, mediaView, searchMessages } from '@/lib/services/queries'
+import { updateSettings } from '@/lib/services/settings'
 
 async function analysed(text: string) {
   const fixture = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'a.jpg' })
@@ -38,7 +39,7 @@ describe('MessageView.media', () => {
     expect(page!.messages[0].media).toEqual({
       id: fixture.media.id, status: 'ready', url: `/media/${fixture.media.id}`,
       mimeType: 'image/jpeg', sizeBytes: null, durationSeconds: null, isVoiceNote: null,
-      extractedText: null, description: null,
+      extractedText: null, description: null, analysis: 'off',
     })
   })
 
@@ -57,6 +58,49 @@ describe('MessageView.media', () => {
     const page = await getMessages(fixture.chat.id)
     // The attachment itself still comes back — only its text is withheld.
     expect(page!.messages[0].media).toMatchObject({ id: fixture.media.id, extractedText: null })
+  })
+
+  it('says whether analysis is off, queued, done, failed, skipped or unsupported', async () => {
+    // extractedText: null on a ready image meant five different things to a
+    // tester — no key in Settings, not run yet, nothing found, failed — and
+    // they could not tell which. Now the state is named.
+    const state = async (chatId: string) => (await getMessages(chatId))!.messages[0].media!.analysis
+    const image = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'a.jpg' })
+    expect(await state(image.chat.id)).toBe('off')
+    await updateSettings({ openrouterKey: 'sk-test', analyzeImages: true, analyzeAudio: false })
+    expect(await state(image.chat.id)).toBe('queued')
+    await updateSettings({ analyzeImages: false })
+    expect(await state(image.chat.id)).toBe('off')
+    await updateSettings({ analyzeImages: true })
+
+    await db.insert(mediaAnalysis).values({ mediaId: image.media.id, medium: 'image' })
+    expect(await state(image.chat.id)).toBe('queued')
+    for (const status of ['done', 'failed', 'skipped'] as const) {
+      await db.update(mediaAnalysis).set({ status }).where(eq(mediaAnalysis.mediaId, image.media.id))
+      expect(await state(image.chat.id)).toBe(status)
+    }
+    // A finished row stays what it is even after the switch is turned off.
+    await db.update(mediaAnalysis).set({ status: 'done' }).where(eq(mediaAnalysis.mediaId, image.media.id))
+    await updateSettings({ analyzeImages: false })
+    expect(await state(image.chat.id)).toBe('done')
+
+    // Nothing analyses a PDF yet, whatever the settings say.
+    const pdf = await makeAttachment({ type: 'document', mimeType: 'application/pdf', status: 'done', storagePath: 'd.pdf' })
+    expect(await state(pdf.chat.id)).toBe('unsupported')
+    // A voice note within the cap is transcribable; audio that is not a
+    // voice note, or is too long, is not.
+    const note = await makeAttachment({ type: 'audio', mimeType: 'audio/ogg', status: 'done', storagePath: 'v.ogg', isVoiceNote: true, durationSeconds: 30 })
+    expect(await state(note.chat.id)).toBe('off')
+    await updateSettings({ analyzeAudio: true })
+    expect(await state(note.chat.id)).toBe('queued')
+    const song = await makeAttachment({ type: 'audio', mimeType: 'audio/mpeg', status: 'done', storagePath: 's.mp3', isVoiceNote: false, durationSeconds: 30 })
+    expect(await state(song.chat.id)).toBe('unsupported')
+    const long = await makeAttachment({ type: 'audio', mimeType: 'audio/ogg', status: 'done', storagePath: 'l.ogg', isVoiceNote: true, durationSeconds: 601 })
+    expect(await state(long.chat.id)).toBe('unsupported')
+
+    // get_media's view says the same thing.
+    expect((await mediaView(pdf.media.id))!.analysis).toBe('unsupported')
+    expect((await mediaView(image.media.id))!.analysis).toBe('done')
   })
 
   it('fills media on search hits too', async () => {

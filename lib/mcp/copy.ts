@@ -20,7 +20,9 @@ export const NO_CONNECTION = 'No personal account is connected.'
 export const MEDIA_URL_NOTE =
   'When a message has an attachment, media.status says whether its bytes are ready, still pending, failed, or '
   + 'unavailable; only a ready one has media.url, a path on this same server — the origin this MCP endpoint is served '
-  + 'from — fetched with the same bearer key, and get_media returns a ready image inline by its media.id.'
+  + 'from — fetched with the same bearer key, and get_media returns a ready image inline by its media.id. '
+  + 'media.analysis says whether text was extracted from it: off (no enrichment key or switch in Settings), queued, '
+  + 'done, failed, skipped, or unsupported (documents are not analysed yet).'
 
 // Chats and messages can carry a `person`, and an agent that has only ever
 // seen channel ids needs to be told what that field is before it starts
