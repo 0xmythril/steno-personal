@@ -7,17 +7,19 @@ import { startRecovery } from '@/lib/services/recovery'
 import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
 
-// A one-click deploy ships without a Telegram application pair until the
-// project registers one. Before this guard, choosing Telegram on a fresh
-// instance wrote a pending row that no worker would ever answer, and the
-// reader sat on "waiting for a login code" for good. Now the pages say so
-// up front and no pending row is written for a channel that cannot pair.
+// The project ships a registered Telegram pair, so a deploy that sets
+// nothing can pair Telegram. A fork that strips the pair, or a host that
+// sets TELEGRAM_API_ID=0, runs without it — and before this guard that
+// deploy let the reader choose Telegram on a fresh instance, wrote a pending
+// row no worker would ever answer, and left them on "waiting for a login
+// code" for good. Now the pages say so up front and no row is written.
 
 function withTelegramUnset(fn: () => Promise<void>) {
   return async () => {
     const id = process.env.TELEGRAM_API_ID
     const hash = process.env.TELEGRAM_API_HASH
-    delete process.env.TELEGRAM_API_ID
+    // Blank falls back to the shipped pair; 0 is the explicit opt-out.
+    process.env.TELEGRAM_API_ID = '0'
     delete process.env.TELEGRAM_API_HASH
     _resetEnvCacheForTests()
     try {
@@ -41,6 +43,12 @@ describe('Telegram credentials', () => {
   it('telegramConfigured() reads the environment', async () => {
     expect(telegramConfigured()).toBe(true)
     await withTelegramUnset(async () => { expect(telegramConfigured()).toBe(false) })()
+  })
+
+  it('the shipped defaults are a real pair, so a bare deploy is configured', () => {
+    const src = readFileSync('lib/channels/telegram-defaults.ts', 'utf8')
+    expect(src).toMatch(/TELEGRAM_DEFAULT_API_ID = [1-9][0-9]+/)
+    expect(src).toMatch(/TELEGRAM_DEFAULT_API_HASH = '[0-9a-f]{32}'/)
   })
 
   it('the worker decides on the same predicate', () => {
