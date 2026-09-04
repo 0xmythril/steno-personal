@@ -18,8 +18,9 @@ export const NO_CONNECTION = 'No personal account is connected.'
 // unless it is told what to resolve it against. Said once, here, and appended
 // to both message-returning tools.
 export const MEDIA_URL_NOTE =
-  'When a message has an attachment, media.url is a path on this same server — the origin this MCP endpoint '
-  + 'is served from — and is fetched with the same bearer key.'
+  'When a message has an attachment, media.status says whether its bytes are ready, still pending, failed, or '
+  + 'unavailable; only a ready one has media.url, a path on this same server — the origin this MCP endpoint is served '
+  + 'from — fetched with the same bearer key, and get_media returns a ready image inline by its media.id.'
 
 // Chats and messages can carry a `person`, and an agent that has only ever
 // seen channel ids needs to be told what that field is before it starts
@@ -31,6 +32,7 @@ export const PERSON_NOTE =
   + "address book; the id is this instance's own, usable only with list_people."
 
 export const CHAT_NOT_FOUND = 'Chat not found.'
+export const MEDIA_NOT_FOUND = 'Media not found.'
 
 // What a tool answers when something inside it throws. Never the thrown
 // message: drizzle puts the SQL and its bound parameters in there, and the

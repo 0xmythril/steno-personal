@@ -35,10 +35,10 @@ describe('MCP bearer auth', () => {
     expect((await POST(mcpRequest(minted.rawKey, body))).status).toBe(401)
   })
 
-  it('lists exactly the five read tools for a valid key', async () => {
+  it('lists exactly the seven read tools for a valid key', async () => {
     const key = await agentKey()
     expect((await listTools(key)).map(t => t.name).sort())
-      .toEqual(['get_messages', 'list_chats', 'list_people', 'search_messages', 'whoami'])
+      .toEqual(['get_media', 'get_messages', 'list_chats', 'list_people', 'recent_messages', 'search_messages', 'whoami'])
   })
 })
 
@@ -93,7 +93,7 @@ describe('content tools with nothing to serve', () => {
     await seedMessage(chat, { text: 'call me back' })
     const key = await agentKey()
 
-    const chats = JSON.parse(await callTool(key, 'list_chats')) as Array<{ id: string; title: string | null }>
+    const { chats } = JSON.parse(await callTool(key, 'list_chats')) as { chats: Array<{ id: string; title: string | null }> }
     expect(chats.map(c => c.title)).toEqual(['Mum'])
     const transcript = JSON.parse(await callTool(key, 'get_messages', { chat_id: chat })) as {
       messages: Array<{ text: string | null }>
@@ -110,9 +110,9 @@ describe('content tools with an archive', () => {
     const conn = await seedConnection()
     const chat = await seedChat(conn, { title: 'Mum', kind: 'dm' })
     await seedMessage(chat, { text: 'call me back' })
-    const out = JSON.parse(await callTool(await agentKey(), 'list_chats')) as Array<{
+    const { chats: out } = JSON.parse(await callTool(await agentKey(), 'list_chats')) as { chats: Array<{
       id: string; title: string | null; kind: string; messageCount: number
-    }>
+    }> }
     expect(out).toHaveLength(1)
     expect(out[0]).toMatchObject({ id: chat, title: 'Mum', kind: 'dm', messageCount: 1 })
   })
@@ -170,7 +170,7 @@ describe('content tools with an archive', () => {
     // two, so this drives a real failure through it.
     const conn = await seedConnection()
     await seedChat(conn, { title: 'Mum' })
-    const spy = vi.spyOn(queries, 'listChats').mockRejectedValue(
+    const spy = vi.spyOn(queries, 'pageChats').mockRejectedValue(
       new Error('Failed query: select "title" from "chats"\nparams: ["SECRET"]'),
     )
     try {
@@ -224,6 +224,7 @@ describe('list_people', () => {
     expect(JSON.parse(out)).toEqual([{
       id, name: 'Ada', notes: 'from the archive',
       channels: ['telegram', 'whatsapp'], chatCount: 1,
+      chats: [{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }],
     }])
     expect(out).not.toContain('+447700900123')
     expect(out).not.toContain('@s.whatsapp.net')

@@ -207,7 +207,10 @@ describe('REST routes serve the same data as the MCP tools', () => {
     expect(res.status).toBe(200)
     const text = await res.text()
     expect(JSON.parse(text)).toEqual({
-      people: [{ id, name: 'Ada', notes: 'from the archive', channels: ['telegram', 'whatsapp'], chatCount: 1 }],
+      people: [{
+        id, name: 'Ada', notes: 'from the archive', channels: ['telegram', 'whatsapp'], chatCount: 1,
+        chats: [{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }],
+      }],
     })
     expect(text).not.toContain('+447700900123')
     expect(text).not.toContain('@s.whatsapp.net')
