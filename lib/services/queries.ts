@@ -27,6 +27,11 @@ export const CHAT_KINDS: readonly ChatKind[] = ['dm', 'group', 'channel']
 export type ChatSummary = {
   id: string; channel: Channel; kind: ChatKind
   title: string | null; lastMessageAt: Date | null; messageCount: number
+  // A re-paired account makes a second row for every chat it re-syncs: same
+  // title, different id and count. These two tell such rows apart, and
+  // connectionId is the id whoami reports — this instance's own uuid, never
+  // the account identifier.
+  createdAt: Date; connectionId: string
   person: PersonRef | null
   // The latest live non-system message, cut to SNIPPET_CHARS: enough to tell
   // an agent what a chat is about without opening it. A textless message
@@ -178,6 +183,7 @@ const activityAt = sql<number>`coalesce(${chats.lastMessageAt}, ${chats.createdA
 const chatSelection = {
   id: chats.id, channel: chats.channel, kind: chats.kind,
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
+  createdAt: chats.createdAt, connectionId: chats.connectionId,
   personId: dmPersonId, personName: dmPersonName,
   snippet: latestSnippet, activityAt: nested(activityAt),
 }
@@ -341,13 +347,18 @@ export type ChatFilters = {
 // portal, which renders every chat on one page.
 export async function pageChats(
   opts: ChatFilters & { limit?: number; cursor?: string } = {},
-): Promise<{ chats: ChatSummary[]; nextCursor: string | null }> {
+): Promise<{ chats: ChatSummary[]; nextCursor: string | null; total: number }> {
   const limit = clampLimit(opts.limit, DEFAULT_CHAT_LIMIT)
   const conds: SQL[] = []
   if (opts.channel) conds.push(eq(chats.channel, opts.channel))
   if (opts.kind) conds.push(eq(chats.kind, opts.kind))
   const q = opts.q?.trim()
   if (q) conds.push(like(displayTitle, q))
+  // How many match the filters — the whole set, not the page — so an agent
+  // knows what it is paging through before it starts. Counted before the
+  // cursor narrows the set.
+  const [{ total }] = await db.select({ total: sql<number>`count(*)` }).from(chats)
+    .where(conds.length > 0 ? and(...conds) : undefined)
   const cursor = opts.cursor ? decodeCursor(opts.cursor) : null
   if (cursor) {
     const ms = cursor.sentAt.getTime()
@@ -365,7 +376,7 @@ export async function pageChats(
   const nextCursor = rows.length > limit && last
     ? encodeCursor({ sentAt: new Date(last.activityAt), id: last.id })
     : null
-  return { chats: page.map(toSummary), nextCursor }
+  return { chats: page.map(toSummary), nextCursor, total }
 }
 
 async function chatSummary(chatId: string): Promise<ChatSummary | null> {

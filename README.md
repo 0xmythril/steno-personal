@@ -115,8 +115,9 @@ and each declares itself read-only to the client. There is no tool that sends
 anything.
 
 - `list_chats` filters by channel, by kind (dm, group, channel) or by `q`, a
-  substring of the title, and pages twenty at a time with a cursor; each chat
-  carries a snippet of its latest message.
+  substring of the title, and pages twenty at a time with a cursor and a
+  `total`; each chat carries a snippet of its latest message and the
+  `connectionId` that `whoami` reports.
 - `recent_messages` is the inbox: the newest messages across every chat, or
   one channel or kind, each naming the chat it came from.
 - `search_messages` narrows by chat, channel, kind, sender and a date range,

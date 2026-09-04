@@ -123,7 +123,8 @@ const handler = createMcpHandler(server => {
         'The chats archived on this instance, most recently active first: id, channel, kind (dm, group or channel), title, ' +
         'last activity, live message count and a snippet of the latest message. Filter by channel, by kind, or by q — a ' +
         'case-insensitive substring of the title, which for a direct chat is the name of the person in it. Twenty per page; ' +
-        'pass nextCursor back to continue. ' +
+        'pass nextCursor back to continue; total is how many match the filters. Two rows with one title are the same ' +
+        'chat seen through two pairings of the account: connectionId (the id whoami reports) and createdAt tell them apart. ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: listChatsInput,
@@ -277,7 +278,8 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        'The channel accounts connected to this instance: channel, display name and status. Never a phone number. ' +
+        'The channel accounts connected to this instance: id (the connectionId list_chats puts on each chat), channel, ' +
+        'display name and status. Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('whoami', async () => {

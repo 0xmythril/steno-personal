@@ -107,7 +107,10 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
 // contact cache read from that same connection usually holds an entry for
 // the account itself, and that name is used before answering null. The
 // account id is looked up here and never returned.
-export type AgentConnection = { channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
+// `id` is this instance's own connection uuid, the one every chat carries as
+// connectionId — never the account identifier (spec invariant: no channel id
+// on an agent surface).
+export type AgentConnection = { id: string; channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
 
 export async function agentConnections(): Promise<AgentConnection[]> {
   const rows = await db.select({
@@ -140,7 +143,7 @@ export async function agentConnections(): Promise<AgentConnection[]> {
         .limit(1)
       displayName = own?.displayName ?? null
     }
-    out.push({ channel: r.channel, displayName, status: r.status })
+    out.push({ id: r.id, channel: r.channel, displayName, status: r.status })
   }
   return out
 }

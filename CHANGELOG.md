@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **`list_chats`** reports `total` for the filters, and each chat carries
+  `createdAt` and `connectionId`; `whoami` carries the matching `id`, so two
+  rows for one chat after a re-pairing can be told apart.
+- **Replies** carry `replyTo` — the quoted message's id, sender and text —
+  on every message read path.
+- **Mentions** in WhatsApp text (`@<digits>`) are shown as the name the
+  archive knows for that person.
+- **Reactions, polls, locations and contact cards** get a type and a line of
+  text instead of `unknown` with nothing in it.
 - **`media.analysis`** on every attachment: off, queued, done, failed, skipped
   or unsupported, so an agent can tell "no key in Settings" from "not run
   yet" from "nothing found".
@@ -22,6 +31,14 @@ All notable changes to this project are documented here. The format follows
   Pass `include_chats` for the full chat list. Agents reading the old bare
   array must update. A contact whose name has no letter or digit in it (`'`,
   `…`) no longer becomes a person.
+- **Sender names** are resolved once per sender on every read path: the
+  address-book name, then the push name, then the latest push name that
+  sender ever carried, then the contact list. One person reads the same in
+  every chat.
+- **Chat snippets** show a placeholder (`[image]`, `Reacted 👍`) instead of
+  nothing when the latest message has no text, and skip system rows.
+- **`whoami`** names a WhatsApp account from the push name on the owner's
+  own messages when the socket gave none.
 - **Merge suggestions** on the People page now say which row is on Telegram
   and which on WhatsApp, which one is kept, and how many chats each carries.
 

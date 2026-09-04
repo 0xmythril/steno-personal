@@ -49,6 +49,30 @@ describe('pageChats — the aimed chat list', () => {
     expect(ids(await pageChats({ channel: 'telegram', kind: 'group' }))).toEqual([])
   })
 
+  it('reports how many chats match the filters, and tells two rows for one chat apart', async () => {
+    const tg = await makeConnection({ channel: 'telegram' })
+    const wa = await makeConnection({ channel: 'whatsapp' })
+    await chatAt(tg, 'TG DM', '2026-01-01T00:00:00Z')
+    await chatAt(wa, 'WA DM', '2026-01-02T00:00:00Z')
+    const group = await chatAt(wa, 'WA Group', '2026-01-03T00:00:00Z', { kind: 'group' })
+
+    // total counts every match, not the page.
+    const page = await pageChats({ limit: 1 })
+    expect(page.chats).toHaveLength(1)
+    expect(page.total).toBe(3)
+    expect((await pageChats({ kind: 'group' })).total).toBe(1)
+    expect((await pageChats({ channel: 'whatsapp', limit: 1, cursor: page.nextCursor! })).total).toBe(2)
+    expect((await pageChats({ q: 'nothing' })).total).toBe(0)
+
+    // A re-paired account makes a second row for every chat: same title,
+    // different id and count. connectionId and createdAt are what tell them
+    // apart, and connectionId is the id whoami reports.
+    const summary = page.chats[0]
+    expect(summary).toMatchObject({ id: group.id, connectionId: wa.id })
+    expect(summary.createdAt).toBeInstanceOf(Date)
+    expect(JSON.stringify(summary)).not.toContain('acct-')
+  })
+
   it('matches q against the displayed title, case-insensitively, with LIKE wildcards taken literally', async () => {
     const conn = await makeConnection({ channel: 'whatsapp' })
     const air = await chatAt(conn, 'Air Asia flight', '2026-01-01T00:00:00Z')

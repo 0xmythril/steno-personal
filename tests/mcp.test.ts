@@ -53,13 +53,28 @@ describe('whoami', () => {
     await seedConnection({ channel: 'telegram', displayName: 'Alex' })
     await seedConnection({ channel: 'whatsapp', displayName: 'Alex on WhatsApp', status: 'revoked' })
     const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as {
-      connections: Array<{ channel: string; displayName: string | null; status: string }>
+      connections: Array<{ channel: string; displayName: string | null; status: string; id: string }>
     }
     expect(out.connections).toHaveLength(2)
     expect(out.connections.map(c => [c.channel, c.status]).sort())
       .toEqual([['telegram', 'active'], ['whatsapp', 'revoked']])
-    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,status')).toBe(true)
+    // id is this instance's own connection uuid — the one list_chats puts
+    // on each chat as connectionId — never the account identifier.
+    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,status')).toBe(true)
     expect(JSON.stringify(out)).not.toContain('acct-')
+  })
+
+  it('carries the connection id that list_chats names on each chat', async () => {
+    const conn = await seedConnection({ channel: 'telegram' })
+    const chat = await seedChat(conn, { title: 'Mum' })
+    await seedMessage(chat, { text: 'hi' })
+    const key = await agentKey()
+    const who = JSON.parse(await callTool(key, 'whoami')) as { connections: Array<{ id: string }> }
+    const list = JSON.parse(await callTool(key, 'list_chats')) as { chats: Array<{ connectionId: string; createdAt: string }>; total: number }
+    expect(who.connections[0].id).toBe(conn)
+    expect(list.chats[0].connectionId).toBe(conn)
+    expect(list.total).toBe(1)
+    expect(typeof list.chats[0].createdAt).toBe('string')
   })
 })
 
