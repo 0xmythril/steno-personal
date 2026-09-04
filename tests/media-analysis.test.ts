@@ -183,7 +183,7 @@ describe('analysis drain', () => {
     expect(row.completedAt).toBeInstanceOf(Date)
 
     const { searchMessages } = await import('@/lib/services/queries')
-    const hits = await searchMessages('SUMMIT')
+    const hits = (await searchMessages('SUMMIT')).hits
     expect(hits.map(h => h.id)).toEqual([message.id])
   })
 

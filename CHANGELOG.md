@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **`search_messages`** returns `{hits, nextCursor}` and pages fifty at a
+  time. Order is relevance for a bare query and newest first when a date
+  bound is given; `order: relevance | newest` picks. `GET /api/search` takes
+  the same `order` and `cursor` and adds `nextCursor` beside `results`.
+  Agents reading the old bare array must update.
 - **`list_people`** is paged (`{people, nextCursor}`, fifty per page) and lean
   by default: id, name, notes, channels, chat count and the direct-chat ids.
   Pass `include_chats` for the full chat list. Agents reading the old bare

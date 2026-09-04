@@ -101,6 +101,8 @@ const searchInput = z.object({
   before: timestamp.optional(),
   after: timestamp.optional(),
   limit: limit.optional(),
+  order: z.enum(['relevance', 'newest']).optional(),
+  cursor: z.string().optional(),
 })
 const listPeopleInput = z.object({
   q: z.string().optional(),
@@ -189,9 +191,10 @@ const handler = createMcpHandler(server => {
       annotations: READ_ONLY,
       description:
         'Full-text search across the archive. Every word must match. Narrow it with chat_id, channel, kind, sender ' +
-        '(a substring of the sender as shown: channel name, contact name or address-book name), and before/after as ' +
-        'ISO-8601 timestamps; limit defaults to 50. Each hit names its chat (chatId, chatTitle, channel, kind), best ' +
-        'match first. ' +
+        '(a substring of the sender as shown), and before/after as ISO-8601 timestamps. Returns { hits, nextCursor }: ' +
+        'fifty per page, pass nextCursor back to continue. Order is relevance (best match first) for a bare query and ' +
+        'newest first when before or after is given; pass order to choose. Each hit names its chat (chatId, chatTitle, ' +
+        'channel, kind). ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
@@ -199,7 +202,7 @@ const handler = createMcpHandler(server => {
     },
     guarded('search_messages', async (args: z.infer<typeof searchInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
-      const hits = await searchMessages(args.query, {
+      const out = await searchMessages(args.query, {
         chatId: args.chat_id,
         channel: args.channel,
         kind: args.kind,
@@ -207,8 +210,10 @@ const handler = createMcpHandler(server => {
         before: toDate(args.before),
         after: toDate(args.after),
         limit: args.limit,
+        order: args.order,
+        cursor: args.cursor,
       })
-      return text(hits.map(lean))
+      return text({ hits: out.hits.map(lean), nextCursor: out.nextCursor })
     }),
   )
 

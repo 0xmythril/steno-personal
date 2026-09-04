@@ -61,7 +61,7 @@ describe('MessageView.media', () => {
 
   it('fills media on search hits too', async () => {
     const fixture = await analysed('WEB3 SUMMIT Nov 12')
-    const hits = await searchMessages('SUMMIT')
+    const hits = (await searchMessages('SUMMIT')).hits
     expect(hits).toHaveLength(1)
     expect(hits[0].id).toBe(fixture.message.id)
     expect(hits[0].media).toMatchObject({ url: `/media/${fixture.media.id}`, extractedText: 'WEB3 SUMMIT Nov 12' })

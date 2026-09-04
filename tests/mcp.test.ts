@@ -156,11 +156,19 @@ describe('content tools with an archive', () => {
     await seedMessage(work, { text: 'umbrella corp deck is ready' })
     const key = await agentKey()
 
-    const wide = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella' })) as Array<{ chatId: string }>
-    expect(wide.map(r => r.chatId).sort()).toEqual([mum, work].sort())
+    type Out = { hits: Array<{ chatId: string }>; nextCursor: string | null }
+    const wide = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella' })) as Out
+    expect(wide.hits.map(r => r.chatId).sort()).toEqual([mum, work].sort())
+    expect(wide.nextCursor).toBeNull()
 
-    const scoped = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', chat_id: mum })) as Array<{ chatId: string }>
-    expect(scoped.map(r => r.chatId)).toEqual([mum])
+    const scoped = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', chat_id: mum })) as Out
+    expect(scoped.hits.map(r => r.chatId)).toEqual([mum])
+
+    const paged = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', limit: 1, order: 'newest' })) as Out
+    expect(paged.hits).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
+    const rest = JSON.parse(await callTool(key, 'search_messages', { query: 'umbrella', limit: 1, order: 'newest', cursor: paged.nextCursor! })) as Out
+    expect(rest.hits.map(r => r.chatId)).not.toEqual(paged.hits.map(r => r.chatId))
   })
 
   it('answers a failed query with a fixed sentence, never the query or its parameters', async () => {
@@ -198,7 +206,7 @@ describe('content tools with an archive', () => {
     expect(transcript).toContain('kept')
     expect(transcript).not.toContain('retracted')
     expect(transcript).not.toContain('deletedAt')
-    expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('[]')
+    expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('{"hits":[],"nextCursor":null}')
   })
 })
 

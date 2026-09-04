@@ -514,6 +514,12 @@ function toMatchExpression(query: string): string | null {
   return tokens.map(t => `"${t}"`).join(' ')
 }
 
+// How hits are ordered. Relevance is bm25, best match first, and is the
+// default for a bare query; a query with a date bound is a "what was said
+// then" question, so it defaults to newest first. Either can be asked for.
+export type SearchOrder = 'relevance' | 'newest'
+export const SEARCH_ORDERS: readonly SearchOrder[] = ['relevance', 'newest']
+
 export type SearchOptions = {
   chatId?: string
   channel?: ChatChannel
@@ -524,11 +530,39 @@ export type SearchOptions = {
   before?: Date
   after?: Date
   limit?: number
+  order?: SearchOrder
+  cursor?: string
 }
 
-export async function searchMessages(query: string, opts: SearchOptions = {}): Promise<MessageInChat[]> {
+// A search cursor carries the order it was minted for, so a cursor from a
+// relevance page handed back with order: newest reads as "start at the top"
+// rather than as a keyset in the wrong dimension. Opaque to the caller.
+type SearchCursor = { order: 'relevance'; rank: number; id: string } | { order: 'newest'; ms: number; id: string }
+
+function encodeSearchCursor(c: SearchCursor): string {
+  const raw = c.order === 'relevance' ? `r:${c.rank}:${c.id}` : `t:${c.ms}:${c.id}`
+  return Buffer.from(raw, 'utf8').toString('base64url')
+}
+
+function decodeSearchCursor(cursor: string, order: SearchOrder): SearchCursor | null {
+  const raw = Buffer.from(cursor, 'base64url').toString('utf8')
+  const [tag, num, ...rest] = raw.split(':')
+  const id = rest.join(':')
+  const n = Number(num)
+  if (!Number.isFinite(n) || !id) return null
+  if (tag === 'r' && order === 'relevance') return { order, rank: n, id }
+  if (tag === 't' && order === 'newest') return { order, ms: n, id }
+  return null
+}
+
+export async function searchMessages(
+  query: string, opts: SearchOptions = {},
+): Promise<{ hits: MessageInChat[]; nextCursor: string | null }> {
   const match = toMatchExpression(query)
-  if (!match) return []
+  if (!match) return { hits: [], nextCursor: null }
+  const order: SearchOrder = opts.order ?? (opts.before || opts.after ? 'newest' : 'relevance')
+  const limit = clampLimit(opts.limit, DEFAULT_SEARCH_LIMIT)
+  const cursor = opts.cursor ? decodeSearchCursor(opts.cursor, order) : null
 
   const conds = [sql`search_index MATCH ${match}`, isNull(messages.deletedAt)]
   if (opts.chatId) conds.push(eq(messages.chatId, opts.chatId))
@@ -552,6 +586,7 @@ export async function searchMessages(query: string, opts: SearchOptions = {}): P
   const ranked = db.select({
     messageId: searchIndex.messageId,
     rank: sql<number>`bm25(search_index)`.as('rank'),
+    sentAt: sql<number>`${messages.sentAt}`.as('sent_at'),
   }).from(searchIndex)
     .innerJoin(messages, eq(messages.id, searchIndex.messageId))
     .innerJoin(chats, eq(chats.id, messages.chatId))
@@ -564,30 +599,53 @@ export async function searchMessages(query: string, opts: SearchOptions = {}): P
   // from M4 onwards (its own text plus each attachment's extracted text), so
   // group to one hit per message and rank it by its best-matching row. bm25
   // is more negative the better the match, hence ascending. This is where the
-  // page is cut. An aggregate subquery under a join is not flattened by
-  // SQLite, so the LIMIT here really does bound what the outer query touches.
+  // page is cut, one row over so the caller learns whether there is more. The
+  // keyset for a cursor sits in HAVING because both sort keys are aggregates
+  // (sent_at is constant per message; max() is only how it passes the GROUP
+  // BY). An aggregate subquery under a join is not flattened by SQLite, so
+  // the LIMIT here really does bound what the outer query touches.
+  const bestRank = sql<number>`min(${ranked.rank})`
+  const bestSent = sql<number>`max(${ranked.sentAt})`
+  const keyset = cursor === null
+    ? undefined
+    : cursor.order === 'relevance'
+      ? sql`${bestRank} > ${cursor.rank} or (${bestRank} = ${cursor.rank} and ${ranked.messageId} > ${cursor.id})`
+      : sql`${bestSent} < ${cursor.ms} or (${bestSent} = ${cursor.ms} and ${ranked.messageId} < ${cursor.id})`
   const best = db.select({
     messageId: ranked.messageId,
-    rank: sql<number>`min(${ranked.rank})`.as('best_rank'),
+    rank: bestRank.as('best_rank'),
+    sentAt: bestSent.as('best_sent'),
   }).from(ranked)
     .groupBy(ranked.messageId)
-    .orderBy(asc(sql`min(${ranked.rank})`))
-    .limit(clampLimit(opts.limit, DEFAULT_SEARCH_LIMIT))
+    .having(keyset)
+    .orderBy(...(order === 'relevance'
+      ? [asc(bestRank), asc(ranked.messageId)]
+      : [desc(bestSent), desc(ranked.messageId)]))
+    .limit(limit + 1)
     .as('best')
 
   // Only now, on the page and nothing more, are the names resolved.
-  // messageSelection carries four correlated subqueries per row (the sender's
-  // person, the owner's contact name, and the two the display title needs);
-  // inside `ranked` they ran once per FTS-matched row, which for a common word
-  // is the whole corpus rather than the fifty rows anybody sees.
-  const rows = await db.select({ ...messageSelection, ...chatColumns }).from(best)
+  // messageSelection carries several correlated subqueries per row (the
+  // sender's person, the owner's contact name, the reply, and the two the
+  // display title needs); inside `ranked` they would run once per
+  // FTS-matched row, which for a common word is the whole corpus rather than
+  // the fifty rows anybody sees.
+  const rows = await db.select({ ...messageSelection, ...chatColumns, rank: best.rank, bestSent: best.sentAt }).from(best)
     .innerJoin(messages, eq(messages.id, best.messageId))
     .innerJoin(chats, eq(chats.id, messages.chatId))
-    .orderBy(asc(best.rank))
+    .orderBy(...(order === 'relevance' ? [asc(best.rank), asc(best.messageId)] : [desc(best.sentAt), desc(best.messageId)]))
 
-  const mediaById = await mediaForMessages(rows.map(r => r.id))
-  return resolveMentions(rows.map(({ chatId, chatTitle, channel, kind, ...r }) =>
+  const page = rows.slice(0, limit)
+  const last = page[page.length - 1]
+  const nextCursor = rows.length > limit && last
+    ? encodeSearchCursor(order === 'relevance'
+      ? { order, rank: last.rank, id: last.id }
+      : { order, ms: last.bestSent, id: last.id })
+    : null
+  const mediaById = await mediaForMessages(page.map(r => r.id))
+  const hits = await resolveMentions(page.map(({ chatId, chatTitle, channel, kind, rank: _rank, bestSent: _sent, ...r }) =>
     ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })), m => m.channel)
+  return { hits, nextCursor }
 }
 
 const mediaColumns = {

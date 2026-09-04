@@ -182,6 +182,14 @@ describe('REST routes serve the same data as the MCP tools', () => {
     ).json()) as { results: Array<{ chatId: string }> }
     expect(scoped.results.map(r => r.chatId)).toEqual([mum])
 
+    const paged = (await (await getSearch(bearer('/api/search?q=umbrella&limit=1&order=newest', k.rawKey))).json()) as { results: unknown[]; nextCursor: string | null }
+    expect(paged.results).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
+    const rest = (await (await getSearch(bearer(`/api/search?q=umbrella&limit=1&order=newest&cursor=${encodeURIComponent(paged.nextCursor!)}`, k.rawKey))).json()) as { results: unknown[]; nextCursor: string | null }
+    expect(rest.results).toHaveLength(1)
+    expect(rest.nextCursor).toBeNull()
+    expect((await getSearch(bearer('/api/search?q=umbrella&order=sideways', k.rawKey))).status).toBe(400)
+
     const missing = await getSearch(bearer('/api/search', k.rawKey))
     expect(missing.status).toBe(400)
     expect(await missing.json()).toEqual({ error: 'missing_query' })

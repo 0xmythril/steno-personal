@@ -89,7 +89,7 @@ describe('getMessages', () => {
     expect(waNames).toEqual(['+15551230000', 'Ada'])
     expect((await getMessages(tg.id))!.messages[0].senderName).toBeNull()
     // The same rule reaches search results.
-    expect((await searchMessages('synced'))[0].senderName).toBe('+15551230000')
+    expect(((await searchMessages('synced')).hits)[0].senderName).toBe('+15551230000')
   })
 
   it('reads newest-first with a working cursor and returns the chat alongside', async () => {
@@ -153,7 +153,7 @@ describe('replies', () => {
     expect(page.find(m => m.id === reply.id)!.replyTo).toEqual({ id: quoted.id, senderName: 'Avir', text: 'the deck is attached' })
     expect(page.find(m => m.id === quoted.id)!.replyTo).toBeNull()
     expect((await getMessages(other.id))!.messages.every(m => m.replyTo === null)).toBe(true)
-    expect((await searchMessages('refer'))[0].replyTo).toMatchObject({ id: quoted.id })
+    expect(((await searchMessages('refer')).hits)[0].replyTo).toMatchObject({ id: quoted.id })
 
     await db.update(messages).set({ deletedAt: new Date() }).where(eq(messages.id, quoted.id))
     expect((await getMessages(chat.id))!.messages[0].replyTo).toBeNull()
@@ -179,7 +179,7 @@ describe('mentions', () => {
       .toBe('@Alan Lui can you confirm with @Saved Ada? @999 too, and ada@example.com')
     // The inbox and search rewrite the same way.
     expect((await recentMessages()).messages[0].text).toContain('@Alan Lui')
-    expect((await searchMessages('confirm'))[0].text).toContain('@Saved Ada')
+    expect(((await searchMessages('confirm')).hits)[0].text).toContain('@Saved Ada')
 
     // The address book outranks both once the person is linked.
     const p = await createPerson({ name: 'Alan L.' })
@@ -203,10 +203,10 @@ describe('searchMessages', () => {
     const b = await makeChat(conn, { title: 'B' })
     await addMessage(a, { text: 'the dentist appointment is monday' })
     await addMessage(b, { text: 'dentist bills again' })
-    const all = await searchMessages('dentist')
+    const all = (await searchMessages('dentist')).hits
     expect(all).toHaveLength(2)
     expect(all.every(h => h.chatTitle === 'A' || h.chatTitle === 'B')).toBe(true)
-    const scoped = await searchMessages('dentist', { chatId: a.id })
+    const scoped = (await searchMessages('dentist', { chatId: a.id })).hits
     expect(scoped).toHaveLength(1)
     expect(scoped[0].text).toContain('monday')
     expect(scoped[0].chatId).toBe(a.id)
@@ -215,9 +215,9 @@ describe('searchMessages', () => {
   it('matches every token, and returns nothing for a miss', async () => {
     const chat = await makeChat(await makeConnection())
     await addMessage(chat, { text: 'ring the dentist on monday' })
-    expect(await searchMessages('dentist monday')).toHaveLength(1)
-    expect(await searchMessages('dentist tuesday')).toEqual([])
-    expect(await searchMessages('zebra')).toEqual([])
+    expect((await searchMessages('dentist monday')).hits).toHaveLength(1)
+    expect((await searchMessages('dentist tuesday')).hits).toEqual([])
+    expect((await searchMessages('zebra')).hits).toEqual([])
   })
 
   it('treats FTS operators as literal text instead of syntax', async () => {
@@ -225,21 +225,21 @@ describe('searchMessages', () => {
     await addMessage(chat, { text: 'dentist appointment' })
     // A bare "OR"/"NEAR"/quote from a person's search box must not become an
     // FTS expression — or, worse, a syntax error thrown at the reader.
-    expect(await searchMessages('dentist OR zebra')).toEqual([])
-    expect(await searchMessages('"dentist')).toHaveLength(1)
-    expect(await searchMessages('   ')).toEqual([])
+    expect((await searchMessages('dentist OR zebra')).hits).toEqual([])
+    expect((await searchMessages('"dentist')).hits).toHaveLength(1)
+    expect((await searchMessages('   ')).hits).toEqual([])
   })
 
   it('never returns a deleted message', async () => {
     const chat = await makeChat(await makeConnection())
     await addMessage(chat, { text: 'unsent secret', deletedAt: new Date() })
-    expect(await searchMessages('unsent')).toEqual([])
+    expect((await searchMessages('unsent')).hits).toEqual([])
   })
 
   it('honours the limit', async () => {
     const chat = await makeChat(await makeConnection())
     for (let i = 0; i < 5; i++) await addMessage(chat, { text: `dentist ${i}` })
-    expect(await searchMessages('dentist', { limit: 2 })).toHaveLength(2)
+    expect((await searchMessages('dentist', { limit: 2 })).hits).toHaveLength(2)
   })
 })
 
@@ -273,8 +273,8 @@ describe('people on chats and messages', () => {
     expect((await getMessages(live.id))!.messages[0].senderName).toBe('Avir Shah')
     expect((await getMessages(synced.id))!.messages[0].senderName).toBe('Avir Shah')
     // And the sender filter matches what is shown.
-    expect((await searchMessages('older', { sender: 'shah' })).map(m => m.text)).toEqual(['older'])
-    expect((await searchMessages('slide', { sender: 'avir' })).map(m => m.text)).toEqual(['slide attached'])
+    expect(((await searchMessages('older', { sender: 'shah' })).hits).map(m => m.text)).toEqual(['older'])
+    expect(((await searchMessages('slide', { sender: 'avir' })).hits).map(m => m.text)).toEqual(['slide attached'])
   })
 
   it('names a direct chat after the linked person, ahead of every other rule', async () => {
@@ -394,7 +394,7 @@ describe('people on chats and messages', () => {
     await addMessage(group, { senderName: null, senderExternalId: ADA, text: 'the dentist appointment' })
     expect((await getMessages(group.id))!.messages[0].senderName).toBe('This Connection')
     // The same expression, through the other read path.
-    expect((await searchMessages('dentist'))[0].senderName).toBe('This Connection')
+    expect(((await searchMessages('dentist')).hits)[0].senderName).toBe('This Connection')
   })
 
   // A search hit and the chat list are two views of the same chat; they must
@@ -409,13 +409,13 @@ describe('people on chats and messages', () => {
 
     const listed = () => listChats().then(cs => cs.find(c => c.id === dm.id)!.title)
     expect(await listed()).toBe('Bo')
-    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Bo')
+    expect(((await searchMessages('dentist')).hits)[0].chatTitle).toBe('Bo')
 
     // …and once the owner names them, both say the name the owner chose.
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'whatsapp', externalId: ADA })
     expect(await listed()).toBe('Ada Lovelace')
-    expect((await searchMessages('dentist'))[0].chatTitle).toBe('Ada Lovelace')
+    expect(((await searchMessages('dentist')).hits)[0].chatTitle).toBe('Ada Lovelace')
   })
 
   it('a hidden person names nothing: every read path falls back', async () => {
@@ -433,7 +433,7 @@ describe('people on chats and messages', () => {
     expect((await listChats())[0]).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
     expect((await getMessages(dm.id))!.chat).toMatchObject({ title: 'Saved as A. Lovelace', person: null })
     expect((await getMessages(dm.id))!.messages[0].person).toBeNull()
-    expect((await searchMessages('dentist'))[0].person).toBeNull()
+    expect(((await searchMessages('dentist')).hits)[0].person).toBeNull()
   })
 
   it('carries the person and the contact name into search results', async () => {
@@ -446,9 +446,9 @@ describe('people on chats and messages', () => {
 
     // The address-book name is the sender label once the person is linked
     // (the contact name was, until then); the person rides alongside.
-    const [hit] = await searchMessages('dentist')
+    const [hit] = (await searchMessages('dentist')).hits
     expect(hit).toMatchObject({ senderName: 'Ada Lovelace', person: { id: ada.id, name: 'Ada Lovelace' } })
     await archivePerson(ada.id)
-    expect((await searchMessages('dentist'))[0]).toMatchObject({ senderName: 'Saved Contact', person: null })
+    expect(((await searchMessages('dentist')).hits)[0]).toMatchObject({ senderName: 'Saved Contact', person: null })
   })
 })

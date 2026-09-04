@@ -119,7 +119,9 @@ anything.
   carries a snippet of its latest message.
 - `recent_messages` is the inbox: the newest messages across every chat, or
   one channel or kind, each naming the chat it came from.
-- `search_messages` narrows by chat, channel, kind, sender and a date range.
+- `search_messages` narrows by chat, channel, kind, sender and a date range,
+  returns `{hits, nextCursor}` fifty at a time, and orders by relevance for a
+  bare query or newest first when a date bound is given; `order` picks.
 - `get_media` returns one attachment by its `media.id`: a ready image up to
   3 MiB comes back as image content the agent can look at, anything else as
   metadata plus the `/media/<id>` path. Every message with an attachment says

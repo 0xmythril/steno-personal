@@ -171,7 +171,7 @@ describe('searchMessages — filters', () => {
     await addMessage(work, { text: 'dentist wednesday', senderName: 'Kim Smith', sentAt: at('2026-03-01T00:00:00Z') })
 
     const texts = async (opts: Parameters<typeof searchMessages>[1]) =>
-      (await searchMessages('dentist', opts)).map(h => h.text).sort()
+      ((await searchMessages('dentist', opts)).hits).map(h => h.text).sort()
 
     expect(await texts({})).toEqual(['dentist monday', 'dentist tuesday', 'dentist wednesday'])
     expect(await texts({ channel: 'telegram' })).toEqual(['dentist monday'])
@@ -179,9 +179,9 @@ describe('searchMessages — filters', () => {
     expect(await texts({ sender: 'kim' })).toEqual(['dentist tuesday', 'dentist wednesday'])
     expect(await texts({ after: at('2026-01-15T00:00:00Z'), before: at('2026-02-15T00:00:00Z') })).toEqual(['dentist tuesday'])
     expect(await texts({ chatId: mum.id })).toEqual(['dentist monday'])
-    expect((await searchMessages('dentist', { limit: 1 }))).toHaveLength(1)
+    expect(((await searchMessages('dentist', { limit: 1 })).hits)).toHaveLength(1)
 
-    const [hit] = await searchMessages('dentist', { channel: 'telegram' })
+    const [hit] = (await searchMessages('dentist', { channel: 'telegram' })).hits
     expect(hit).toMatchObject({ chatId: mum.id, chatTitle: 'Mum', channel: 'telegram', kind: 'dm' })
   })
 
@@ -191,8 +191,51 @@ describe('searchMessages — filters', () => {
     await addMessage(chat, { text: 'dentist', senderName: null, senderExternalId: '15551230000@s.whatsapp.net' })
     const { id } = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
-    expect(await searchMessages('dentist', { sender: 'lovelace' })).toHaveLength(1)
-    expect(await searchMessages('dentist', { sender: 'babbage' })).toEqual([])
+    expect((await searchMessages('dentist', { sender: 'lovelace' })).hits).toHaveLength(1)
+    expect((await searchMessages('dentist', { sender: 'babbage' })).hits).toEqual([])
+  })
+})
+
+describe('searchMessages — order and paging', () => {
+  beforeEach(resetDb)
+
+  async function three() {
+    const chat = await makeChat(await makeConnection(), { title: 'Mum' })
+    const a = await addMessage(chat, { text: 'umbrella one', sentAt: at('2026-01-01T00:00:00Z') })
+    const b = await addMessage(chat, { text: 'umbrella two', sentAt: at('2026-01-02T00:00:00Z') })
+    const c = await addMessage(chat, { text: 'umbrella three', sentAt: at('2026-01-03T00:00:00Z') })
+    return { a, b, c }
+  }
+
+  it('pages relevance order with a cursor and ends with null', async () => {
+    const { a, b, c } = await three()
+    const first = await searchMessages('umbrella', { limit: 2 })
+    expect(first.hits).toHaveLength(2)
+    expect(first.nextCursor).not.toBeNull()
+    const second = await searchMessages('umbrella', { limit: 2, cursor: first.nextCursor! })
+    expect(second.hits).toHaveLength(1)
+    expect(second.nextCursor).toBeNull()
+    expect([...first.hits, ...second.hits].map(h => h.id).sort()).toEqual([a.id, b.id, c.id].sort())
+    // Nothing is counted twice and nothing is skipped: every hit exactly once.
+    expect(new Set([...first.hits, ...second.hits].map(h => h.id)).size).toBe(3)
+  })
+
+  it('orders newest first when asked, or whenever a date bound is given, and pages that too', async () => {
+    const { a, b, c } = await three()
+    const newest = await searchMessages('umbrella', { order: 'newest', limit: 2 })
+    expect(newest.hits.map(h => h.id)).toEqual([c.id, b.id])
+    const rest = await searchMessages('umbrella', { order: 'newest', limit: 2, cursor: newest.nextCursor! })
+    expect(rest.hits.map(h => h.id)).toEqual([a.id])
+    expect(rest.nextCursor).toBeNull()
+    // A date range is a "what happened then" question: newest first by default.
+    const ranged = await searchMessages('umbrella', { after: at('2025-12-31T00:00:00Z') })
+    expect(ranged.hits.map(h => h.id)).toEqual([c.id, b.id, a.id])
+    // …unless relevance is asked for explicitly.
+    expect((await searchMessages('umbrella', { after: at('2025-12-31T00:00:00Z'), order: 'relevance' })).hits).toHaveLength(3)
+    // A cursor minted for one order is ignored by the other, and a bad cursor
+    // starts from the top.
+    expect((await searchMessages('umbrella', { cursor: newest.nextCursor! })).hits).toHaveLength(3)
+    expect((await searchMessages('umbrella', { cursor: 'garbage' })).hits).toHaveLength(3)
   })
 })
 
@@ -334,7 +377,7 @@ describe('the MCP surface', () => {
     await addMessage(await makeChat(tg, { title: 'Mum' }), { text: 'dentist monday', senderName: 'Mum' })
     await addMessage(await makeChat(wa, { title: 'Work', kind: 'group' }), { text: 'dentist tuesday', senderName: 'Kim' })
     const key = await agentKey()
-    const hits = JSON.parse(await callTool(key, 'search_messages', { query: 'dentist', channel: 'whatsapp', sender: 'kim', limit: 5 })) as Array<{ text: string }>
+    const { hits } = JSON.parse(await callTool(key, 'search_messages', { query: 'dentist', channel: 'whatsapp', sender: 'kim', limit: 5 })) as { hits: Array<{ text: string }> }
     expect(hits.map(h => h.text)).toEqual(['dentist tuesday'])
   })
 
