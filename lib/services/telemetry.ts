@@ -1,34 +1,55 @@
 import { randomUUID } from 'node:crypto'
-import { count, eq, isNull, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { accessKeys, chats, connections, messages, people, settings } from '@/lib/db/schema'
+import { settings } from '@/lib/db/schema'
 import { env } from '@/lib/env'
 import { log, errorShape } from '@/lib/log'
 import { APP_VERSION } from '@/lib/version'
-import { SETTINGS_ID, getSettings } from '@/lib/services/settings'
+import { SETTINGS_ID } from '@/lib/services/settings'
 
-// One ping a day at most. The worker asks far more often than that; the
-// clock is kept in the database so a restart does not reset it.
-export const TELEMETRY_INTERVAL_MS = 24 * 60 * 60 * 1000
+// Anonymous usage events, posted to PostHog at the moment a feature is used.
+//
+// This is the one place in the repo that reports anything about how the
+// software is used, and the whole of what it can report is written down here
+// as a type: an event name from EVENTS, and the enum-valued properties that
+// event allows. TypeScript refuses an unknown event or an extra property at
+// every call site, and tests/launch-invariants.test.ts greps the call sites
+// as well so a value smuggled in under an allowed key is caught too.
+//
+// Nothing here reads a chat, a message, a name, a number or a key. The only
+// thing tying events together is an id minted with randomUUID() on first use
+// and derived from nothing else.
 
-// The complete list of what a ping may contain, exported so a test can assert
-// the payload against it. Adding a field here is the deliberate act that
-// widens what leaves the machine — PRIVACY.md describes this shape, and
-// tests/telemetry.test.ts fails if the two drift apart.
-export const TELEMETRY_PAYLOAD_KEYS = [
-  'instanceId', 'version', 'sentAt', 'channels', 'counts', 'features',
-] as const
+// PostHog's ingest is a plain HTTP POST, so no vendor package is imported —
+// the sweep in tests/launch-invariants.test.ts still bans the SDKs by name.
+// The project token lives in lib/telemetry-defaults.ts.
 
-export type TelemetryPayload = {
-  instanceId: string
-  version: string
-  sentAt: string
-  channels: { telegram: boolean; whatsapp: boolean }
-  counts: { chats: number; messages: number; people: number; accessKeys: number }
-  features: { enrichmentKey: boolean; analyzeImages: boolean; analyzeAudio: boolean }
+export const MCP_TOOLS = ['list_chats', 'get_messages', 'search_messages', 'list_people', 'whoami'] as const
+export type McpTool = (typeof MCP_TOOLS)[number]
+
+// The tracking plan. Every property is an enum or a boolean: nothing here can
+// hold a query, a title, a name, a number, a chat id or a key, and a call site
+// that tried to pass one would not compile.
+export type Events = {
+  search: { surface: 'portal' | 'mcp' }
+  mcp_tool_call: { tool: McpTool }
+  transcript_viewed: Record<never, never>
+  person_linked: { source: 'manual' | 'phone_match' | 'name_match' }
+  channel_connected: { channel: 'telegram' | 'whatsapp' }
+  access_key_minted: Record<never, never>
+  enrichment_toggled: { images: boolean; audio: boolean }
 }
+export type EventName = keyof Events
+export const EVENTS = [
+  'search', 'mcp_tool_call', 'transcript_viewed', 'person_linked',
+  'channel_connected', 'access_key_minted', 'enrichment_toggled',
+] as const satisfies readonly EventName[]
 
-export type TelemetryOutcome = 'sent' | 'disabled' | 'no_endpoint' | 'too_soon' | 'failed'
+// Property keys any event may carry, for the structural test. `version` is
+// added by the sender, never by a call site.
+export const ALLOWED_PROPERTY_KEYS = ['surface', 'tool', 'source', 'channel', 'images', 'audio', 'version'] as const
+
+export type TelemetryOutcome = 'sent' | 'disabled' | 'no_key' | 'failed'
 
 async function readRow() {
   const [row] = await db.select().from(settings).where(eq(settings.id, SETTINGS_ID)).limit(1)
@@ -36,8 +57,9 @@ async function readRow() {
 }
 
 // Minted on first use and never re-minted. randomUUID, not a hash of anything
-// this instance holds: it must identify the install to itself across pings and
-// be traceable to nothing else — not the volume, not the key, not the account.
+// this instance holds: it must identify the install to itself across events
+// and be traceable to nothing else — not the volume, not the key, not the
+// account.
 export async function telemetryInstanceId(): Promise<string> {
   const existing = (await readRow())?.telemetryInstanceId
   if (existing) return existing
@@ -49,80 +71,53 @@ export async function telemetryInstanceId(): Promise<string> {
   return (await readRow())?.telemetryInstanceId ?? id
 }
 
-async function countRows(table: typeof chats | typeof messages | typeof people): Promise<number> {
-  const [row] = await db.select({ n: count() }).from(table)
-  return row?.n ?? 0
+// DO_NOT_TRACK is the convention CLI tools share (GitHub CLI honours it, for
+// one). Any value but an explicit off means off — a person who set it at all
+// meant it.
+const doNotTrack = (): boolean => {
+  const v = process.env.DO_NOT_TRACK?.trim().toLowerCase()
+  return !!v && v !== '0' && v !== 'false'
 }
 
-// Aggregates only. Every number here is a count of rows; no column that holds
-// a name, a title, a phone number, a body or a key is read at all.
-export async function buildTelemetryPayload(): Promise<TelemetryPayload> {
-  // getSettings, not the row: it already reduces the saved OpenRouter key to a
-  // boolean, so no ciphertext column is read on this path at all.
-  const prefs = await getSettings()
-  const [chatCount, messageCount, peopleCount] = await Promise.all([
-    countRows(chats), countRows(messages), countRows(people),
-  ])
-  const [keys] = await db.select({ n: count() }).from(accessKeys).where(isNull(accessKeys.revokedAt))
-  const live = await db.select({ channel: connections.channel }).from(connections)
-    .where(and(eq(connections.purpose, 'archive'), isNull(connections.revokedAt)))
-  const channelsLive = new Set(live.map(c => c.channel))
-
-  return {
-    instanceId: await telemetryInstanceId(),
-    version: APP_VERSION,
-    sentAt: new Date().toISOString(),
-    channels: {
-      telegram: channelsLive.has('telegram'),
-      whatsapp: channelsLive.has('whatsapp'),
-    },
-    counts: {
-      chats: chatCount,
-      messages: messageCount,
-      people: peopleCount,
-      accessKeys: keys?.n ?? 0,
-    },
-    features: {
-      enrichmentKey: prefs.hasOpenrouterKey,
-      analyzeImages: prefs.analyzeImages,
-      analyzeAudio: prefs.analyzeAudio,
-    },
-  }
-}
-
-// Order matters and is the guarantee: the endpoint and the toggle are both
-// checked BEFORE any archive row is read, so an opted-out instance never even
-// builds a payload.
-export async function sendTelemetryPing(now = new Date()): Promise<TelemetryOutcome> {
-  const endpoint = env.STENO_TELEMETRY_URL
-  if (!endpoint) return 'no_endpoint'
-
+// The three gates, in order and BEFORE any row is touched: the host's
+// DO_NOT_TRACK, the key, then the owner's Settings toggle.
+export async function sendEvent<N extends EventName>(name: N, props: Events[N]): Promise<TelemetryOutcome> {
+  if (doNotTrack()) return 'disabled'
+  const key = env.STENO_POSTHOG_KEY
+  if (!key) return 'no_key'
   const row = await readRow()
   if (row && !row.telemetryEnabled) return 'disabled'
 
-  const last = row?.telemetryLastSentAt
-  if (last && now.getTime() - last.getTime() < TELEMETRY_INTERVAL_MS) return 'too_soon'
-
-  const payload = await buildTelemetryPayload()
+  const body = {
+    api_key: key,
+    event: name,
+    distinct_id: await telemetryInstanceId(),
+    properties: { ...props, version: APP_VERSION },
+  }
   try {
-    const res = await fetch(endpoint, {
+    const res = await fetch(`${env.STENO_POSTHOG_HOST.replace(/\/$/, '')}/i/v0/e/`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(10_000),
     })
     if (!res.ok) {
-      // Status only. A collector's response body is untrusted input and never
-      // reaches the log.
-      log.warn({ status: res.status }, 'telemetry ping refused')
+      // Status only. The collector's response body is untrusted input and
+      // never reaches the log.
+      log.warn({ status: res.status, event: name }, 'telemetry event refused')
       return 'failed'
     }
+    return 'sent'
   } catch (e) {
-    log.warn({ err: errorShape(e) }, 'telemetry ping failed')
+    log.warn({ err: errorShape(e), event: name }, 'telemetry event failed')
     return 'failed'
   }
+}
 
-  await db.insert(settings).values({ id: SETTINGS_ID, telemetryLastSentAt: now })
-    .onConflictDoUpdate({ target: settings.id, set: { telemetryLastSentAt: now } })
-  return 'sent'
+// Fire-and-forget for request handlers and server actions: never awaited,
+// never throws, so a slow or absent collector cannot slow a page or fail an
+// action. sendEvent already swallows every failure; the catch here is belt
+// and braces against a rejection before it even starts.
+export function track<N extends EventName>(name: N, props: Events[N]): void {
+  void sendEvent(name, props).catch(() => {})
 }

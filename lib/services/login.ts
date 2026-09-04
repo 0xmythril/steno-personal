@@ -1,4 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
+import { track } from '@/lib/services/telemetry'
 import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
 import { decryptSecret, encryptSecret } from '@/lib/services/crypto'
@@ -84,8 +85,11 @@ export async function completeLogin(id: string, sessionString: string, account: 
     eq(connections.id, id),
     eq(connections.status, 'pending'),
     isNull(connections.revokedAt),
-  )).returning({ id: connections.id })
-  return updated.length === 0 ? 'gone' : 'ok'
+  )).returning({ id: connections.id, channel: connections.channel })
+  if (updated.length === 0) return 'gone'
+  // Which channel, and nothing about whose account.
+  track('channel_connected', { channel: updated[0].channel })
+  return 'ok'
 }
 
 // A FAILED login is retryable, not revoked: error status plus a user-visible

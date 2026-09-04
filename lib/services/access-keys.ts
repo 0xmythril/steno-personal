@@ -1,4 +1,5 @@
 import { db } from '@/lib/db/client'
+import { track } from '@/lib/services/telemetry'
 import { accessKeys } from '@/lib/db/schema'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash, randomBytes } from 'node:crypto'
@@ -28,6 +29,8 @@ export async function mintAccessKey(label: string): Promise<MintResult> {
     keyCiphertext: encryptSecret(rawKey),
     prefix: rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + PREFIX_SHOWN),
   }).returning({ id: accessKeys.id })
+  // That a key was made. Never its label, prefix or value.
+  track('access_key_minted', {})
   return { ok: true, id: row.id, rawKey }
 }
 

@@ -157,14 +157,13 @@ export const settings = sqliteTable('settings', {
   analyzeAudio: integer('analyze_audio', { mode: 'boolean' }).notNull().default(false),
   visionModel: text('vision_model'),
   transcriptionModel: text('transcription_model'),
-  // Anonymous usage reporting. On by default, turned off from Settings; it
-  // sends nothing at all unless the host also sets STENO_TELEMETRY_URL.
-  // The instance id is minted here on the first send and is random — it is
-  // not derived from the key, the volume, the account, or the machine, so it
-  // links one instance's pings to each other and to nothing else.
+  // Anonymous usage events (lib/services/telemetry.ts). On by default,
+  // turned off from Settings or with DO_NOT_TRACK. The instance id is minted
+  // on the first event and is random — not derived from the key, the volume,
+  // the account or the machine — so it links one instance's events to each
+  // other and to nothing else.
   telemetryEnabled: integer('telemetry_enabled', { mode: 'boolean' }).notNull().default(true),
   telemetryInstanceId: text('telemetry_instance_id'),
-  telemetryLastSentAt: integer('telemetry_last_sent_at', { mode: 'timestamp_ms' }),
 })
 
 // The address book. A person is the owner's own annotation over the channel

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import 'dotenv/config'
 import { TELEGRAM_DEFAULT_API_ID, TELEGRAM_DEFAULT_API_HASH } from '@/lib/channels/telegram-defaults'
+import { POSTHOG_DEFAULT_KEY, POSTHOG_DEFAULT_HOST } from '@/lib/telemetry-defaults'
 
 // Railway clears a variable to '' rather than removing it, and .env.example
 // ships bare keys. Every optional var goes through this so '' means unset.
@@ -35,11 +36,14 @@ export const envSchema = z.object({
   // and prints it to the log — the only place a key is ever printed.
   STENO_RESET: blank(z.string().optional()),
   STENO_MINT_KEY: blank(z.string().optional()),
-  // Where the anonymous usage ping is posted. There is no default and no
-  // fallback: unset means no ping is ever built or sent, whatever the
-  // Settings toggle says. A fork that wants its own numbers points this at
-  // its own collector; a self-hoster who sets nothing sends nothing.
-  STENO_TELEMETRY_URL: blank(z.url().optional()),
+  // Anonymous usage events go to PostHog (lib/services/telemetry.ts). The
+  // key is the write-only project token every PostHog client embeds, shipped
+  // as a default so an instance reports from day one; a fork points it at
+  // its own project. Blank on Railway reads as unset and so falls back to the
+  // default — turning reporting OFF is the Settings toggle or DO_NOT_TRACK,
+  // which lib/services/telemetry.ts reads straight from process.env.
+  STENO_POSTHOG_KEY: blank(z.string().optional()).default(POSTHOG_DEFAULT_KEY),
+  STENO_POSTHOG_HOST: blank(z.url().optional()).default(POSTHOG_DEFAULT_HOST),
 })
 
 export type Env = z.infer<typeof envSchema>

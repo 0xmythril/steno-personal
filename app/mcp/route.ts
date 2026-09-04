@@ -1,4 +1,5 @@
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
+import { track, type McpTool } from '@/lib/services/telemetry'
 import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
 import {
@@ -23,10 +24,13 @@ const text = (value: unknown): ToolResult => ({
 // throw: each one is wrapped here, the error goes to the log through
 // errorShape, and the agent is told only that something went wrong.
 function guarded<A extends unknown[]>(
-  tool: string,
+  tool: McpTool,
   fn: (...args: A) => Promise<ToolResult>,
 ): (...args: A) => Promise<ToolResult> {
   return async (...args: A) => {
+    // The tool's name only: never its arguments, never its result.
+    track('mcp_tool_call', { tool })
+    if (tool === 'search_messages') track('search', { surface: 'mcp' })
     try {
       return await fn(...args)
     } catch (e) {

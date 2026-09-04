@@ -7,6 +7,7 @@ import { requireSession, endSession, isHttps } from '@/lib/auth'
 import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
+import { track } from '@/lib/services/telemetry'
 
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
@@ -131,10 +132,14 @@ export async function updateTelemetryAction(formData: FormData) {
 
 export async function updateEnrichmentAction(formData: FormData) {
   await requireSession()
+  // An unchecked box submits nothing at all, which is exactly `false`.
+  const images = formData.get('analyzeImages') === 'on'
+  const audio = formData.get('analyzeAudio') === 'on'
+  // The two booleans. Never the key, never the model.
+  track('enrichment_toggled', { images, audio })
   await updateSettings({
-    // An unchecked box submits nothing at all, which is exactly `false`.
-    analyzeImages: formData.get('analyzeImages') === 'on',
-    analyzeAudio: formData.get('analyzeAudio') === 'on',
+    analyzeImages: images,
+    analyzeAudio: audio,
     // A value outside the catalog is ignored by updateSettings.
     visionModel: String(formData.get('visionModel') ?? ''),
     transcriptionModel: String(formData.get('transcriptionModel') ?? ''),

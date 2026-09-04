@@ -204,12 +204,13 @@ variable does not hide it from the platform that supplies it.
 - **No multi-user, no sharing.** One instance is one person. Sharing an archive
   would need membership and permission checks, and those are the private cloud
   product's problem, not this one's.
-- **No crash reporting, no update check, no third-party analytics SDK.** Two
-  outbound calls exist and both are switchable: OpenRouter enrichment, off
-  until you save a key, and a once-a-day anonymous usage ping that is on by
-  default, sends aggregate counts and no archive content, goes only to the
-  host's own `STENO_TELEMETRY_URL`, and sends nothing at all when that is
-  unset. The payload is pinned by `tests/telemetry.test.ts`.
+- **No crash reporting, no update check, no analytics SDK in the process.**
+  Two outbound calls exist and both are switchable: OpenRouter enrichment, off
+  until you save a key, and anonymous usage events to PostHog, on by default,
+  off in Settings or with `DO_NOT_TRACK`. An event is a feature name and an
+  enum, never archive content; the list is a type in
+  `lib/services/telemetry.ts` and every call site is checked by test. PostHog
+  does see *when* a feature was used, which PRIVACY.md says outright.
 - **No encryption of message text at rest.** Above.
 
 ## Reporting

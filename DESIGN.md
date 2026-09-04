@@ -22,7 +22,7 @@ These are settled product decisions for steno-personal (see CONTRIBUTING.md, "Gr
 - **Three pages.** Chats, Connections, Settings. Agent access is a panel inside Settings.
 - **WhatsApp live is first-class.** No gate, no switch. Its three risk sentences sit on the card, unsoftened, in the `bad` colour.
 - **Keys are re-revealable.** A key can be shown again from the Settings table.
-- **No page view fetches anything.** Fonts are bundled at build time with `next/font`; nothing is pulled from Google, and no script reports on what the user looked at. The one usage ping the product sends is posted by the worker once a day, never by a page, and Settings carries the switch that stops it.
+- **No page view fetches anything.** Fonts are bundled at build time with `next/font`; nothing is pulled from Google, and no script reports on what the user looked at. The usage events the product sends are posted from the server at the moment a feature is used, never by a script in the page, and Settings carries the switch that stops them.
 - **The transcript is paged.** Older / Latest / Top are links, never controls, and the page has no compose box.
 
 ## Colors
