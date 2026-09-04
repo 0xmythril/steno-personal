@@ -12,22 +12,54 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 
 export type MintResult =
   | { ok: true; id: string; rawKey: string }
-  | { ok: false; reason: 'label_empty' | 'label_too_long' }
+  | { ok: false; reason: 'label_empty' | 'label_too_long' | 'not_first' }
+
+function newKeyRow(label: string) {
+  const rawKey = `${KEY_PREFIX}${randomBytes(32).toString('base64url')}`
+  return {
+    rawKey,
+    values: {
+      label,
+      keyHash: sha256(rawKey),
+      keyCiphertext: encryptSecret(rawKey),
+      prefix: rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + PREFIX_SHOWN),
+    },
+  }
+}
+
+function checkLabel(label: string): { ok: true; label: string } | { ok: false; reason: 'label_empty' | 'label_too_long' } {
+  const trimmed = label.trim()
+  if (!trimmed) return { ok: false, reason: 'label_empty' }
+  if (trimmed.length > MAX_LABEL_LENGTH) return { ok: false, reason: 'label_too_long' }
+  return { ok: true, label: trimmed }
+}
 
 // The raw key is returned exactly once here; afterwards it is reachable only
 // through revealAccessKey (decrypting the ciphertext). There is no cap on the
 // number of keys: one user, their own devices.
 export async function mintAccessKey(label: string): Promise<MintResult> {
-  const trimmed = label.trim()
-  if (!trimmed) return { ok: false, reason: 'label_empty' }
-  if (trimmed.length > MAX_LABEL_LENGTH) return { ok: false, reason: 'label_too_long' }
-  const rawKey = `${KEY_PREFIX}${randomBytes(32).toString('base64url')}`
-  const [row] = await db.insert(accessKeys).values({
-    label: trimmed,
-    keyHash: sha256(rawKey),
-    keyCiphertext: encryptSecret(rawKey),
-    prefix: rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + PREFIX_SHOWN),
-  }).returning({ id: accessKeys.id })
+  const checked = checkLabel(label)
+  if (!checked.ok) return checked
+  const { rawKey, values } = newKeyRow(checked.label)
+  const [row] = await db.insert(accessKeys).values(values).returning({ id: accessKeys.id })
+  return { ok: true, id: row.id, rawKey }
+}
+
+// The first key ever: what closes /setup. The "no key exists yet" check and
+// the insert run inside one write transaction, so two finish requests racing
+// through the fresh-instance guard cannot both mint — the second sees a row
+// and gets 'not_first'. Revoked rows count: once a key has existed the
+// instance is no longer fresh (see hasAnyAccessKey).
+export async function mintFirstAccessKey(label: string): Promise<MintResult> {
+  const checked = checkLabel(label)
+  if (!checked.ok) return checked
+  const { rawKey, values } = newKeyRow(checked.label)
+  const row = db.transaction(tx => {
+    const existing = tx.select({ id: accessKeys.id }).from(accessKeys).limit(1).all()
+    if (existing.length > 0) return null
+    return tx.insert(accessKeys).values(values).returning({ id: accessKeys.id }).get()
+  }, { behavior: 'immediate' })
+  if (!row) return { ok: false, reason: 'not_first' }
   return { ok: true, id: row.id, rawKey }
 }
 

@@ -16,6 +16,7 @@ import {
   ChannelError,
   type BackfillOpts, type ChannelAccount, type ChannelContact, type ChannelPort,
   type ChannelSession, type IncomingMessage, type LoginDriver,
+  type DeleteRef,
 } from '@/lib/channels/port'
 
 // The ONLY file in the repo allowed to import @mtcute/* (enforced by
@@ -356,7 +357,7 @@ class MtcuteSession implements ChannelSession {
   onEdit(cb: (m: IncomingMessage) => void): void {
     this.tg.onEditMessage.add(msg => this.guarded('edit', () => cb(toIncoming(msg, this.selfId))))
   }
-  onDelete(cb: (ref: { externalChatId?: string; externalMessageId: string }) => void): void {
+  onDelete(cb: (ref: DeleteRef) => void): void {
     this.tg.onDeleteMessage.add(upd => this.guarded('delete', () => {
       const externalChatId = upd.channelId ? String(upd.channelId) : undefined
       for (const id of upd.messageIds) cb({ externalChatId, externalMessageId: String(id) })

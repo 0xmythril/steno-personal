@@ -117,9 +117,15 @@ proxy requirements below apply to it too.
 reaches a brand-new deploy first can pair their own account and become its
 owner. This is the same exposure the log-printed key had (a public deploy's log
 was readable by whoever could read the dashboard) moved to the URL, and it
-closes for good the moment the first key is minted. It cannot be used against
-an existing archive — a fresh instance has none — and the owner of a claimed
-instance simply resets it from the host. Claim a public deploy as soon as it is
+closes for good the moment the first key is minted. A pairing is bound to the
+browser that started it by an httpOnly cookie (`sp_setup`), the way a recovery
+attempt is: the QR, the status poll, and the "create my access key" step are
+served only to that browser, and the first mint is a single transaction that
+refuses to run twice. So the minutes between "the worker has activated your
+account and started archiving it" and "you clicked the button" cannot be used
+by someone else to mint the first key against *your* account; the only thing a
+faster visitor can do is pair *their own* account, and the owner of a claimed
+instance then resets it from the host. Claim a public deploy as soon as it is
 green.
 
 **No reset from the network.** Wiping an instance and minting an emergency key

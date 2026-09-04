@@ -1,10 +1,11 @@
 'use client'
 import { useState } from 'react'
 
-// Continue stays disabled until the key has actually been copied, or the
-// reader says they wrote it down. Rendered inside the /welcome form; the
-// server action it submits only drops the flash, so the gate is about not
-// losing the key, not about authorisation.
+// Continue stays disabled until the reader ticks that the key is saved.
+// Copying is offered but is not enough on its own: a clipboard is overwritten
+// by the next copy, and this page is the only time the key is shown. Rendered
+// inside the /welcome form; the server action it submits only drops the
+// flash, so the gate is about not losing the key, not about authorisation.
 export function SaveKeyGate({ rawKey }: { rawKey: string }) {
   const [copied, setCopied] = useState(false)
   const [written, setWritten] = useState(false)
@@ -23,8 +24,8 @@ export function SaveKeyGate({ rawKey }: { rawKey: string }) {
         I have saved this key somewhere safe
       </label>
       <div className="actions">
-        <button type="submit" className="primary" disabled={!copied && !written}>Continue</button>
-        {!copied && !written && <span className="help">Copy the key, or tick the box, to continue.</span>}
+        <button type="submit" className="primary" disabled={!written}>Continue</button>
+        {!written && <span className="help">Tick the box once the key is saved to continue.</span>}
       </div>
     </>
   )

@@ -12,6 +12,7 @@ import { makeConnection } from './helpers/fixtures'
 import { revokeConnection, submitLoginPassword } from '@/lib/services/connections'
 import { startRecovery } from '@/lib/services/recovery'
 import { countActiveAccessKeys } from '@/lib/services/access-keys'
+import { listPeople } from '@/lib/services/people'
 import * as connectionsModule from '@/lib/services/connections'
 import * as loginModule from '@/lib/services/login'
 import { FakePort } from '@/lib/channels/fake-port'
@@ -566,6 +567,40 @@ describe('session manager', () => {
       ['telegram', '9', null, null],
     ])
     expect(port.listContactsCount).toBe(1)
+    await mgr.stopAll()
+  })
+
+  // …and the address book fills itself in from what that sync wrote (people
+  // design addendum 2, decision 11). The worker's only job here is to call it
+  // in the same guarded path; which rows it makes is tests/people.test.ts's.
+  it('fills the address book in from the contacts the sync landed', async () => {
+    await makeConnection({ status: 'active', sessionCiphertext: encryptSecret('S') })
+    const port = new FakePort('telegram')
+    port.contacts = [
+      { externalId: '5', displayName: 'Bob', phone: '+447700900123' },
+      // No name, so nothing to call them by and no person.
+      { externalId: '9', displayName: null, phone: null },
+    ]
+    const mgr = new SessionManager(portsOf(port))
+    const info = vi.spyOn(log, 'info').mockImplementation(() => log)
+    try {
+      await mgr.tick(); await mgr.whenIdle()
+
+      const people = await listPeople()
+      expect(people.map(p => p.name)).toEqual(['Bob'])
+      expect(people[0].identities[0]).toMatchObject({
+        channel: 'telegram', externalId: '5', source: 'auto',
+      })
+      // Counts, never a name or a number: this is the one log line that runs
+      // right after every contact in the account passed through memory.
+      const call = info.mock.calls.find(c => c[1] === 'address book populated')
+      expect(call).toBeDefined()
+      expect(Object.keys(call![0] as object).sort())
+        .toEqual(['connectionId', 'created', 'merged', 'renamed'])
+      expect(call![0]).toMatchObject({ created: 1, merged: 0, renamed: 0 })
+    } finally {
+      info.mockRestore()
+    }
     await mgr.stopAll()
   })
 

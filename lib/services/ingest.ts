@@ -8,6 +8,19 @@ import type { Channel } from '@/lib/channels/port'
 // testable with no network. Message identity is
 // (chat_id, external_message_id), first-writer-wins.
 
+// Who performed an edit or a delete, for channels whose server does not
+// check that itself. WhatsApp's payload is end-to-end encrypted, so WhatsApp
+// cannot, and Baileys forwards a revoke or an edit from anyone in the chat;
+// official clients apply one only from the message's own author. When a port
+// supplies an actor, ingest touches a row only if that actor wrote it: the
+// owner's rows for an owner actor, a contact's rows for that same contact. A
+// non-owner actor with no id can match nothing. Telegram's server authorises
+// deletes before pushing them, so its port supplies none and is applied as
+// received.
+export type MessageActor = { fromOwner: boolean; senderExternalId: string | null }
+
+export type DeleteRef = { externalChatId?: string; externalMessageId: string; actor?: MessageActor }
+
 export type IncomingMessage = {
   externalChatId: string
   chatKind: 'dm' | 'group' | 'channel'
@@ -23,6 +36,15 @@ export type IncomingMessage = {
   // the message row (has_media); M4 enqueues a media row from it.
   media: { mimeType: string | null; sizeBytes: number | null; isVoiceNote: boolean | null; durationSeconds: number | null } | null
   raw: unknown
+  // Only on an edit, and only from a port that has to prove authorship.
+  actor?: MessageActor
+}
+
+function authoredBy(actor: MessageActor | undefined) {
+  if (!actor) return sql`1`
+  if (actor.fromOwner) return eq(messages.fromOwner, true)
+  if (!actor.senderExternalId) return sql`0`
+  return and(eq(messages.fromOwner, false), eq(messages.senderExternalId, actor.senderExternalId))
 }
 
 // Telegram's DMs and basic groups share one "common" id space; channels and
@@ -68,9 +90,12 @@ export async function applyEdit(connectionId: string, channel: Channel, m: Incom
   const chatId = await upsertChat(connectionId, channel, m)
   const updated = await db.update(messages)
     .set({ text: m.text, editedAt: new Date() })
-    .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId)))
+    .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId), authoredBy(m.actor)))
     .returning({ id: messages.id })
   if (updated.length > 0) return
+  // An edit whose author could not be matched is dropped, never inserted:
+  // whatever it carries is not something the archive can vouch for.
+  if (m.actor) return
 
   // No row to edit. What to do about that is a per-channel judgement, because
   // the two channels put different things in an edit DTO.
@@ -92,7 +117,7 @@ export async function applyEdit(connectionId: string, channel: Channel, m: Incom
   await recordMessage(connectionId, channel, m)
 }
 
-export async function applyDelete(connectionId: string, ref: { externalChatId?: string; externalMessageId: string }): Promise<void> {
+export async function applyDelete(connectionId: string, ref: DeleteRef): Promise<void> {
   const scope = await db.select({ id: chats.id, externalChatId: chats.externalChatId })
     .from(chats).where(eq(chats.connectionId, connectionId))
 
@@ -108,6 +133,6 @@ export async function applyDelete(connectionId: string, ref: { externalChatId?: 
   const deletedAt = new Date()
   for (const chat of targets) {
     await db.update(messages).set({ deletedAt })
-      .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId)))
+      .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId), authoredBy(ref.actor)))
   }
 }

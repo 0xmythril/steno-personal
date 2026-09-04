@@ -1,9 +1,9 @@
-import type { IncomingMessage } from '@/lib/services/ingest'
+import type { DeleteRef, IncomingMessage } from '@/lib/services/ingest'
 import type { ChannelContact } from '@/lib/services/people'
 
 // Re-exported so a consumer of the port (the session manager, FakePort, a
 // binding) imports the DTO and the interfaces that carry it from one place.
-export type { IncomingMessage } from '@/lib/services/ingest'
+export type { IncomingMessage, DeleteRef, MessageActor } from '@/lib/services/ingest'
 // The address book's own DTO, defined next to the service that stores it and
 // re-exported here for the same reason: a binding implementing this interface
 // has one import to reach for.
@@ -44,7 +44,10 @@ export interface ChannelSession {
   backfill(opts: BackfillOpts, shouldContinue?: () => boolean): AsyncIterable<IncomingMessage>
   onMessage(cb: (m: IncomingMessage) => void): void
   onEdit(cb: (m: IncomingMessage) => void): void
-  onDelete(cb: (ref: { externalChatId?: string; externalMessageId: string }) => void): void
+  // A port whose network cannot vouch for who deleted a message (WhatsApp)
+  // names the actor on the ref; ingest then applies it only if the actor is
+  // the message's author. See MessageActor in lib/services/ingest.ts.
+  onDelete(cb: (ref: DeleteRef) => void): void
   // Fetch one message's attachment bytes. `raw` is the IncomingMessage.raw
   // that ingest stored. Throws ChannelError('other') when unavailable.
   downloadMedia(raw: unknown): Promise<{ data: Buffer; mimeType: string | null }>

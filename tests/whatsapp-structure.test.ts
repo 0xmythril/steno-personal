@@ -43,6 +43,9 @@ describe('the WhatsApp port sends nothing', () => {
     'sendMessage(', 'sendPresenceUpdate(', 'readMessages(', 'sendReceipt(', 'sendReceipts(',
     'chatModify(', 'updateProfile',
     'onWhatsApp(', 'fetchStatus(', 'getBusinessProfile(',
+    // Not WhatsApp at all: these fetch a version tuple from GitHub on every
+    // connect, which is an update check to a third host (ground rule 3).
+    'fetchLatestBaileysVersion(', 'fetchLatestWaWebVersion(',
   ]
 
   for (const call of BANNED) {
@@ -50,6 +53,13 @@ describe('the WhatsApp port sends nothing', () => {
       expect(src()).not.toContain(call)
     })
   }
+
+  // A media message's url field is written by its sender; Baileys takes the
+  // download host from it unless told otherwise. The port always tells it.
+  it('pins every media download to WhatsApp’s own CDN host', () => {
+    expect(src()).toContain('host: WA_MEDIA_HOST')
+    expect(src()).toContain('hasTrustedMediaSource(')
+  })
 
   it('opens every socket with markOnlineOnConnect: false', () => {
     expect(src()).toContain('markOnlineOnConnect: false')
