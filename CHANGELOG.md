@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Anonymous usage events.** When a feature is used — a search, an agent tool call, a transcript opened, a person linked, a channel connected, a key minted, enrichment toggled — the instance sends PostHog the feature's name, the version and a locally minted random id. Never the query, the chat, the name, the number, the key or the model; the list is a type in `lib/services/telemetry.ts` and every call site is checked by test. **On by default**, off under **Anonymous usage** in Settings or with `DO_NOT_TRACK=1`. One plain HTTP POST per event, no PostHog library in the process. This changes a promise earlier versions made: see the rewritten "What leaves your machine" in PRIVACY.md, including that PostHog sees when a feature was used.
 - **Passkeys.** Log into the portal with Touch ID, Windows Hello, or your phone. Register one on `/welcome` right after your first key, or from a new Passkeys section in Settings, where each can be removed. Passkeys log into the portal only — agents keep using access keys, and a key still works on the login page everywhere. Needs HTTPS or localhost; on a plain-http LAN address the button does not appear.
 - MCP: `list_chats` takes `channel`, `kind`, `q` (a substring of the title), `limit` and `cursor`, answers `{ chats, nextCursor }` twenty at a time, and each chat carries a `snippet` of its latest message.
 - MCP: `recent_messages`, the inbox — the newest messages across every chat, or one channel or kind, each naming its chat; and `search_messages` gains `channel`, `kind`, `sender`, `before`, `after` and `limit`, with every hit naming its chat's channel and kind.
@@ -25,6 +26,15 @@ All notable changes to this project are documented here. The format follows
 - Release procedure in `docs/releasing.md`, repository metadata in `package.json`, and CI and licence badges in the README.
 - A passkey glyph on the "Log in with a passkey" and "Register this device" buttons — the one icon in the interface, and the login page now labels each way in instead of floating the passkey button under the headline in an empty card.
 - A `--edge` colour token, the boundary of an interactive control, and a `details.confirm` component for anything that cannot be undone. `tests/design-tokens.test.ts` now checks that the edge holds 3:1 against card, paper and well on both palettes, and that no static readout carries a border.
+- **Release candidates.** Work heading for the next release is integrated on a `staging` branch, run on a staging instance, and tagged `vX.Y.Z-rc.N` as a GitHub pre-release, so anyone who wants the newest code can check the tag out and run it on their own instance without waiting for the stable release. The promotion — development, staging, production — is documented in `docs/releasing.md`.
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
+- Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
+- A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
+- A one-line footer on every page with the GitHub and X links.
+- A plain-language tagline on the login page.
+
+### Removed
+- The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
 
 ### Changed
 - **You can tell a button from a readout.** A bare button was a well fill with a hairline border — the same fill, border and radius as a key readout, inline code, a `<pre>` block and the session label in the nav, so a read-only key looked exactly like the Reveal button beside it. Only a control is outlined now; a readout keeps the well fill and drops its border.
@@ -36,16 +46,7 @@ All notable changes to this project are documented here. The format follows
 - The passkey line reads "Use your fingerprint, face, or screen lock." instead of naming Touch ID and Windows Hello — one page is served to every platform, and each brand name is meaningless on the others. It matches the wording FIDO's design guidance and Google both use, and it covers the PIN fallback.
 - The login page is grouped rather than evenly spaced: a header block, the two ways in with an `or` rule between them, then the tail. The access-key submit is full width so it mirrors the passkey button, and the headline runs at 28px/1.15 instead of the display 1.04, which closed up on two lines.
 - Smooth scrolling moved inside the `prefers-reduced-motion` guard.
-- CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull-request templates, Dependabot, CODEOWNERS, and `npm run lint` (ESLint with the Next presets) in CI.
-- Branding: the Steno bubble-and-pencil mark in the nav and on the login page, a favicon and Apple touch icon with the palette inverted so a steno-personal tab is distinguishable from a hosted Steno tab.
-- A pointer to the hosted edition at Steno.chat on the login page and at the top of Connections, for teams or anyone who would rather not connect their own account.
-- A one-line footer on every page with the GitHub and X links.
-- A plain-language tagline on the login page.
-
-### Removed
-- The first-boot bootstrap key banner. Nothing is printed to the log unless you ask for a key with `STENO_MINT_KEY`. "Revoke all keys" therefore no longer produces a new printed key on restart; the ways back in are recovery or the host.
-
-### Changed
+- The footer's X link and the README's "Follow along" section point at the maintainer's own account, <https://x.com/0xmythril>, instead of a placeholder handle; the README also credits the maintainer and says releases are announced through GitHub.
 - A message that carries an attachment now always says so: `media` is `{ status: 'ready' | 'pending' | 'failed' | 'unavailable', … }` rather than `null` until the download finishes, and only a ready one has a `url`. `media` also carries `sizeBytes`, `durationSeconds`, `isVoiceNote` and the analysis `description`.
 - MCP: `list_chats` answers an object (`{ chats, nextCursor }`) rather than a bare array, and messages read over MCP no longer carry the channel's own `externalMessageId` (the REST API keeps it). `whoami` names a WhatsApp account from the contact cache when the session reported no display name.
 - **People** shows where each name came from and what to do about it: rows the address book filled in for you are tagged *Auto*, a name you typed is tagged *alias* with a "Use channel name" button beside it, a "Merge into" box on a person's page folds two rows into one, and Delete is now **Hide** — the links stay so a contact sync cannot bring them back, and a "Hidden" section at the foot of the People page restores them.

@@ -14,7 +14,8 @@ export async function EnrichmentSection() {
         With an OpenRouter key saved, images are read for the text in them and voice notes are
         transcribed, and both become searchable. This is the only thing that ever sends your archive
         anywhere: the file goes to the provider named beside the model you pick, and nothing else
-        does. Leave it off and nothing leaves this machine.
+        does. Leave it off and no chat of yours leaves this machine — the usage counts below carry
+        no archive content at all.
       </p>
 
       {s.hasOpenrouterKey ? (

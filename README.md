@@ -13,8 +13,11 @@ One container, one volume, one file.
 
 - **Read-only by construction.** The code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
-- **Yours only.** No sign-up, no telemetry, no analytics, no third party — one
-  optional exception you switch on yourself (see Configuration).
+- **Yours only.** No sign-up, no accounts, no analytics SDK in the code. Two
+  things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md):
+  enrichment, off until you turn it on, and anonymous usage events — that a
+  feature was used, never what it was used on — which you can turn off in
+  Settings or with `DO_NOT_TRACK=1`.
 - **Agent-ready.** An MCP endpoint with five read tools: list chats, read a
   chat, search, list the people in your address book, and ask which accounts
   are connected.
@@ -293,6 +296,9 @@ means unset.
 | `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
 | `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
 | `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
+| `STENO_POSTHOG_KEY` | the project's token | The PostHog project anonymous usage events are sent to. It is PostHog's write-only client token, shipped in the build as every PostHog client's is; a fork sets its own. It is **not** the off switch — that is the **Anonymous usage** box in Settings, or `DO_NOT_TRACK=1`. See [What leaves your machine](PRIVACY.md#what-leaves-your-machine). |
+| `STENO_POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host. Set the EU host if your project lives there. |
+| `DO_NOT_TRACK` | unset | Set to `1` and no usage event is ever sent, whatever Settings says. The same variable GitHub CLI and other tools honour. |
 | `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](docs/self-hosting.md#lost-access). |
 | `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 
@@ -362,5 +368,15 @@ them your source too.
 
 ## Follow along
 
-Source lives at <https://github.com/0xmythril/steno-personal>. Releases and
-changes are announced on X at <https://x.com/stenochat>.
+Source lives at <https://github.com/0xmythril/steno-personal>; watch the
+repository or its Releases page to hear about new versions. steno-personal is
+built and maintained by [0xmythril](https://github.com/0xmythril), who also
+posts about it on X at <https://x.com/0xmythril>.
+
+**Want the next version early?** Changes are integrated on the `staging`
+branch and run on a private staging instance before they reach `main`. What is
+being tested is tagged as a pre-release — `vX.Y.Z-rc.N` on the
+[releases page](https://github.com/0xmythril/steno-personal/releases) — so you
+can check the tag out and run it on your own instance ahead of the stable
+release. There is no shared instance to log into: this is one archive for one
+person, so the only way to see it running is to run it yourself.

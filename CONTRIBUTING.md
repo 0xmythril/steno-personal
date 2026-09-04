@@ -19,8 +19,15 @@ fails CI rather than a reviewer's memory.
    `@mtcute/*`; only `lib/channels/whatsapp.ts` imports Baileys. Everything
    else talks to the `ChannelPort` / `ChannelSession` interfaces in
    `lib/channels/port.ts`.
-3. **Nothing leaves the machine** except the one OpenRouter call a user turns
-   on. No analytics, telemetry, crash reporting, or update checks.
+3. **Two things can leave the machine, both listed and both switchable.** The
+   OpenRouter enrichment call a user turns on, and anonymous usage events the
+   user can turn off in Settings or with `DO_NOT_TRACK`. An event is a name
+   from the fixed list in `lib/services/telemetry.ts` plus enum-valued
+   properties — never a message, a name, a number, a title, a query, a chat id
+   or a key — posted to PostHog as one plain HTTP request with no vendor SDK in
+   the process. Nothing else: no crash reporting, no update checks.
+   `tests/telemetry.test.ts` and `tests/launch-invariants.test.ts` check every
+   call site, and the sweep still bans the analytics SDKs by name.
 4. **Secrets never reach a URL, a log, or a response body.** Access keys and
    session material travel in httpOnly cookies or `Authorization` headers;
    logs use `errorShape()` from `lib/log.ts` and never print identifiers.
@@ -60,6 +67,11 @@ when you touch the Dockerfile, `scripts/start.mjs`, migrations or auth.
 
 ## Pull requests
 
+- **Branch from `staging`, and open the pull request into `staging`** — not
+  `main`. `staging` is the integration branch and deploys to a staging
+  instance; `main` is the release line and deploys to production. Changes
+  reach `main` only as a promotion of `staging`, which the maintainer does.
+  The whole pipeline is in [docs/releasing.md](docs/releasing.md#environments).
 - One change per pull request, with a description that says what a user
   would notice and why.
 - Commit messages: `type(scope): imperative summary` — `fix(media): …`,

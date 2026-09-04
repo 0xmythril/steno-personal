@@ -8,6 +8,7 @@ import { CopyButton } from '@/app/copy-button'
 import { RegisterPasskey } from '@/app/register-passkey'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
+import { TelemetrySection } from './telemetry'
 import {
   mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction,
   revokePasskeyAction, revokeAllPasskeysAction,
@@ -181,6 +182,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         />
 
         <EnrichmentSection />
+
+        <TelemetrySection />
       </main>
     </>
   )

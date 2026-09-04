@@ -7,18 +7,23 @@ chats, so you can decide whether to run it.
 Parts of what follows are enforced by a test in `tests/`, and it is worth being
 exact about which. The repo-wide sweep in `tests/launch-invariants.test.ts`
 refuses an import of — or a dependency on — any analytics or telemetry package
-it knows of, holds each chat library to its single importer, pins the licence,
-and keeps an email address out of `SECURITY.md`. Separate structural tests hold
-the transcript page to having no compose control of any kind and the channel
-wrappers to exposing no send method. Everything else below is documented
+it knows of, holds the usage events below to one file, one variable and a
+fixed list of enum-valued properties, holds each chat library to its single
+importer, pins the licence, and keeps an email address out of `SECURITY.md`.
+`tests/telemetry.test.ts` fails if a chat's words, names or numbers can reach
+an event.
+Separate structural tests hold the transcript page to having no compose control
+of any kind and the channel wrappers to exposing no send method. Everything else below is documented
 behaviour: a description of what the code does, which you can read and check,
 rather than something the suite would catch a change to.
 
 ## Who holds your data
 
 You do. The archive is one SQLite file on a disk you chose, on a machine you
-chose. Nobody who wrote this software can read it, and nothing phones home. If
-you delete the folder, it is gone.
+chose. Nobody who wrote this software can read it. The one thing that does
+leave on its own is an anonymous note that a feature was used, described under
+"What leaves your machine" — it carries nothing from your archive, and you can
+switch it off. If you delete the folder, everything else is gone.
 
 ## What it reads
 
@@ -130,17 +135,63 @@ Messages you delete on your own phone are treated the same way.
 
 ## What leaves your machine
 
-Ordinarily, nothing. The only traffic is to Telegram and WhatsApp themselves,
-which is how a chat client works.
+Mostly the only traffic is to Telegram and WhatsApp themselves, which is how a
+chat client works. Beyond that there are exactly two things, and this section
+is the whole list of them.
 
-There is exactly one thing you can switch on that changes that. If you save an
-OpenRouter key in Settings and enable image or voice-note enrichment, then those
-attachments are sent to OpenRouter so their text can be extracted and made
-searchable. It is off by default, it is per-medium, and it stops the moment you
-clear the key. Nothing else — no analytics, no crash reporting, no update check,
-no usage ping — ever leaves the box. There is no analytics code in this repo; a
-test refuses the analytics and telemetry packages we know of, and nothing in
-the code makes an outbound request except the OpenRouter call you enable.
+**Enrichment, off until you turn it on.** If you save an OpenRouter key in
+Settings and enable image or voice-note enrichment, then those attachments are
+sent to OpenRouter so their text can be extracted and made searchable. It is
+off by default, it is per-medium, and it stops the moment you clear the key.
+
+**Anonymous usage events, on until you turn them off.** When you use a feature,
+this instance tells the project that it happened, so the project can see which
+parts are worth keeping. Be clear about the trade: this one is **on by
+default**, and it is the only setting in the product that is. You turn it off
+under **Anonymous usage** in Settings, or by setting `DO_NOT_TRACK=1` on the
+host, and off means off — nothing is sent again.
+
+Here is the entire list of events. It is written down as a type in
+`lib/services/telemetry.ts`, so a call that tried to send anything else would
+not compile, and `tests/telemetry.test.ts` and `tests/launch-invariants.test.ts`
+check every call site against it:
+
+- `search` — that a search ran, and whether from the portal or from an agent.
+  Never the query.
+- `mcp_tool_call` — which agent tool was called, by name. Never its
+  arguments, never its result.
+- `transcript_viewed` — that a transcript was opened. Never which one.
+- `person_linked` — that a person was linked, and whether by hand, by
+  confirming a phone or name suggestion, or automatically from your
+  contacts. Never who.
+- `channel_connected` — that Telegram or WhatsApp was connected. Never the
+  account.
+- `access_key_minted` — that a key was made. Never its label or value.
+- `enrichment_toggled` — the two enrichment booleans. Never the key, never the
+  model.
+
+Every event also carries the version of this software and a random id minted
+on this instance with `randomUUID()` at the first event. The id is not derived
+from your key, your volume, your account or your machine, so it links one
+instance's events to each other and to nothing else. Nothing else is ever
+attached: no message text, no chat title, no contact or sender name, no phone
+number, no search query, no chat id, no key, no file. The code that sends
+never reads those columns.
+
+Events go to **PostHog**, a third-party analytics service, over one plain HTTP
+POST per event. No PostHog library runs inside this software — a test still
+refuses the analytics SDKs we know of — so PostHog receives an event name and
+an enum and nothing more; it has no code in here that could see more. The
+project's PostHog token ships in the build, as every PostHog client's does; it
+can only write events, never read them. A fork points it at its own project.
+
+One consequence to state plainly, because this is a private archive and you
+deserve the precise version: an event is sent at the moment you use the
+feature. PostHog therefore sees *when* this instance searched or opened a
+transcript, even though it never sees what. If that timing is more than you
+want a third party to hold, turn it off.
+
+Beyond those two: no crash reporting, no update check, nothing else.
 
 ## What the logs contain
 

@@ -225,8 +225,13 @@ variable does not hide it from the platform that supplies it.
 - **No multi-user, no sharing.** One instance is one person. Sharing an archive
   would need membership and permission checks, and those are the private cloud
   product's problem, not this one's.
-- **No outbound anything.** No telemetry, no crash reporting, no update check.
-  The only optional outbound call is to OpenRouter, off until you save a key.
+- **No crash reporting, no update check, no analytics SDK in the process.**
+  Two outbound calls exist and both are switchable: OpenRouter enrichment, off
+  until you save a key, and anonymous usage events to PostHog, on by default,
+  off in Settings or with `DO_NOT_TRACK`. An event is a feature name and an
+  enum, never archive content; the list is a type in
+  `lib/services/telemetry.ts` and every call site is checked by test. PostHog
+  does see *when* a feature was used, which PRIVACY.md says outright.
 - **No encryption of message text at rest.** Above.
 
 ## Reporting

@@ -8,10 +8,13 @@ import { DEFAULT_TRANSCRIPTION_MODEL, DEFAULT_VISION_MODEL } from '@/lib/service
 describe('settings service', () => {
   beforeEach(resetDb)
 
-  it('starts with enrichment off and the recommended models', async () => {
+  it('starts with enrichment off, telemetry on, and the recommended models', async () => {
     expect(await getSettings()).toEqual({
       hasOpenrouterKey: false, analyzeImages: false, analyzeAudio: false,
       visionModel: DEFAULT_VISION_MODEL, transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
+      // The one setting that starts on. It still sends nothing unless the host
+      // sets STENO_TELEMETRY_URL — see tests/telemetry.test.ts.
+      telemetryEnabled: true,
     })
     expect(await getOpenrouterKey()).toBeNull()
   })

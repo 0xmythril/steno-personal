@@ -17,3 +17,7 @@ docs/superpowers/
 
 # Local design-review notes, like docs/superpowers — never referenced by anything that ships.
 .impeccable/
+
+# Ops notes name the maintainer's own hosting; the pipeline they describe is
+# public in docs/releasing.md, the specifics are not
+docs/*.local.md
