@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { log } from '@/lib/log'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
 import type { ChannelContact } from '@/lib/channels/port'
-import type { IncomingMessage } from '@/lib/services/ingest'
+import type { DeleteRef, IncomingMessage } from '@/lib/services/ingest'
 import { FakeWaSocket, fakeWaDeps, flush, testAuthRoot, waitForSocket } from './helpers/fake-wa-socket'
 
 const GROUP = '12345-67890@g.us'
@@ -13,7 +13,7 @@ type Collected = {
   socket: FakeWaSocket
   messages: IncomingMessage[]
   edits: IncomingMessage[]
-  deletes: Array<{ externalChatId?: string; externalMessageId: string }>
+  deletes: DeleteRef[]
   listContacts(): Promise<ChannelContact[]>
   close(): Promise<void>
 }
@@ -30,7 +30,7 @@ async function connect(name: string): Promise<Collected> {
   const session = await pending
   const messages: IncomingMessage[] = []
   const edits: IncomingMessage[] = []
-  const deletes: Array<{ externalChatId?: string; externalMessageId: string }> = []
+  const deletes: DeleteRef[] = []
   session.onMessage(m => messages.push(m))
   session.onEdit(m => edits.push(m))
   session.onDelete(r => deletes.push(r))
@@ -242,15 +242,35 @@ describe('history flow', () => {
 })
 
 describe('protocol events', () => {
-  it('turns a revoke into onDelete', async () => {
+  // Every revoke and edit names who sent it, canonicalised like a message's
+  // sender, so ingest can refuse one from anyone but the message's author.
+  it('turns a revoke into onDelete, naming the participant who sent it', async () => {
     const c = await connect('proto-delete')
     c.socket.emit('messages.upsert', {
-      messages: [{ key: { remoteJid: GROUP, id: 'R1', fromMe: false }, messageTimestamp: 1_700_000_100, message: { protocolMessage: { type: 0, key: { id: 'M1' } } } }],
+      messages: [{ key: { remoteJid: GROUP, id: 'R1', fromMe: false, participant: '15559990000@s.whatsapp.net' }, messageTimestamp: 1_700_000_100, message: { protocolMessage: { type: 0, key: { id: 'M1' } } } }],
       type: 'notify',
     })
     await flush(20)
-    expect(c.deletes).toEqual([{ externalChatId: GROUP, externalMessageId: 'M1' }])
+    expect(c.deletes).toEqual([{ externalChatId: GROUP, externalMessageId: 'M1', actor: { fromOwner: false, senderExternalId: '15559990000@s.whatsapp.net' } }])
     expect(c.messages).toEqual([])
+    await c.close()
+  })
+
+  it('names the DM counterparty, resolved to the phone JID, as the actor of a revoke', async () => {
+    const c = await connect('proto-delete-dm')
+    c.socket.lidToPn.set(DM_LID, DM_PN)
+    c.socket.emit('messages.upsert', {
+      messages: [
+        { key: { remoteJid: DM_LID, id: 'R2', fromMe: false }, messageTimestamp: 1_700_000_100, message: { protocolMessage: { type: 0, key: { id: 'M1' } } } },
+        { key: { remoteJid: DM_LID, id: 'R3', fromMe: true }, messageTimestamp: 1_700_000_100, message: { protocolMessage: { type: 0, key: { id: 'M2' } } } },
+      ],
+      type: 'notify',
+    })
+    await flush(20)
+    expect(c.deletes).toEqual([
+      { externalChatId: DM_PN, externalMessageId: 'M1', actor: { fromOwner: false, senderExternalId: DM_PN } },
+      { externalChatId: DM_PN, externalMessageId: 'M2', actor: { fromOwner: true, senderExternalId: null } },
+    ])
     await c.close()
   })
 
@@ -259,7 +279,7 @@ describe('protocol events', () => {
     c.socket.emit('groups.update', [{ id: GROUP, subject: 'Weeknotes' }])
     c.socket.emit('messages.upsert', {
       messages: [{
-        key: { remoteJid: GROUP, id: 'E1', fromMe: false },
+        key: { remoteJid: GROUP, id: 'E1', fromMe: false, participant: '15559990000@s.whatsapp.net' },
         messageTimestamp: 1_700_000_200,
         message: { editedMessage: { message: { protocolMessage: { type: 14, key: { id: 'M1' }, editedMessage: { conversation: 'corrected' } } } } },
       }],
@@ -269,6 +289,8 @@ describe('protocol events', () => {
     expect(c.edits).toHaveLength(1)
     expect(c.edits[0]).toMatchObject({
       externalChatId: GROUP, chatTitle: 'Weeknotes', externalMessageId: 'M1', type: 'text', text: 'corrected',
+      fromOwner: false, senderExternalId: '15559990000@s.whatsapp.net',
+      actor: { fromOwner: false, senderExternalId: '15559990000@s.whatsapp.net' },
     })
     expect(c.messages).toEqual([])
     await c.close()
@@ -294,10 +316,10 @@ describe('protocol events', () => {
     const c = await connect('proto-history')
     c.socket.emit('messaging-history.set', {
       chats: [],
-      messages: [{ key: { remoteJid: GROUP, id: 'R2', fromMe: false }, messageTimestamp: 1_700_000_400, message: { protocolMessage: { type: 0, key: { id: 'M9' } } } }],
+      messages: [{ key: { remoteJid: GROUP, id: 'R2', fromMe: false }, participant: '15559990000@s.whatsapp.net', messageTimestamp: 1_700_000_400, message: { protocolMessage: { type: 0, key: { id: 'M9' } } } }],
     })
     await flush(30)
-    expect(c.deletes).toEqual([{ externalChatId: GROUP, externalMessageId: 'M9' }])
+    expect(c.deletes).toEqual([{ externalChatId: GROUP, externalMessageId: 'M9', actor: { fromOwner: false, senderExternalId: '15559990000@s.whatsapp.net' } }])
     await c.close()
   })
 })

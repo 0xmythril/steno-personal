@@ -1,6 +1,7 @@
 import type {
   BackfillOpts, Channel, ChannelAccount, ChannelContact, ChannelPort, ChannelSession,
   IncomingMessage, LoginDriver,
+  DeleteRef,
 } from '@/lib/channels/port'
 
 type LoginResult = { sessionString: string; account: ChannelAccount }
@@ -138,7 +139,7 @@ class FakeSession implements ChannelSession {
 
   onMessage(cb: (m: IncomingMessage) => void) { this.msgCbs.push(cb) }
   onEdit(cb: (m: IncomingMessage) => void) { this.editCbs.push(cb) }
-  onDelete(cb: (ref: { externalChatId?: string; externalMessageId: string }) => void) { this.delCbs.push(cb) }
+  onDelete(cb: (ref: DeleteRef) => void) { this.delCbs.push(cb) }
   emitMessage(m: IncomingMessage) { this.msgCbs.forEach(cb => cb(m)) }
   emitEdit(m: IncomingMessage) { this.editCbs.forEach(cb => cb(m)) }
   emitDelete(ref: { externalChatId?: string; externalMessageId: string }) { this.delCbs.forEach(cb => cb(ref)) }

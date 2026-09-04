@@ -113,24 +113,64 @@ export function resolveContactIdentity(c: WaIdentityCandidates): WaIdentity | nu
   return { jid, lidJid, phone: pnJid ? phoneFromPnJid(pnJid) : null }
 }
 
+// Who sent the revoke or edit — the OUTER key, never the inner
+// protocolMessage.key, which is the sender's claim about the target and is
+// under their control. `actor` is resolved exactly like a message's sender so
+// ingest can compare it with the stored row; null for the owner (identified
+// by fromOwner, as everywhere else) and for a sender WhatsApp did not name.
+type WaActor = { fromOwner: boolean; actor: WaIdentity | null }
+
 export type WaProtocolEvent =
-  | { kind: 'delete'; remoteJid: string; waId: string; sentAt: Date }
-  | { kind: 'edit'; remoteJid: string; waId: string; newText: string | null }
+  | ({ kind: 'delete'; remoteJid: string; waId: string; sentAt: Date } & WaActor)
+  | ({ kind: 'edit'; remoteJid: string; waId: string; newText: string | null } & WaActor)
 
 // Revoke (delete-for-everyone) and edit events, in any wrapping. Returns null
 // for ordinary content messages, which then flow on to parseWaMessage.
 // WAProto/index.d.ts:8620 (baileys 7.0.0-rc14): ProtocolMessage.Type.REVOKE = 0,
 // MESSAGE_EDIT = 14. The edit branch keys off the presence of editedMessage
 // rather than the numeric type, because that is the field we need anyway.
+//
+// WhatsApp cannot check who is allowed to revoke or edit a message — the
+// payload is end-to-end encrypted — and Baileys forwards these from anyone in
+// the chat (lib/Utils/process-message.js: REVOKE and MESSAGE_EDIT are
+// deliberately not dropped for !fromMe). Official clients honour them only
+// from the message's author; the archive does the same, in ingest, which is
+// why every event names its actor.
 export function parseProtocolEvent(m: any): WaProtocolEvent | null {
   const remoteJid: string | undefined = m?.key?.remoteJid
   if (!remoteJid) return null
   const proto = unwrapContent(m?.message ?? {})?.protocolMessage
   const targetId: string | undefined = proto?.key?.id
   if (!proto || !targetId) return null
-  if (proto.type === 0) return { kind: 'delete', remoteJid, waId: targetId, sentAt: tsToDate(m?.messageTimestamp) }
-  if (proto.editedMessage) return { kind: 'edit', remoteJid, waId: targetId, newText: textOf(proto.editedMessage) }
+  const fromOwner = !!m?.key?.fromMe
+  const actor = fromOwner ? null : resolveSender(m, chatKindForJid(remoteJid) ?? 'group', fromOwner)
+  if (proto.type === 0) return { kind: 'delete', remoteJid, waId: targetId, sentAt: tsToDate(m?.messageTimestamp), fromOwner, actor }
+  if (proto.editedMessage) return { kind: 'edit', remoteJid, waId: targetId, newText: textOf(proto.editedMessage), fromOwner, actor }
   return null
+}
+
+// The only host the archive ever downloads media from. A media node's `url`
+// is written by whoever sent the message, and Baileys builds the download
+// from it — host included — unless told the host explicitly
+// (lib/Utils/messages-media.js: `opts.host ?? extractHost(url)`). The port
+// pins the host AND refuses any node that does not name this CDN by direct
+// path, so a crafted message cannot make the worker fetch from a host of the
+// sender's choosing (ground rule 3: nothing leaves the machine).
+export const WA_MEDIA_HOST = 'mmg.whatsapp.net'
+
+export function hasTrustedMediaSource(m: any): boolean {
+  const content = unwrapContent(m?.message ?? {})
+  const node = Object.keys(MEDIA_KEYS).map(k => content?.[k]).find(n => n && typeof n === 'object')
+  if (!node) return false
+  if (typeof node.directPath !== 'string' || !node.directPath.startsWith('/')) return false
+  if (node.url == null) return true
+  if (typeof node.url !== 'string') return false
+  try {
+    const u = new URL(node.url)
+    return u.protocol === 'https:' && u.host === WA_MEDIA_HOST
+  } catch {
+    return false
+  }
 }
 
 export type ParsedWaMessage = {

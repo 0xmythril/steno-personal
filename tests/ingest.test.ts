@@ -141,3 +141,61 @@ describe('ingest', () => {
     expect(row.deletedAt).toBeNull()
   })
 })
+
+// WhatsApp cannot check who sent a revoke or an edit (the payload is
+// end-to-end encrypted), and Baileys forwards them from anyone. Official
+// clients only honour one from the message's own author; so does the archive,
+// when the port says who acted. A ref without an actor (Telegram, whose
+// server has already authorised the delete) is applied as before.
+describe('ingest authorship', () => {
+  beforeEach(resetDb)
+  const CHAT = '12345-67890@g.us'
+  const ada = { senderExternalId: '15559990000@s.whatsapp.net', senderName: 'Ada', fromOwner: false }
+  const wa = (over: Partial<IncomingMessage> = {}) => msg({ externalChatId: CHAT, ...ada, ...over })
+
+  async function seed() {
+    const conn = await makeConnection({ channel: 'whatsapp' })
+    await recordMessage(conn.id, 'whatsapp', wa({ externalMessageId: 'OWN', fromOwner: true, senderExternalId: '15551234567@s.whatsapp.net', senderName: null, text: 'mine' }))
+    await recordMessage(conn.id, 'whatsapp', wa({ externalMessageId: 'ADA', text: 'hers' }))
+    return conn
+  }
+  const rowsById = async () => Object.fromEntries((await db.select().from(messages)).map(r => [r.externalMessageId, r]))
+
+  it('a revoke from someone other than the author leaves the row alone', async () => {
+    const conn = await seed()
+    const bob = { fromOwner: false, senderExternalId: '15550001111@s.whatsapp.net' }
+    await applyDelete(conn.id, { externalChatId: CHAT, externalMessageId: 'OWN', actor: bob })
+    await applyDelete(conn.id, { externalChatId: CHAT, externalMessageId: 'ADA', actor: bob })
+    await applyDelete(conn.id, { externalChatId: CHAT, externalMessageId: 'ADA', actor: { fromOwner: false, senderExternalId: null } })
+    const rows = await rowsById()
+    expect(rows.OWN.deletedAt).toBeNull()
+    expect(rows.ADA.deletedAt).toBeNull()
+  })
+
+  it('a revoke from the author tombstones the row, for the owner and for a contact', async () => {
+    const conn = await seed()
+    await applyDelete(conn.id, { externalChatId: CHAT, externalMessageId: 'OWN', actor: { fromOwner: true, senderExternalId: null } })
+    await applyDelete(conn.id, { externalChatId: CHAT, externalMessageId: 'ADA', actor: { fromOwner: false, senderExternalId: ada.senderExternalId } })
+    const rows = await rowsById()
+    expect(rows.OWN.deletedAt).toBeInstanceOf(Date)
+    expect(rows.ADA.deletedAt).toBeInstanceOf(Date)
+  })
+
+  it('an edit from someone other than the author changes nothing', async () => {
+    const conn = await seed()
+    await applyEdit(conn.id, 'whatsapp', wa({ externalMessageId: 'OWN', text: 'forged', actor: { fromOwner: false, senderExternalId: ada.senderExternalId } }))
+    await applyEdit(conn.id, 'whatsapp', wa({ externalMessageId: 'ADA', text: 'forged', actor: { fromOwner: false, senderExternalId: '15550001111@s.whatsapp.net' } }))
+    const rows = await rowsById()
+    expect(rows.OWN).toMatchObject({ text: 'mine', editedAt: null })
+    expect(rows.ADA).toMatchObject({ text: 'hers', editedAt: null })
+  })
+
+  it('an edit from the author is applied', async () => {
+    const conn = await seed()
+    await applyEdit(conn.id, 'whatsapp', wa({ externalMessageId: 'OWN', text: 'mine, fixed', actor: { fromOwner: true, senderExternalId: null } }))
+    await applyEdit(conn.id, 'whatsapp', wa({ externalMessageId: 'ADA', text: 'hers, fixed', actor: { fromOwner: false, senderExternalId: ada.senderExternalId } }))
+    const rows = await rowsById()
+    expect(rows.OWN.text).toBe('mine, fixed')
+    expect(rows.ADA.text).toBe('hers, fixed')
+  })
+})

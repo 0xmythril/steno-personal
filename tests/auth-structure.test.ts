@@ -19,7 +19,7 @@ import path from 'node:path'
 // milestone is covered the day it lands instead of passing CI unnoticed.
 const EXEMPT = new Set(['loginAction'])
 const FILE_GUARDS: Record<string, string[]> = {
-  [path.join('app', 'setup', 'actions.ts')]: ['requireFreshInstance()'],
+  [path.join('app', 'setup', 'actions.ts')]: ['requireFreshInstance()', 'requireSetupAttempt()'],
   // Start has no attempt yet, so it carries the open-check alone.
   [path.join('app', 'login', 'recover', 'actions.ts')]: ['requireRecoveryAttempt()', 'requireRecoveryOpen()'],
 }
