@@ -18,7 +18,7 @@ The mark is fixed and must be reproduced exactly (see Components → Mark). Ever
 
 These are settled product decisions for steno-personal (see CONTRIBUTING.md, "Ground rules"). Do not design them away.
 
-- **Access-key login.** There is a login page, and the nav shows the session's key label with a Log out. There is no avatar, no accounts, no OAuth.
+- **Access-key login.** There is a login page — a passkey button first when one is registered, the key form beneath — and the nav shows `key` or `passkey` with the session's label and a Log out. There is no avatar, no accounts, no OAuth.
 - **Three pages.** Chats, Connections, Settings. Agent access is a panel inside Settings.
 - **WhatsApp live is first-class.** No gate, no switch. Its three risk sentences sit on the card, unsoftened, in the `bad` colour.
 - **Keys are re-revealable.** A key can be shown again from the Settings table.

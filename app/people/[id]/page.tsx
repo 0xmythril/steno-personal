@@ -46,7 +46,7 @@ export default async function PersonPage({ params, searchParams }: {
 
   return (
     <>
-      <Nav label={session.label} current="people" />
+      <Nav label={session.label} via={session.via} current="people" />
       <main>
       <p className="muted"><Link href="/people">&larr; All people</Link></p>
       <h1>

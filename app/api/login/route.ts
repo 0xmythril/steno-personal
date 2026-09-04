@@ -24,7 +24,7 @@ const handlePost = withErrorBoundary(async (req: Request): Promise<Response> => 
     return Response.json({ error: 'invalid_key' }, { status: 401 })
   }
 
-  await startSession(verified.id)
+  await startSession({ keyId: verified.id })
   log.info('api login accepted')
   return new Response(null, { status: 204 })
 })

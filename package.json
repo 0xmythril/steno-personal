@@ -40,6 +40,8 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "@mtcute/node": "^0.32.1",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.0",
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^17.4.2",
