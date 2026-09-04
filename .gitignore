@@ -14,3 +14,7 @@ tsconfig.tsbuildinfo
 
 # Design/plan working documents stay local (they reference private material)
 docs/superpowers/
+
+# Ops notes name the maintainer's own hosting; the pipeline they describe is
+# public in docs/releasing.md, the specifics are not
+docs/*.local.md

@@ -372,3 +372,11 @@ Source lives at <https://github.com/0xmythril/steno-personal>; watch the
 repository or its Releases page to hear about new versions. steno-personal is
 built and maintained by [0xmythril](https://github.com/0xmythril), who also
 posts about it on X at <https://x.com/0xmythril>.
+
+**Want the next version early?** Changes are integrated on the `staging`
+branch and run on a private staging instance before they reach `main`. What is
+being tested is tagged as a pre-release — `vX.Y.Z-rc.N` on the
+[releases page](https://github.com/0xmythril/steno-personal/releases) — so you
+can check the tag out and run it on your own instance ahead of the stable
+release. There is no shared instance to log into: this is one archive for one
+person, so the only way to see it running is to run it yourself.
