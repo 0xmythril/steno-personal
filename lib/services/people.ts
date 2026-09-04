@@ -511,9 +511,14 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
 // found on Telegram, one on WhatsApp, both named the same thing and with no
 // phone number to prove it. Decision 12 will not merge those by itself and
 // should not; this is where the owner is asked.
+// One side of a suggestion, with what the page needs to say which row is
+// which: its channel (the two sides are always one Telegram and one WhatsApp)
+// and how many chats it carries, so "keep the older row" is a decision the
+// owner can weigh rather than take on trust.
+export type SuggestionSide = { id: string; name: string; channel: Channel; chatCount: number }
 export type MergeSuggestion = {
-  from: { id: string; name: string }
-  into: { id: string; name: string }
+  from: SuggestionSide
+  into: SuggestionSide
   reason: 'name'
 }
 
@@ -573,6 +578,10 @@ export async function listMergeSuggestions(): Promise<MergeSuggestion[]> {
     whatsappExternalId: dismissedSuggestions.whatsappExternalId,
   }).from(dismissedSuggestions)).map(r => pairKey(r.telegramExternalId, r.whatsappExternalId)))
 
+  const counts = await chatCountsByPerson(candidates.map(c => c.id))
+  const side = (c: SingleChannelPerson): SuggestionSide =>
+    ({ id: c.id, name: c.name, channel: c.channel, chatCount: counts.get(c.id) ?? 0 })
+
   const byName = new Map<string, SingleChannelPerson[]>()
   for (const w of whatsapp) {
     const key = nameKey(w.name)
@@ -592,11 +601,7 @@ export async function listMergeSuggestions(): Promise<MergeSuggestion[]> {
       const [into, from] = t.createdAt.getTime() === w.createdAt.getTime()
         ? (t.id < w.id ? [t, w] : [w, t])
         : (t.createdAt < w.createdAt ? [t, w] : [w, t])
-      out.push({
-        from: { id: from.id, name: from.name },
-        into: { id: into.id, name: into.name },
-        reason: 'name',
-      })
+      out.push({ from: side(from), into: side(into), reason: 'name' })
     }
   }
   return out

@@ -369,8 +369,8 @@ describe('the self-populating address book', () => {
     // It stays what it always was: something to OFFER the owner. Two rows, and
     // a suggestion that says so — not silence, and not a merge.
     expect(await listMergeSuggestions()).toEqual([{
-      from: { id: onTelegram.id, name: 'Ada' },
-      into: { id: onWhatsapp.id, name: 'Ada' },
+      from: { id: onTelegram.id, name: 'Ada', channel: 'telegram', chatCount: 0 },
+      into: { id: onWhatsapp.id, name: 'Ada', channel: 'whatsapp', chatCount: 0 },
       reason: 'name',
     }])
   })
@@ -619,8 +619,8 @@ describe('merge suggestions between people', () => {
     const { telegram, whatsapp } = await twoAdas()
     // Trimmed and case-insensitive: ' Ada ' and 'ADA' are one name.
     expect(await listMergeSuggestions()).toEqual([{
-      from: { id: whatsapp, name: 'ADA' },
-      into: { id: telegram, name: 'Ada' },
+      from: { id: whatsapp, name: 'ADA', channel: 'whatsapp', chatCount: 0 },
+      into: { id: telegram, name: 'Ada', channel: 'telegram', chatCount: 0 },
       reason: 'name',
     }])
 
@@ -641,6 +641,16 @@ describe('merge suggestions between people', () => {
     await createPerson({ name: 'Grace' })
     await createPerson({ name: 'Somebody else' })
     expect(await listMergeSuggestions()).toHaveLength(2)
+  })
+
+  it('carries each side’s channel and chat count, so the page can say which row stays and what it holds', async () => {
+    const { telegram, whatsapp } = await twoAdas()
+    const tg = (await db.select().from(connections).where(eq(connections.channel, 'telegram')))[0]
+    const chat = await makeChat(tg, { kind: 'dm', externalChatId: '42' })
+    await addMessage(chat, { text: 'hi', senderExternalId: '42' })
+    const [s] = await listMergeSuggestions()
+    expect(s.into).toEqual({ id: telegram, name: 'Ada', channel: 'telegram', chatCount: 1 })
+    expect(s.from).toEqual({ id: whatsapp, name: 'ADA', channel: 'whatsapp', chatCount: 0 })
   })
 
   it('never offers a hidden person, and confirming is a merge', async () => {

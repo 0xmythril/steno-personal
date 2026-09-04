@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **Merge suggestions** on the People page now say which row is on Telegram
+  and which on WhatsApp, which one is kept, and how many chats each carries.
+
 ## [0.1.0] — 2026-09-04
 
 First release. Everything below is new.

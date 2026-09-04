@@ -47,8 +47,8 @@ export default async function PeoplePage({ searchParams }: {
             <p className="muted">
               Two rows with the same name, one found on Telegram and one on WhatsApp. A name is only
               ever a hint — matching phone numbers are joined for you, names are not — so nothing
-              happens until you say so. Merging them moves every identity onto the older row and
-              removes the other; keep them separate and the pair is not offered again.
+              happens until you say so. Merging keeps the older row and moves the other&apos;s identity
+              onto it; keep them separate and the pair is not offered again.
             </p>
             <div className="tbl"><div className="scroll">
               <table>
@@ -56,8 +56,20 @@ export default async function PeoplePage({ searchParams }: {
                 <tbody>
                   {suggestions.map(s => (
                     <tr key={`${s.from.id} ${s.into.id}`}>
-                      <td className="name">Merge {s.from.name} into {s.into.name}?</td>
-                      <td className="muted">Same name</td>
+                      {/* Which side is which channel, and which row is kept, said in
+                          the sentence: two identical names on one line answered
+                          neither. The channel words are set at the name's size so
+                          they are not the smallest thing on the row. */}
+                      <td className="name">
+                        Add {s.from.name} <span className="on">on {CHANNEL_LABELS[s.from.channel]}</span> to{' '}
+                        {s.into.name} <span className="on">on {CHANNEL_LABELS[s.into.channel]}</span>?
+                      </td>
+                      <td className="muted">
+                        Same name · {CHANNEL_LABELS[s.into.channel]} row is older
+                        {(s.into.chatCount > 0 || s.from.chatCount > 0) && (
+                          <>, {s.into.chatCount} {s.into.chatCount === 1 ? 'chat' : 'chats'} to {s.from.chatCount}</>
+                        )}
+                      </td>
                       <td className="end">
                         <span className="actions">
                           <form action={confirmSuggestionAction} className="inline">
