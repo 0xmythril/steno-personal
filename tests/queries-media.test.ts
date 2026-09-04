@@ -26,18 +26,19 @@ describe('MessageView.media', () => {
     expect(page!.messages[0].media).toBeNull()
   })
 
-  it('is null while the attachment is still pending', async () => {
+  it('says pending, with no url, while the attachment is still pending', async () => {
     const fixture = await makeAttachment({ mimeType: 'image/jpeg' })
     const page = await getMessages(fixture.chat.id)
-    expect(page!.messages[0].media).toBeNull()
+    expect(page!.messages[0].media).toMatchObject({ id: fixture.media.id, status: 'pending', url: null, mimeType: 'image/jpeg' })
   })
 
   it('carries the id, the route url, the mime, and no extracted text yet', async () => {
     const fixture = await makeAttachment({ mimeType: 'image/jpeg', status: 'done', storagePath: 'a.jpg' })
     const page = await getMessages(fixture.chat.id)
     expect(page!.messages[0].media).toEqual({
-      id: fixture.media.id, url: `/media/${fixture.media.id}`,
-      mimeType: 'image/jpeg', extractedText: null,
+      id: fixture.media.id, status: 'ready', url: `/media/${fixture.media.id}`,
+      mimeType: 'image/jpeg', sizeBytes: null, durationSeconds: null, isVoiceNote: null,
+      extractedText: null, description: null,
     })
   })
 

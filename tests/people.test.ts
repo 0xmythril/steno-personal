@@ -207,7 +207,7 @@ describe('people', () => {
 describe('publicPeople — the one mapping both agent surfaces use', () => {
   beforeEach(resetDb)
 
-  it('carries the id, name, notes, channels and chat count, and nothing else', async () => {
+  it('carries the id, name, notes, channels, chat count and the chats themselves, and nothing else', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
     await addMessage(dm, { senderExternalId: '42', text: 'hello' })
@@ -222,8 +222,13 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     expect(person).toEqual({
       id, name: 'Ada', notes: 'from the archive',
       channels: ['telegram', 'whatsapp'], chatCount: 1,
+      // The chat under the title the chat list shows, with nothing but the
+      // fields an agent can act on: the id get_messages takes, and how to
+      // recognise it. No external id, no phone.
+      chats: [{ id: dm.id, title: 'Ada', channel: 'telegram', kind: 'dm' }],
     })
-    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'id', 'name', 'notes'])
+    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'chats', 'id', 'name', 'notes'])
+    expect(Object.keys(person.chats[0]).sort()).toEqual(['channel', 'id', 'kind', 'title'])
   })
 
   it('never serves a phone number or a channel identifier, however the person was linked', async () => {

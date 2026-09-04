@@ -40,7 +40,7 @@ describe('an MCP client reads a chat through a bearer key', () => {
     try {
       const { tools } = await client.listTools()
       expect(tools.map(t => t.name).sort())
-        .toEqual(['get_messages', 'list_chats', 'list_people', 'search_messages', 'whoami'])
+        .toEqual(['get_media', 'get_messages', 'list_chats', 'list_people', 'recent_messages', 'search_messages', 'whoami'])
 
       expect(firstText(await client.callTool({ name: 'list_chats', arguments: {} }))).toContain('Mum')
 

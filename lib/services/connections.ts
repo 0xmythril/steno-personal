@@ -2,7 +2,7 @@ import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { chats, connections, media } from '@/lib/db/schema'
+import { channelContacts, chats, connections, media } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { mediaFilePath } from '@/lib/services/media'
 import { errorShape, log } from '@/lib/log'
@@ -95,6 +95,35 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
     if (reason) return { ok: false, reason }
     throw err
   }
+}
+
+// What whoami tells an agent about each archive connection: the channel, a
+// name and a status, and nothing that identifies the account. A WhatsApp
+// session does not always report the owner's own name; when it did not, the
+// contact cache read from that same connection usually holds an entry for
+// the account itself, and that name is used before answering null. The
+// account id is looked up here and never returned.
+export type AgentConnection = { channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
+
+export async function agentConnections(): Promise<AgentConnection[]> {
+  const rows = await db.select({
+    id: connections.id, channel: connections.channel, status: connections.status,
+    displayName: connections.displayName, externalAccountId: connections.externalAccountId,
+  }).from(connections)
+    .where(eq(connections.purpose, 'archive'))
+    .orderBy(desc(connections.createdAt), desc(connections.id))
+  const out: AgentConnection[] = []
+  for (const r of rows) {
+    let displayName = r.displayName
+    if (!displayName && r.externalAccountId) {
+      const [own] = await db.select({ displayName: channelContacts.displayName }).from(channelContacts)
+        .where(and(eq(channelContacts.connectionId, r.id), eq(channelContacts.externalId, r.externalAccountId)))
+        .limit(1)
+      displayName = own?.displayName ?? null
+    }
+    out.push({ channel: r.channel, displayName, status: r.status })
+  }
+  return out
 }
 
 export async function listConnections(): Promise<ConnectionStatus[]> {

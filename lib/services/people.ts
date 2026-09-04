@@ -4,6 +4,7 @@ import {
   channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
 } from '@/lib/db/schema'
 import type { Channel } from '@/lib/channels/port'
+import { chatSummaries, type ChatKind } from '@/lib/services/queries'
 
 // The address book. Everything here is the owner's own annotation over
 // identities the archive already stores: nothing in this file talks to a
@@ -109,8 +110,13 @@ function isUniqueViolation(err: unknown): boolean {
 // small, and a deleted message must not keep a person in a chat they only ever
 // wrote a since-unsent line in.
 async function chatCountsByPerson(personIds: string[]): Promise<Map<string, number>> {
-  const out = new Map<string, number>(personIds.map(id => [id, 0]))
-  if (personIds.length === 0) return out
+  const ids = await chatIdsByPerson(personIds)
+  return new Map(personIds.map(id => [id, ids.get(id)?.size ?? 0]))
+}
+
+async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<string>>> {
+  const seen = new Map<string, Set<string>>()
+  if (personIds.length === 0) return seen
 
   const dmRows = await db.select({ personId: personIdentities.personId, chatId: chats.id })
     .from(personIdentities)
@@ -132,14 +138,12 @@ async function chatCountsByPerson(personIds: string[]): Promise<Map<string, numb
     .where(inArray(personIdentities.personId, personIds))
     .groupBy(personIdentities.personId, messages.chatId)
 
-  const seen = new Map<string, Set<string>>()
   for (const row of [...dmRows, ...senderRows]) {
     let set = seen.get(row.personId)
     if (!set) seen.set(row.personId, set = new Set())
     set.add(row.chatId)
   }
-  for (const id of personIds) out.set(id, seen.get(id)?.size ?? 0)
-  return out
+  return seen
 }
 
 async function identitiesByPerson(personIds: string[]): Promise<Map<string, PersonView['identities']>> {
@@ -204,16 +208,32 @@ export type PublicPerson = {
   notes: string | null
   channels: Channel[]
   chatCount: number
+  // The chats this person appears in — a DM with them, or a chat they have
+  // written in — most recently active first, under the titles the chat list
+  // shows. The ids are the ones get_messages takes, so "what did Ada say" is
+  // one hop from here.
+  chats: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
 }
 
-export async function publicPeople(): Promise<PublicPerson[]> {
-  return (await listPeople()).map(p => ({
-    id: p.id,
-    name: p.name,
-    notes: p.notes,
-    channels: [...new Set(p.identities.map(i => i.channel))].sort(),
-    chatCount: p.chatCount,
-  }))
+// `q` is a case-insensitive substring of the name, matched here in memory:
+// an address book is hundreds of rows, not millions, and the filter must see
+// the same name the list shows.
+export async function publicPeople(opts: { q?: string } = {}): Promise<PublicPerson[]> {
+  const q = opts.q?.trim().toLowerCase()
+  const views = (await listPeople()).filter(p => !q || p.name.toLowerCase().includes(q))
+  const chatIds = await chatIdsByPerson(views.map(p => p.id))
+  const summaries = await chatSummaries([...new Set([...chatIds.values()].flatMap(s => [...s]))])
+  return views.map(p => {
+    const mine = chatIds.get(p.id) ?? new Set<string>()
+    return {
+      id: p.id,
+      name: p.name,
+      notes: p.notes,
+      channels: [...new Set(p.identities.map(i => i.channel))].sort(),
+      chatCount: p.chatCount,
+      chats: summaries.filter(c => mine.has(c.id)).map(c => ({ id: c.id, title: c.title, channel: c.channel, kind: c.kind })),
+    }
+  })
 }
 
 export async function getPerson(id: string): Promise<PersonView | null> {

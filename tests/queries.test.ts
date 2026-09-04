@@ -148,7 +148,7 @@ describe('searchMessages', () => {
     const all = await searchMessages('dentist')
     expect(all).toHaveLength(2)
     expect(all.every(h => h.chatTitle === 'A' || h.chatTitle === 'B')).toBe(true)
-    const scoped = await searchMessages('dentist', a.id)
+    const scoped = await searchMessages('dentist', { chatId: a.id })
     expect(scoped).toHaveLength(1)
     expect(scoped[0].text).toContain('monday')
     expect(scoped[0].chatId).toBe(a.id)
@@ -181,7 +181,7 @@ describe('searchMessages', () => {
   it('honours the limit', async () => {
     const chat = await makeChat(await makeConnection())
     for (let i = 0; i < 5; i++) await addMessage(chat, { text: `dentist ${i}` })
-    expect(await searchMessages('dentist', undefined, 2)).toHaveLength(2)
+    expect(await searchMessages('dentist', { limit: 2 })).toHaveLength(2)
   })
 })
 
