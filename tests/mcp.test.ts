@@ -63,6 +63,25 @@ describe('whoami', () => {
   })
 })
 
+describe('whoami display name', () => {
+  beforeEach(resetDb)
+
+  it('falls back to the push name on the owner’s own messages when the socket and the contact cache gave none', async () => {
+    // WhatsApp rarely hands the port the owner's own name at pairing, so the
+    // account sat in whoami as { displayName: null } while every message the
+    // owner sent carried their push name.
+    const conn = await seedConnection({ channel: 'whatsapp', displayName: null })
+    const chat = await seedChat(conn, { channel: 'whatsapp', kind: 'group', title: 'Team' })
+    await seedMessage(chat, { fromOwner: true, senderName: 'Old Name', sentAt: new Date(1000) })
+    await seedMessage(chat, { fromOwner: true, senderName: 'Cham', sentAt: new Date(2000) })
+    // Someone else's name, and a deleted line of the owner's, are not it.
+    await seedMessage(chat, { fromOwner: false, senderName: 'Not Me', sentAt: new Date(3000) })
+    await seedMessage(chat, { fromOwner: true, senderName: 'Retracted', sentAt: new Date(4000), deletedAt: new Date() })
+    const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as { connections: Array<{ displayName: string | null }> }
+    expect(out.connections.map(c => c.displayName)).toEqual(['Cham'])
+  })
+})
+
 describe('content tools with nothing to serve', () => {
   beforeEach(resetDb)
 

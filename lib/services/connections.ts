@@ -1,9 +1,9 @@
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { channelContacts, chats, connections, media } from '@/lib/db/schema'
+import { channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { mediaFilePath } from '@/lib/services/media'
 import { errorShape, log } from '@/lib/log'
@@ -122,6 +122,21 @@ export async function agentConnections(): Promise<AgentConnection[]> {
     if (!displayName && r.externalAccountId) {
       const [own] = await db.select({ displayName: channelContacts.displayName }).from(channelContacts)
         .where(and(eq(channelContacts.connectionId, r.id), eq(channelContacts.externalId, r.externalAccountId)))
+        .limit(1)
+      displayName = own?.displayName ?? null
+    }
+    // WhatsApp rarely hands the port the owner's own name at pairing, and
+    // the contact cache seldom holds the account itself — but every message
+    // the owner sends carries their push name. The latest live one is the
+    // name they are showing the world right now.
+    if (!displayName) {
+      const [own] = await db.select({ displayName: messages.senderName }).from(messages)
+        .innerJoin(chats, eq(chats.id, messages.chatId))
+        .where(and(
+          eq(chats.connectionId, r.id), eq(messages.fromOwner, true),
+          isNotNull(messages.senderName), isNull(messages.deletedAt),
+        ))
+        .orderBy(desc(messages.sentAt), desc(messages.id))
         .limit(1)
       displayName = own?.displayName ?? null
     }
