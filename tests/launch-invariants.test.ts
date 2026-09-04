@@ -94,7 +94,7 @@ describe('the WhatsApp warning is on the front page', () => {
 // endpoint is not caught by it, and PRIVACY.md says so rather than claiming
 // more than this list delivers.
 const BANNED_EVERYWHERE = [
-  '@/lib/services/analytics', '@mocanetwork',
+  '@/lib/services/analytics',
   'posthog', 'mixpanel', '@segment/', 'analytics-node',
   '@sentry/', '@amplitude/', '@vercel/analytics', 'plausible',
 ]

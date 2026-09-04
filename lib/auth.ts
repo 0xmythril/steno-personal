@@ -89,11 +89,16 @@ export async function authenticateRequest(req: Request): Promise<{ via: 'cookie'
 
 // The guard for routes that CHANGE a connection (create, disconnect, delete
 // everything, submit a 2FA password): the browser's own session cookie, never
-// a bearer access key. From M3 an access key is what the owner pastes into
-// agents, and those agents read archived chat text — the spec's named primary
-// threat (§3.8). A key that could also delete the whole archive would give a
-// prompt-injected agent a strictly larger blast radius than the read access it
-// was handed. Reads stay cookie-or-bearer.
+// a bearer access key. An access key is what the owner pastes into agents, and
+// those agents read archived chat text — the primary threat in
+// docs/threat-model.md — so the mutating routes are kept off the bearer path
+// an agent's HTTP tool would use.
+//
+// This is defence in depth, not a security boundary: there is one credential
+// type, and the same key logs in at /api/login and mints a full session. A
+// key holder who knows that can reach every cookie-only route in two
+// requests, which is why the threat model treats a leaked key as a full
+// compromise until it is revoked. Reads stay cookie-or-bearer.
 //
 // Returns the response to send, or null when the caller may proceed.
 export async function requireCookieAuth(req: Request): Promise<Response | null> {
