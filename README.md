@@ -213,15 +213,17 @@ number.
 
 ## Connecting Telegram
 
-The worker needs Telegram API credentials of its own. Until this project ships
-its own registered pair, get one from <https://my.telegram.org> and set
-`TELEGRAM_API_ID` and `TELEGRAM_API_HASH` before you connect — including on a
-one-click Railway deploy. Without them the app still runs: Setup, Connections
-and the recovery page show Telegram as **Not available** and name the two
-variables to set, the worker logs one warning and skips Telegram, and WhatsApp
-works as normal.
+Nothing to set up. The project ships its own registered Telegram application
+— the same thing Telegram Desktop and every open-source client does — so a
+fresh deploy, one-click or otherwise, can pair Telegram straight away. You log
+in with your own account; the application only names the software. If you
+would rather run under an application of your own, register one at
+<https://my.telegram.org> and set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`.
+Set `TELEGRAM_API_ID=0` to run without Telegram at all: Setup, Connections and
+the recovery page then show it as **Not available**, the worker logs one
+warning, and WhatsApp works as normal.
 
-With them set, open **Connections**, read the consent screen, and press Connect.
+Open **Connections**, read the consent screen, and press Connect.
 Scan the QR code with Telegram &rarr; Settings &rarr; Devices &rarr; Link
 Desktop Device; if your account has two-step verification, the page asks for
 that password and stores it encrypted just long enough for the worker to use it
@@ -330,8 +332,8 @@ means unset.
 | `DATA_DIR` | `/data` in Docker, none otherwise | Where everything lives: the SQLite file, downloaded media, WhatsApp auth state, and the generated secret key. |
 | `PORT` | `3000` | Port the portal and MCP endpoint listen on. |
 | `SECRET_KEY` | generated | Encrypts your OpenRouter key, your revealable access keys, and the Telegram session at rest. If unset, one is generated into `$DATA_DIR/secret.key` on first boot. Set it yourself and the file is not used. **Changing or losing it makes those encrypted values unreadable** — you re-pair the channels and re-enter the OpenRouter key; your messages are unaffected. |
-| `TELEGRAM_API_ID` | none — set your own | Telegram application id, from <https://my.telegram.org>. Until this project ships its own registered pair, Telegram needs yours: without it every page that could pair Telegram shows it as **Not available** and says so, and the worker logs one warning and skips Telegram. |
-| `TELEGRAM_API_HASH` | none — set your own | Telegram application hash, from the same page. Both are required together. |
+| `TELEGRAM_API_ID` | the project's own | Telegram application id. The project ships a registered pair, so leave it unset unless you registered your own at <https://my.telegram.org>. `0` runs without Telegram: every page that could pair it shows **Not available** and says so, and the worker logs one warning. |
+| `TELEGRAM_API_HASH` | the project's own | Telegram application hash, from the same page. Set both together or neither. |
 | `ANALYSIS_DAILY_LIMIT` | `500` | Images plus voice notes sent for enrichment per day. A ceiling, not an exact quota: the count is taken once per pass, before either medium runs, so a pass starting just under the limit can still drain a full batch of each — worst case `2 × ANALYSIS_BACKFILL_BATCH − 1` rows beyond it. `0` disables enrichment entirely. |
 | `ANALYSIS_BACKFILL_BATCH` | `20` | How many old attachments are enriched per pass, so a backfill does not spend the day's budget at once. |
 | `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
