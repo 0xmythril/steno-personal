@@ -54,6 +54,7 @@ export default async function PersonPage({ params, searchParams }: {
             <p className="eyebrow">Person</p>
             <h1>
               {person.name}
+              {person.isOwner && <> <span className="chip note">You</span></>}
               {person.nameSource === 'owner' && <> <span className="chip note">alias</span></>}
             </h1>
           </div>

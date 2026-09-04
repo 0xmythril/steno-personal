@@ -31,7 +31,8 @@ export const MEDIA_URL_NOTE =
 // and appended to every tool whose result can contain the field.
 export const PERSON_NOTE =
   'Chats and messages carry a person field — { id, name } — when the sender or counterparty is in the '
-  + "address book; the id is this instance's own, usable only with list_people."
+  + "address book; the id is this instance's own, usable only with list_people. The owner's own messages "
+  + '(fromOwner: true) carry the owner as their person, the one list_people marks self: true.'
 
 export const CHAT_NOT_FOUND = 'Chat not found.'
 export const MEDIA_NOT_FOUND = 'Media not found.'

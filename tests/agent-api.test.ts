@@ -335,7 +335,7 @@ describe('publicPeople — which chats', () => {
     // Lean by default: the direct chat ids ride along (that is the one-hop
     // answer to "open my chat with Ada"), the full chat list only on request.
     const { people: [ada] } = await publicPeople({ q: 'ada' })
-    expect(Object.keys(ada).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes'])
+    expect(Object.keys(ada).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes', 'self'])
     expect(ada.name).toBe('Ada Lovelace')
     expect(ada.chatCount).toBe(2)
     expect(ada.dm).toEqual([{ id: dm.id, channel: 'whatsapp' }])

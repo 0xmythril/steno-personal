@@ -212,6 +212,11 @@ export const people = sqliteTable('people', {
   name: text('name').notNull(),
   notes: text('notes'),
   nameSource: text('name_source', { enum: ['channel', 'owner'] }).notNull().default('channel'),
+  // The one row that is the owner themself: created by populate, linked to
+  // each connected account's id, attached as `person` to every message the
+  // owner sent, and kept out of the address-book table (it lists the people
+  // the owner talks to). Never more than one live row.
+  isOwner: integer('is_owner', { mode: 'boolean' }).notNull().default(false),
   archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),

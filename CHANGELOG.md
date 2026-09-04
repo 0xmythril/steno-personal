@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **The owner is a person.** Populate makes one address-book row for you,
+  linked to each connected account; every message you sent carries it as
+  `person`, and `list_people` marks it `self: true`. It stays out of the
+  People table, which lists the people you talk to.
 - **`list_chats`** reports `total` for the filters, and each chat carries
   `createdAt` and `connectionId`; `whoami` carries the matching `id`, so two
   rows for one chat after a re-pairing can be told apart.

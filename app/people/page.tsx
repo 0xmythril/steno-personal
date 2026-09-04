@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
-import { listPeople, listArchivedPeople, listMergeSuggestions, type PersonView } from '@/lib/services/people'
+import { listPeople, listArchivedPeople, listMergeSuggestions, ownerPerson, type PersonView } from '@/lib/services/people'
 import { CHANNEL_LABELS } from '@/lib/format'
 import { PEOPLE_ERRORS } from './labels'
 import { createPersonAction, confirmSuggestionAction, dismissSuggestionAction, restorePersonAction } from './actions'
@@ -15,8 +15,8 @@ export default async function PeoplePage({ searchParams }: {
   const session = await requireSession()
   const sp = await searchParams
   const error = typeof sp.error === 'string' ? PEOPLE_ERRORS[sp.error] : undefined
-  const [people, hidden, suggestions] = await Promise.all([
-    listPeople(), listArchivedPeople(), listMergeSuggestions(),
+  const [people, hidden, suggestions, me] = await Promise.all([
+    listPeople(), listArchivedPeople(), listMergeSuggestions(), ownerPerson(),
   ])
 
   // A row the address book wrote for itself: a name copied off a contact list,
@@ -145,6 +145,15 @@ export default async function PeoplePage({ searchParams }: {
                   touch device never shows. */}
               <p className="help">Auto means the name came from your contacts and still follows it. Rename someone on their page and your name wins from then on.</p>
             </>
+          )}
+          {/* The owner is not in the table — it lists the people they talk
+              to — but they are a person too: every message they sent carries
+              this row for an agent, and the name is theirs to change. */}
+          {me && (
+            <p className="help">
+              You are <Link href={`/people/${me.id}`}>{me.name}</Link> here: your own messages carry that
+              name for your agents.
+            </p>
           )}
         </section>
 

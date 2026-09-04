@@ -71,6 +71,13 @@
       "when": 1788534223912,
       "tag": "0009_uneven_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788536145125,
+      "tag": "0010_cloudy_junta",
+      "breakpoints": true
     }
   ]
 }

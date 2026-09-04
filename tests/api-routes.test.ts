@@ -218,6 +218,7 @@ describe('REST routes serve the same data as the MCP tools', () => {
       people: [{
         id, name: 'Ada', notes: 'from the archive', channels: ['telegram', 'whatsapp'], chatCount: 1,
         dm: [{ id: chat, channel: 'telegram' }],
+        self: false,
       }],
       nextCursor: null,
     })

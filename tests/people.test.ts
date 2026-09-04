@@ -8,7 +8,7 @@ import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import {
   archivePerson, confirmSuggestion, createPerson, dismissSuggestion, getPerson,
   linkIdentity, listArchivedPeople, listIdentityCandidates, listMergeSuggestions, listPeople,
-  mergePeople, personForIdentity, populatePeople, publicPeople, resetName, restorePerson,
+  mergePeople, ownerPerson, personForIdentity, populatePeople, publicPeople, resetName, restorePerson,
   syncContacts, unlinkIdentity, updatePerson,
 } from '@/lib/services/people'
 
@@ -225,8 +225,9 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
       // The direct chat's id — the one get_messages takes — and its channel.
       // No external id, no phone.
       dm: [{ id: dm.id, channel: 'telegram' }],
+      self: false,
     })
-    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes'])
+    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes', 'self'])
 
     // The chats under the titles the chat list shows, with nothing but the
     // fields an agent can act on, when asked for.
@@ -262,6 +263,77 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     await createPerson({ name: 'Bob' })
 
     expect((await publicPeople()).people.map(p => p.channels)).toEqual([['telegram'], []])
+  })
+})
+
+describe('the owner as a person', () => {
+  beforeEach(resetDb)
+
+  it('populate makes one row for the owner, named after the account and linked to each connected account id', async () => {
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    const wa = await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
+    // Not counted as a created contact: it is not one.
+    expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
+    const me = (await ownerPerson())!
+    expect(me).toMatchObject({ name: 'Cham', isOwner: true, nameSource: 'channel' })
+    expect(me.identities.map(i => [i.channel, i.externalId, i.source]).sort()).toEqual([
+      ['telegram', '777', 'auto'], ['whatsapp', ADA_JID, 'auto'],
+    ])
+    // The address book lists the people the owner talks to; the owner is
+    // not one of them, and is not offered for a merge with anyone.
+    expect(await listPeople()).toEqual([])
+    expect(await listMergeSuggestions()).toEqual([])
+    // Idempotent, and a later connection is linked to the same row.
+    expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
+    expect((await ownerPerson())!.id).toBe(me.id)
+    await db.update(connections).set({ revokedAt: new Date(), status: 'revoked' }).where(eq(connections.id, wa.id))
+    await makeConnection({ channel: 'whatsapp', externalAccountId: GRACE_JID })
+    await populatePeople()
+    expect((await ownerPerson())!.identities).toHaveLength(3)
+    // A contact-list entry for the owner's own number does not become a
+    // second person: the identity is already the owner's.
+    await syncContacts(tg.id, 'telegram', [{ externalId: '777', displayName: 'Me', phone: null }])
+    expect(await populatePeople()).toMatchObject({ created: 0 })
+    expect(await listPeople()).toEqual([])
+  })
+
+  it('needs a connection to exist, and takes the name from the owner’s own messages when the account has none', async () => {
+    await populatePeople()
+    expect(await ownerPerson()).toBeNull()
+    const wa = await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
+    const chat = await makeChat(wa, { kind: 'group', title: 'Team' })
+    await addMessage(chat, { fromOwner: true, senderName: 'Cham on WA', senderExternalId: ADA_JID })
+    await populatePeople()
+    expect((await ownerPerson())!.name).toBe('Cham on WA')
+    // With no name anywhere, the row still exists so own messages resolve.
+    await resetDb()
+    await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
+    await populatePeople()
+    expect((await ownerPerson())!.name).toBe('You')
+  })
+
+  it('a hidden owner stays hidden across populates and is nobody on read paths, and restore brings them back', async () => {
+    await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    await populatePeople()
+    const me = (await ownerPerson())!
+    expect(await archivePerson(me.id)).toBe(true)
+    await populatePeople()
+    expect(await ownerPerson()).toBeNull()
+    expect((await listArchivedPeople()).map(p => p.id)).toEqual([me.id])
+    expect(await restorePerson(me.id)).toBe(true)
+    expect((await ownerPerson())!.id).toBe(me.id)
+  })
+
+  it('is served to agents with self: true, and the owner’s name is theirs to change', async () => {
+    await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    await populatePeople()
+    await createPerson({ name: 'Ada' })
+    const { people: listed } = await publicPeople()
+    expect(listed.map(p => [p.name, p.self])).toEqual([['Ada', false], ['Cham', true]])
+    const me = (await ownerPerson())!
+    expect(await updatePerson(me.id, { name: 'C. Ham' })).toBe(true)
+    expect((await ownerPerson())!).toMatchObject({ name: 'C. Ham', nameSource: 'owner' })
+    expect(JSON.stringify(listed)).not.toContain('777')
   })
 })
 
@@ -480,7 +552,8 @@ describe('the self-populating address book', () => {
 
     expect(await archivePerson(ada.id)).toBe(true)
     expect(await listPeople()).toEqual([])
-    expect((await publicPeople()).people).toEqual([])
+    // The owner's own row is still served to agents; nobody else is.
+    expect((await publicPeople()).people.filter(p => !p.self)).toEqual([])
     expect(await getPerson(ada.id)).toBeNull()
     expect(await personForIdentity({ channel: 'telegram', externalId: '42' })).toBeNull()
     expect(await updatePerson(ada.id, { name: 'Nope' })).toBe(false)
@@ -520,7 +593,8 @@ describe('the self-populating address book', () => {
     expect(await populatePeople()).toMatchObject({ created: 0 })
 
     expect(await listPeople()).toEqual([])
-    expect((await publicPeople()).people).toEqual([])
+    // The owner's own row is still served to agents; nobody else is.
+    expect((await publicPeople()).people.filter(p => !p.self)).toEqual([])
     const [stillHidden] = await listArchivedPeople()
     expect(stillHidden.id).toBe(ada.id)
     expect(stillHidden.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([

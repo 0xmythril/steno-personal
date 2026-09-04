@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import { makeConnection, makeChat, addMessage } from './helpers/fixtures'
 import { listChats, getMessages, recentMessages, searchMessages } from '@/lib/services/queries'
-import { archivePerson, createPerson, linkIdentity, syncContacts } from '@/lib/services/people'
+import { archivePerson, createPerson, linkIdentity, ownerPerson, populatePeople, syncContacts, unlinkIdentity } from '@/lib/services/people'
+import { personIdentities } from '@/lib/db/schema'
+
+// Every identity a person holds, unlinked — a test helper, so a row that
+// only exists to be in the way can be taken out of it.
+async function unlinkIdentityOf(personId: string) {
+  const rows = await db.select({ id: personIdentities.id }).from(personIdentities).where(eq(personIdentities.personId, personId))
+  for (const r of rows) await unlinkIdentity(r.id)
+}
 import { db } from '@/lib/db/client'
 import { channelContacts, connections, messages } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
@@ -308,22 +316,34 @@ describe('people on chats and messages', () => {
     expect(row).toMatchObject({ title: '+15551230000', person: null })
   })
 
-  it('puts the person on a message by its sender identity, and never on the owner\'s own', async () => {
-    const conn = await makeConnection({ channel: 'telegram' })
+  it('puts the person on a message by its sender identity, and the owner’s own person on the owner’s lines', async () => {
+    const conn = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '987654321' })
     const group = await makeChat(conn, { kind: 'group', title: 'Team' })
     await addMessage(group, { senderName: 'Ada', senderExternalId: '123456789', text: 'from ada' })
     await addMessage(group, { senderName: 'Me', senderExternalId: '987654321', fromOwner: true, text: 'from me' })
 
     const ada = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(ada.id, { channel: 'telegram', externalId: '123456789' })
-    // Even an owner identity that IS in the address book stays anonymous on
-    // the owner's own lines: from_owner is the archive's answer to "who".
-    const me = await createPerson({ name: 'The Owner' })
-    await linkIdentity(me.id, { channel: 'telegram', externalId: '987654321' })
+    // A contact row that happens to hold the owner's id is NOT who the
+    // owner's lines belong to: from_owner is the archive's answer to "who",
+    // and it resolves to the owner's own row, once there is one.
+    const impostor = await createPerson({ name: 'Saved As Me' })
+    await linkIdentity(impostor.id, { channel: 'telegram', externalId: '987654321' })
+    const before = new Map((await getMessages(group.id))!.messages.map(m => [m.text, m.person]))
+    expect(before.get('from ada')).toEqual({ id: ada.id, name: 'Ada Lovelace' })
+    expect(before.get('from me')).toBeNull()
 
-    const byText = new Map((await getMessages(group.id))!.messages.map(m => [m.text, m.person]))
-    expect(byText.get('from ada')).toEqual({ id: ada.id, name: 'Ada Lovelace' })
-    expect(byText.get('from me')).toBeNull()
+    await unlinkIdentityOf(impostor.id)
+    await populatePeople()
+    const me = (await ownerPerson())!
+    const after = (await getMessages(group.id))!.messages
+    const mine = after.find(m => m.text === 'from me')!
+    expect(mine.person).toEqual({ id: me.id, name: 'Cham' })
+    expect(mine.senderName).toBe('Cham')
+    expect(after.find(m => m.text === 'from ada')!.person).toEqual({ id: ada.id, name: 'Ada Lovelace' })
+    // Hidden, the owner is nobody here too.
+    await archivePerson(me.id)
+    expect((await getMessages(group.id))!.messages.find(m => m.text === 'from me')!.person).toBeNull()
   })
 
   it('does not cross a telegram identity with a whatsapp one that spells the same id', async () => {

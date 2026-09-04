@@ -234,6 +234,13 @@ Disconnect does the same from this side and keeps everything already archived.
 
 ## People
 
+You are a person here too. After the first sync the address book holds one row
+for you, named after your account and linked to each account you connect, and
+every message you sent carries it as its `person`, so an agent can answer
+*"what did I tell Ada"* by id. It stays out of the address-book table, which
+lists the people you talk to, and `list_people` marks it `self: true`. Rename
+it on its page like anyone else.
+
 One person, two apps. The archive stores channel identities — a Telegram user
 id, a WhatsApp number — and **People** is the address book that groups them, so
 a chat and a transcript can say *Ada* whether she wrote from Telegram or from

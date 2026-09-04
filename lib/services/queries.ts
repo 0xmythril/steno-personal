@@ -227,14 +227,22 @@ const contactName = sql`(select ${channelContacts.displayName} from ${channelCon
 const senderIdentity = sql`${messages.fromOwner} = 0
   and ${personIdentities.channel} = ${senderChannel}
   and ${personIdentities.externalId} = ${messages.senderExternalId}`
-const senderPersonId = nested(sql<string | null>`(select ${personIdentities.personId} from ${personIdentities}
-  inner join ${people} on ${people.id} = ${personIdentities.personId}
-  where ${senderIdentity} and ${people.archivedAt} is null)`).as('person_id')
+// The owner's own lines resolve to the owner's own row (people.is_owner),
+// never to a contact that happens to hold the owner's id, so "what did I
+// tell Ada" has an id to filter on. A hidden owner is nobody, like anyone.
+const ownerRow = sql`${people.isOwner} = 1 and ${people.archivedAt} is null`
+const senderPersonId = nested(sql<string | null>`case when ${messages.fromOwner} = 1
+  then (select ${people.id} from ${people} where ${ownerRow} limit 1)
+  else (select ${personIdentities.personId} from ${personIdentities}
+    inner join ${people} on ${people.id} = ${personIdentities.personId}
+    where ${senderIdentity} and ${people.archivedAt} is null) end`).as('person_id')
 // Unaliased, because the sender filter below uses it in a WHERE, where an
 // alias would render as a column that does not exist.
-const senderPersonNameSql = nested(sql<string | null>`(select ${people.name} from ${personIdentities}
-  inner join ${people} on ${people.id} = ${personIdentities.personId}
-  where ${senderIdentity} and ${people.archivedAt} is null)`)
+const senderPersonNameSql = nested(sql<string | null>`case when ${messages.fromOwner} = 1
+  then (select ${people.name} from ${people} where ${ownerRow} limit 1)
+  else (select ${people.name} from ${personIdentities}
+    inner join ${people} on ${people.id} = ${personIdentities.personId}
+    where ${senderIdentity} and ${people.archivedAt} is null) end`)
 const senderPersonName = senderPersonNameSql.as('person_name')
 
 // The latest push name this sender put on ANY live message on this channel.
