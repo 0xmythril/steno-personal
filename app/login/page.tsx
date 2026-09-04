@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main>
       <div className="login">
-        <header className="login-head">
+        <header className="brand-head">
           <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
           <h1>A private copy of your Telegram and WhatsApp chats, kept on your own computer.</h1>
         </header>
