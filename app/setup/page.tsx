@@ -9,6 +9,8 @@ import { Consent } from '@/app/connections/consent'
 import { WhatsAppConsent } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
+import { TelegramUnavailable } from '@/app/connections/telegram-unavailable'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { HOSTED_URL } from '@/app/links'
 import { setupConnectAction, setupPasswordAction, setupCancelAction, finishSetupAction } from './actions'
 
@@ -31,6 +33,7 @@ function errorText(c: ConnectionStatus): string | null {
 }
 
 function SetupChannelCard({ channel, live }: { channel: Channel; live: ConnectionStatus | undefined }) {
+  if (channel === 'telegram' && !telegramConfigured()) return <TelegramUnavailable />
   const consent = channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />
   if (live?.status === 'pending') {
     return (

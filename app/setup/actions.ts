@@ -26,7 +26,11 @@ export async function setupConnectAction(_prev: ConnectResult | null, formData: 
   const channel = asChannel(formData.get('channel'))
   if (!channel) return { ok: false, message: 'Unknown channel.' }
   const res = await createConnection(channel)
-  if (!res.ok) return { ok: false, message: 'An account is already connected on this channel.' }
+  if (!res.ok) {
+    return res.reason === 'telegram_unconfigured'
+      ? { ok: false, message: 'This deploy has no Telegram credentials, so Telegram cannot be paired here.' }
+      : { ok: false, message: 'An account is already connected on this channel.' }
+  }
   await setSetupCookie(res.id)
   revalidatePath('/setup')
   return { ok: true, id: res.id }

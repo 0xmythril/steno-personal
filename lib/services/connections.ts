@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
@@ -72,7 +73,10 @@ export function mapInsertError(err: unknown): 'already_connected' | null {
 // is deleted when it holds nothing and revoked when it holds an archive, which
 // is never deleted behind the owner's back. A live RECOVERY row on the same
 // channel is somebody proving ownership; it neither blocks nor is touched.
-export async function createConnection(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'already_connected' }> {
+export async function createConnection(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'already_connected' | 'telegram_unconfigured' }> {
+  // No Telegram pair on this deploy means no Telegram port in the worker, so
+  // a pending row here would wait for a login code forever. Refuse it.
+  if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   const live = await db.select({ id: connections.id, status: connections.status })
     .from(connections)
     .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), isNull(connections.revokedAt)))
