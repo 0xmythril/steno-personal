@@ -9,6 +9,8 @@ import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { WhatsAppRisk } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
 import { ConnectButton } from '@/app/connections/connect-button'
+import { TelegramUnavailable } from '@/app/connections/telegram-unavailable'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { recoverStartAction, recoverPasswordAction, recoverCancelAction, recoverClaimAction } from './actions'
 
 // Reads the database (is the instance fresh?) before any request API, so
@@ -36,7 +38,7 @@ function StartCards({ channels }: { channels: Channel[] }) {
         If you still have the account this archive reads, pairing it again proves it is you and gives you a new
         access key. Nothing is read from the phone: the device is unlinked again as soon as the account is confirmed.
       </p>
-      {channels.map(channel => (
+      {channels.map(channel => channel === 'telegram' && !telegramConfigured() ? <TelegramUnavailable key={channel} /> : (
         <section className="card" key={channel}>
           <h2>{CHANNEL_LABELS[channel]}</h2>
           {channel === 'whatsapp' && <WhatsAppRisk />}

@@ -24,7 +24,11 @@ export async function recoverStartAction(_prev: ConnectResult | null, formData: 
   const channel = asChannel(formData.get('channel'))
   if (!channel) return { ok: false, message: 'Unknown channel.' }
   const res = await startRecovery(channel)
-  if (!res.ok) return { ok: false, message: 'No account has ever been connected on this channel, so it cannot prove anything.' }
+  if (!res.ok) {
+    return res.reason === 'telegram_unconfigured'
+      ? { ok: false, message: 'This deploy has no Telegram credentials, so Telegram cannot be paired here.' }
+      : { ok: false, message: 'No account has ever been connected on this channel, so it cannot prove anything.' }
+  }
   await setRecoveryCookie(res.id)
   revalidatePath('/login/recover')
   return { ok: true, id: res.id }

@@ -1,4 +1,5 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
 import { mintAccessKey, revokeAccessKey } from './access-keys'
@@ -36,7 +37,8 @@ export async function knownAccountChannels(): Promise<Channel[]> {
 // chat, so it is deleted outright to free the (channel, 'recovery') slot; a
 // pending one is replaced too — a second Start is the owner giving up on a
 // code that never appeared.
-export async function startRecovery(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'no_known_account' }> {
+export async function startRecovery(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'no_known_account' | 'telegram_unconfigured' }> {
+  if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   if (!(await knownAccountChannels()).includes(channel)) return { ok: false, reason: 'no_known_account' }
   await db.delete(connections)
     .where(and(eq(connections.channel, channel), eq(connections.purpose, 'recovery'), isNull(connections.revokedAt)))

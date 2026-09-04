@@ -1,6 +1,8 @@
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { HostedCta } from '@/app/hosted-cta'
+import { TelegramUnavailable } from './telegram-unavailable'
+import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS, formatRelativeTime } from '@/lib/format'
@@ -79,6 +81,9 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
     )
   }
 
+  // An active or pending row above still shows, so a pair removed after a
+  // pairing can still be disconnected; only a fresh start is refused.
+  if (channel === 'telegram' && !telegramConfigured()) return <TelegramUnavailable />
   return (
     <section className="card">
       <div className="card-head">

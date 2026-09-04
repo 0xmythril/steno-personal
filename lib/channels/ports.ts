@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { env } from '@/lib/env'
+import { hasTelegramCredentials } from './telegram-credentials'
 import { log } from '@/lib/log'
 import { MtcuteTelegramPort } from '@/lib/channels/telegram'
 import { BaileysWhatsAppPort } from '@/lib/channels/whatsapp'
@@ -12,7 +13,7 @@ export function buildPorts(
   warn: (msg: string) => void = m => log.warn(m),
 ): Map<Channel, ChannelPort> {
   const ports = new Map<Channel, ChannelPort>()
-  if (cfg.apiId > 0 && cfg.apiHash.length > 0) {
+  if (hasTelegramCredentials(cfg)) {
     ports.set('telegram', new MtcuteTelegramPort({ apiId: cfg.apiId, apiHash: cfg.apiHash }))
   } else {
     // Not fatal: the project defaults ship empty until the application is
