@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { currentSetupAttempt, isFreshInstance } from '@/lib/auth'
-import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
+import { listConnections, otherSetupClaimExists, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
@@ -98,8 +98,9 @@ export default async function SetupPage() {
   const mine = await currentSetupAttempt()
   const all = await listConnections()
   const archive = all.filter(c => c.purpose === 'archive' && c.revokedAt === null)
-  const claiming = archive.some(c => (c.status === 'pending' || c.status === 'active') && c.id !== mine)
-  if (claiming) return <ClaimInProgress />
+  // Same predicate the Connect and Finish actions refuse on: the render is a
+  // courtesy, the actions are the guard.
+  if (await otherSetupClaimExists(mine)) return <ClaimInProgress />
   const active = archive.find(c => c.status === 'active' && c.id === mine)
   const liveOf = (channel: Channel) => archive.find(c => c.channel === channel)
 

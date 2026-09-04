@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
-import { and, desc, eq, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
@@ -65,6 +65,55 @@ export function mapInsertError(err: unknown): 'already_connected' | null {
   const code = (err as { code?: unknown; cause?: { code?: unknown } })?.code
   const causeCode = (err as { cause?: { code?: unknown } })?.cause?.code
   return code === 'SQLITE_CONSTRAINT_UNIQUE' || causeCode === 'SQLITE_CONSTRAINT_UNIQUE' ? 'already_connected' : null
+}
+
+// First-run only (app/setup). The claim on a fresh instance is INSTANCE-wide,
+// not per channel: while one browser's pairing is live — pending or active —
+// nobody else may start their own on any channel. Without this, a second
+// visitor could pair a throwaway account on the other channel and mint the
+// instance's first key while the owner's real account was already archiving.
+// createConnection below stays per-channel because after setup the owner
+// legitimately adds the second channel from /connections.
+//
+// `mine` is the pairing this browser already holds (SETUP_COOKIE), if any.
+// Its own pending row is replaced so the owner can switch channel mid-pairing
+// without leaving a row the cookie no longer names — which would read as
+// "someone else is claiming" to its own owner. Check and insert run in one
+// immediate transaction: the partial unique index is per channel, so two
+// browsers racing on different channels would otherwise both succeed.
+export type SetupCreateResult =
+  | { ok: true; id: string }
+  | { ok: false; reason: 'already_connected' | 'telegram_unconfigured' | 'claimed' }
+
+export async function createSetupConnection(channel: Channel, mine: string | null): Promise<SetupCreateResult> {
+  if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
+  return db.transaction((tx): SetupCreateResult => {
+    const live = tx.select({ id: connections.id, status: connections.status })
+      .from(connections)
+      .where(and(
+        eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+        inArray(connections.status, ['pending', 'active']),
+      )).all()
+    if (live.some(r => r.id !== mine)) return { ok: false, reason: 'claimed' }
+    for (const own of live) {
+      if (own.status === 'active') return { ok: false, reason: 'already_connected' }
+      // Pending on a fresh instance: no chats yet, nothing to keep.
+      tx.delete(connections).where(eq(connections.id, own.id)).run()
+    }
+    const row = tx.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id }).get()
+    return { ok: true, id: row.id }
+  }, { behavior: 'immediate' })
+}
+
+// True while some live archive pairing other than `mine` exists. The setup
+// page renders "being claimed" off this; finishSetupAction refuses off it.
+export async function otherSetupClaimExists(mine: string | null): Promise<boolean> {
+  const rows = await db.select({ id: connections.id }).from(connections)
+    .where(and(
+      eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+      inArray(connections.status, ['pending', 'active']),
+    ))
+  return rows.some(r => r.id !== mine)
 }
 
 // A LIVE row is one with revoked_at IS NULL. The partial unique index allows

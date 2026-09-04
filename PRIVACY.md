@@ -95,7 +95,8 @@ clears the contacts read from that account and leaves your people alone.
 ## What it can never do
 
 **It cannot send anything.** The part of the code that talks to Telegram and
-WhatsApp exposes exactly eight abilities: fetch history, receive a new message,
+WhatsApp exposes exactly nine abilities, one of which only closes our own
+socket. The other eight: fetch history, receive a new message,
 receive an edit, receive a deletion, download an attachment, read your contact
 list — names and, where Telegram shows them to you, phone numbers — check the
 connection is alive, and log itself out. There is no send. This is not a policy
@@ -136,8 +137,14 @@ Messages you delete on your own phone are treated the same way.
 ## What leaves your machine
 
 Mostly the only traffic is to Telegram and WhatsApp themselves, which is how a
-chat client works. Beyond that there are exactly two things, and this section
-is the whole list of them.
+chat client works. Beyond that there are exactly two things at runtime, and
+this section is the whole list of them.
+
+Two more happen only when you *build* from source, never while it runs:
+`next build` downloads the three font families once from Google so pages
+never fetch them, and Next.js reports anonymous build statistics to Vercel
+unless `NEXT_TELEMETRY_DISABLED=1` is set — the Docker image sets it, and the
+build instructions set it for you.
 
 **Enrichment, off until you turn it on.** If you save an OpenRouter key in
 Settings and enable image or voice-note enrichment, then those attachments are

@@ -95,10 +95,11 @@ test enforces that.
   `X-Forwarded-Proto: https` so the session cookie is issued as `Secure`. See
   [docs/self-hosting.md](docs/self-hosting.md).
 - Claim a public deploy as soon as it is green: until the first access key
-  has been minted, `/setup` is open to whoever reaches the URL first. A
-  pairing is bound to the browser that started it, so once you have begun
-  scanning nobody else can finish your pairing or take the key it mints —
-  but anyone who arrives before you can pair their own account instead.
+  has been minted, `/setup` is open to whoever reaches the URL first. The
+  claim is bound to the browser that started it: from the moment you have
+  begun pairing, on either channel, every other visitor is refused — they
+  cannot finish your pairing, start their own, or take the first key — but
+  anyone who arrives before you can claim the instance instead.
 - Mint one key per device or agent, and revoke any key that was ever printed
   to a log once you have replaced it.
 - Register a passkey on the browsers you use, and keep keys for agents. A

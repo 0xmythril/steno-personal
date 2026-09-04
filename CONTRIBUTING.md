@@ -40,7 +40,7 @@ fails CI rather than a reviewer's memory.
 ```bash
 nvm use            # Node 24, from .nvmrc
 npm ci
-cp .env.example .env
+cp .env.example .env   # sets NEXT_TELEMETRY_DISABLED=1 among others
 npm run dev        # web app on :3000 (worker is separate: npm run worker)
 ```
 

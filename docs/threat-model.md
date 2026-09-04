@@ -1,7 +1,7 @@
 # Threat model
 
-It is written for someone deciding whether to run
-this, and for someone auditing it. It is deliberately specific about what is
+This threat model is written for someone deciding whether to run this, and
+for someone auditing it. It is deliberately specific about what is
 *not* protected — a threat model that only lists wins is marketing.
 
 ## What is being protected
@@ -211,7 +211,7 @@ failing. They are not read receipts and change nothing anyone can see. So the
 guarantee this project makes is precisely: **nothing user-visible is ever sent.**
 Not "nothing is ever transmitted", which would be false.
 
-**Residual.** Unremovable. Spec decision 2: the risk is accepted, not gated —
+**Residual.** Unremovable. The risk is accepted, not gated —
 there is no flag, no private-network check, and no override variable, because
 each of those would imply a safe configuration exists. Telegram carries no
 comparable risk: it uses Telegram's published user API, the same one third-party

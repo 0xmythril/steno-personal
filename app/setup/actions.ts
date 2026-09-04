@@ -3,9 +3,12 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import {
-  clearSetupCookie, requireFreshInstance, requireSetupAttempt, setFirstKeyFlash, setSetupCookie, startSession,
+  clearSetupCookie, currentSetupAttempt, requireFreshInstance, requireSetupAttempt, setFirstKeyFlash, setSetupCookie,
+  startSession,
 } from '@/lib/auth'
-import { createConnection, getConnection, submitLoginPassword, revokeConnection } from '@/lib/services/connections'
+import {
+  createSetupConnection, getConnection, otherSetupClaimExists, submitLoginPassword, revokeConnection,
+} from '@/lib/services/connections'
 import { mintFirstAccessKey } from '@/lib/services/access-keys'
 import type { Channel } from '@/lib/channels/port'
 import type { ConnectResult, PasswordResult } from '@/app/connections/actions'
@@ -17,6 +20,12 @@ import type { ConnectResult, PasswordResult } from '@/app/connections/actions'
 // SETUP_COOKIE); every later step requires that cookie, so the account being
 // paired — and the first key minted against it — belong to the browser that
 // scanned, not to whoever reaches the URL next.
+//
+// The claim is also instance-wide: while any browser's pairing is live, Connect
+// refuses every other browser on every channel, and Finish refuses while any
+// other live pairing exists. Otherwise a second visitor could pair their own
+// throwaway account on the free channel and mint the first key while the
+// owner's real account was already archiving (createSetupConnection).
 
 const CHANNELS: Channel[] = ['telegram', 'whatsapp']
 const asChannel = (v: unknown): Channel | null => (CHANNELS as string[]).includes(String(v)) ? String(v) as Channel : null
@@ -25,11 +34,16 @@ export async function setupConnectAction(_prev: ConnectResult | null, formData: 
   await requireFreshInstance()
   const channel = asChannel(formData.get('channel'))
   if (!channel) return { ok: false, message: 'Unknown channel.' }
-  const res = await createConnection(channel)
+  const res = await createSetupConnection(channel, await currentSetupAttempt())
   if (!res.ok) {
-    return res.reason === 'telegram_unconfigured'
-      ? { ok: false, message: 'This deploy has no Telegram credentials, so Telegram cannot be paired here.' }
-      : { ok: false, message: 'An account is already connected on this channel.' }
+    if (res.reason === 'telegram_unconfigured') {
+      return { ok: false, message: 'This deploy has no Telegram credentials, so Telegram cannot be paired here.' }
+    }
+    if (res.reason === 'claimed') {
+      revalidatePath('/setup')
+      return { ok: false, message: 'Someone else has already started pairing on this instance.' }
+    }
+    return { ok: false, message: 'An account is already connected on this channel.' }
   }
   await setSetupCookie(res.id)
   revalidatePath('/setup')
@@ -69,6 +83,7 @@ export async function finishSetupAction(): Promise<void> {
   const mine = await requireSetupAttempt()
   const conn = await getConnection(mine)
   if (!conn || conn.purpose !== 'archive' || conn.status !== 'active' || conn.revokedAt) redirect('/setup')
+  if (await otherSetupClaimExists(mine)) redirect('/setup')
   const minted = await mintFirstAccessKey('First key')
   if (!minted.ok) {
     if (minted.reason === 'not_first') redirect('/login')
