@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **`list_people`** is paged (`{people, nextCursor}`, fifty per page) and lean
+  by default: id, name, notes, channels, chat count and the direct-chat ids.
+  Pass `include_chats` for the full chat list. Agents reading the old bare
+  array must update. A contact whose name has no letter or digit in it (`'`,
+  `…`) no longer becomes a person.
 - **Merge suggestions** on the People page now say which row is on Telegram
   and which on WhatsApp, which one is kept, and how many chats each carries.
 

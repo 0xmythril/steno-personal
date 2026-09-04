@@ -221,11 +221,14 @@ describe('list_people', () => {
     await linkIdentity(id, { channel: 'whatsapp', externalId: '447700900123@s.whatsapp.net' })
 
     const out = await callTool(await agentKey(), 'list_people')
-    expect(JSON.parse(out)).toEqual([{
-      id, name: 'Ada', notes: 'from the archive',
-      channels: ['telegram', 'whatsapp'], chatCount: 1,
-      chats: [{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }],
-    }])
+    expect(JSON.parse(out)).toEqual({
+      people: [{
+        id, name: 'Ada', notes: 'from the archive',
+        channels: ['telegram', 'whatsapp'], chatCount: 1,
+        dm: [{ id: chat, channel: 'telegram' }],
+      }],
+      nextCursor: null,
+    })
     expect(out).not.toContain('+447700900123')
     expect(out).not.toContain('@s.whatsapp.net')
     expect(out).not.toContain('externalId')
@@ -243,7 +246,7 @@ describe('list_people', () => {
     const chat = await seedChat(conn, { title: 'Ada', kind: 'dm', externalChatId: '42' })
     await seedMessage(chat, { text: 'hello' })
     await createPerson({ name: 'Ada' })
-    const out = JSON.parse(await callTool(await agentKey(), 'list_people')) as Array<{ name: string }>
-    expect(out.map(p => p.name)).toEqual(['Ada'])
+    const out = JSON.parse(await callTool(await agentKey(), 'list_people')) as { people: Array<{ name: string }> }
+    expect(out.people.map(p => p.name)).toEqual(['Ada'])
   })
 })

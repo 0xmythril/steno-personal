@@ -209,12 +209,26 @@ describe('REST routes serve the same data as the MCP tools', () => {
     expect(JSON.parse(text)).toEqual({
       people: [{
         id, name: 'Ada', notes: 'from the archive', channels: ['telegram', 'whatsapp'], chatCount: 1,
-        chats: [{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }],
+        dm: [{ id: chat, channel: 'telegram' }],
       }],
+      nextCursor: null,
     })
     expect(text).not.toContain('+447700900123')
     expect(text).not.toContain('@s.whatsapp.net')
     expect(text).not.toContain('externalId')
+
+    // The same knobs as the tool: q, limit, cursor, include_chats.
+    await createPerson({ name: 'Babbage' })
+    const full = (await (await getPeople(bearer('/api/people?q=ada&include_chats=1', k.rawKey))).json()) as {
+      people: Array<{ name: string; chats?: unknown[] }>
+    }
+    expect(full.people.map(p => p.name)).toEqual(['Ada'])
+    expect(full.people[0].chats).toEqual([{ id: chat, title: 'Ada', channel: 'telegram', kind: 'dm' }])
+    const paged = (await (await getPeople(bearer('/api/people?limit=1', k.rawKey))).json()) as { people: unknown[]; nextCursor: string | null }
+    expect(paged.people).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
+    const rest = (await (await getPeople(bearer(`/api/people?limit=1&cursor=${encodeURIComponent(paged.nextCursor!)}`, k.rawKey))).json()) as { people: Array<{ name: string }> }
+    expect(rest.people.map(p => p.name)).toEqual(['Babbage'])
   })
 
   it('GET /api/people also accepts the portal session cookie', async () => {

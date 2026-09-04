@@ -8,5 +8,13 @@ import { publicPeople } from '@/lib/services/people'
 // tell it. Cookie or bearer, like the other read routes.
 export const GET = withErrorBoundary(async (request: Request): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
-  return Response.json({ people: await publicPeople() })
+  const sp = new URL(request.url).searchParams
+  const limitRaw = sp.get('limit')
+  const limit = limitRaw !== null && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined
+  return Response.json(await publicPeople({
+    q: sp.get('q') ?? undefined,
+    limit,
+    cursor: sp.get('cursor') ?? undefined,
+    includeChats: sp.get('include_chats') === '1' || sp.get('include_chats') === 'true',
+  }))
 })

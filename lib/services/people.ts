@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { track } from '@/lib/services/telemetry'
 import { db } from '@/lib/db/client'
 import {
@@ -69,6 +69,10 @@ function cleanName(name: string): string {
 // over it would be a worse answer than trimming it.
 const clampName = (name: string): string => name.trim().slice(0, MAX_NAME)
 
+// A contact list carries entries like "'" and "…": a saved number with no
+// real name. There is nothing to call such a person, so none is created.
+const usableName = (name: string): boolean => /[\p{L}\p{N}]/u.test(name)
+
 const cleanText = (v: string | null | undefined): string | null => {
   const trimmed = v?.trim()
   return trimmed ? trimmed : null
@@ -115,11 +119,12 @@ async function chatCountsByPerson(personIds: string[]): Promise<Map<string, numb
   return new Map(personIds.map(id => [id, ids.get(id)?.size ?? 0]))
 }
 
-async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<string>>> {
-  const seen = new Map<string, Set<string>>()
-  if (personIds.length === 0) return seen
-
-  const dmRows = await db.select({ personId: personIdentities.personId, chatId: chats.id })
+// The direct chats a person is the other side of, one per identity per
+// connection: the one-hop answer to "open my chat with Ada".
+async function dmChatsByPerson(personIds: string[]): Promise<Map<string, Array<{ id: string; channel: Channel }>>> {
+  const out = new Map<string, Array<{ id: string; channel: Channel }>>()
+  if (personIds.length === 0) return out
+  const rows = await db.select({ personId: personIdentities.personId, chatId: chats.id, channel: chats.channel })
     .from(personIdentities)
     .innerJoin(chats, and(
       eq(chats.channel, personIdentities.channel),
@@ -127,6 +132,20 @@ async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<str
       eq(chats.externalChatId, personIdentities.externalId),
     ))
     .where(inArray(personIdentities.personId, personIds))
+    .orderBy(desc(chats.lastMessageAt), asc(chats.id))
+  for (const r of rows) {
+    const list = out.get(r.personId)
+    if (list) list.push({ id: r.chatId, channel: r.channel })
+    else out.set(r.personId, [{ id: r.chatId, channel: r.channel }])
+  }
+  return out
+}
+
+async function chatIdsByPerson(personIds: string[]): Promise<Map<string, Set<string>>> {
+  const seen = new Map<string, Set<string>>()
+  if (personIds.length === 0) return seen
+
+  const dmRows = [...(await dmChatsByPerson(personIds))].flatMap(([personId, list]) => list.map(c => ({ personId, chatId: c.id })))
 
   const senderRows = await db.select({ personId: personIdentities.personId, chatId: messages.chatId })
     .from(personIdentities)
@@ -209,32 +228,75 @@ export type PublicPerson = {
   notes: string | null
   channels: Channel[]
   chatCount: number
-  // The chats this person appears in — a DM with them, or a chat they have
-  // written in — most recently active first, under the titles the chat list
-  // shows. The ids are the ones get_messages takes, so "what did Ada say" is
-  // one hop from here.
-  chats: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
+  // The direct chats with this person, most recently active first — the ids
+  // get_messages takes, so "open my chat with Ada" is one hop from here.
+  dm: Array<{ id: string; channel: Channel }>
+  // Every chat this person appears in — a DM with them, or a chat they have
+  // written in — under the titles the chat list shows. Only on request: a
+  // well-connected person sits in fifty groups, and an address-book listing
+  // that inlines all of them for everyone is the 140 KB answer the testers
+  // could not use.
+  chats?: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
+}
+
+const DEFAULT_PEOPLE_LIMIT = 50
+const MAX_PEOPLE_LIMIT = 200
+
+// The page cursor is (lower-cased name, id) — the sort key — as base64url
+// JSON. Opaque to the caller and never a channel identifier.
+const encodePeopleCursor = (p: { name: string; id: string }): string =>
+  Buffer.from(JSON.stringify([p.name.toLowerCase(), p.id]), 'utf8').toString('base64url')
+function decodePeopleCursor(cursor: string): [string, string] | null {
+  try {
+    const v: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+    return Array.isArray(v) && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'string' ? [v[0], v[1]] : null
+  } catch {
+    return null
+  }
 }
 
 // `q` is a case-insensitive substring of the name, matched here in memory:
 // an address book is hundreds of rows, not millions, and the filter must see
-// the same name the list shows.
-export async function publicPeople(opts: { q?: string } = {}): Promise<PublicPerson[]> {
+// the same name the list shows. Paged in the same order listPeople sorts —
+// lower-cased name, then id — so a cursor is stable across calls; a cursor
+// nobody minted reads as "start at the top", the same rule the chat cursors
+// follow.
+export async function publicPeople(
+  opts: { q?: string; limit?: number; cursor?: string; includeChats?: boolean } = {},
+): Promise<{ people: PublicPerson[]; nextCursor: string | null }> {
   const q = opts.q?.trim().toLowerCase()
-  const views = (await listPeople()).filter(p => !q || p.name.toLowerCase().includes(q))
-  const chatIds = await chatIdsByPerson(views.map(p => p.id))
-  const summaries = await chatSummaries([...new Set([...chatIds.values()].flatMap(s => [...s]))])
-  return views.map(p => {
-    const mine = chatIds.get(p.id) ?? new Set<string>()
-    return {
+  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_PEOPLE_LIMIT, MAX_PEOPLE_LIMIT))
+  const after = opts.cursor ? decodePeopleCursor(opts.cursor) : null
+  const views = (await listPeople())
+    .filter(p => !q || p.name.toLowerCase().includes(q))
+    .filter(p => {
+      if (!after) return true
+      const name = p.name.toLowerCase()
+      return name > after[0] || (name === after[0] && p.id > after[1])
+    })
+  const page = views.slice(0, limit)
+  const nextCursor = views.length > limit && page.length > 0 ? encodePeopleCursor(page[page.length - 1]) : null
+
+  const ids = page.map(p => p.id)
+  const dms = await dmChatsByPerson(ids)
+  const chatIds = opts.includeChats ? await chatIdsByPerson(ids) : null
+  const summaries = chatIds ? await chatSummaries([...new Set([...chatIds.values()].flatMap(s => [...s]))]) : []
+  const people = page.map(p => {
+    const person: PublicPerson = {
       id: p.id,
       name: p.name,
       notes: p.notes,
       channels: [...new Set(p.identities.map(i => i.channel))].sort(),
       chatCount: p.chatCount,
-      chats: summaries.filter(c => mine.has(c.id)).map(c => ({ id: c.id, title: c.title, channel: c.channel, kind: c.kind })),
+      dm: dms.get(p.id) ?? [],
     }
+    if (chatIds) {
+      const mine = chatIds.get(p.id) ?? new Set<string>()
+      person.chats = summaries.filter(c => mine.has(c.id)).map(c => ({ id: c.id, title: c.title, channel: c.channel, kind: c.kind }))
+    }
+    return person
   })
+  return { people, nextCursor }
 }
 
 export async function getPerson(id: string): Promise<PersonView | null> {
@@ -928,7 +990,7 @@ export async function populatePeople(): Promise<PopulateResult> {
       // exactly why "hidden" stays hidden across syncs (decision 14).
       if (c.personId !== null || c.kind === 'sender') continue
       const name = c.displayName?.trim()
-      if (!name) continue
+      if (!name || !usableName(name)) continue
       // Somebody the owner hid, arriving on a second channel. Their "no" meant
       // the person, not the account, so the identity joins them where they are
       // rather than becoming a visible row of their own.

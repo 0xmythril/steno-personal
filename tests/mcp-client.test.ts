@@ -51,7 +51,7 @@ describe('an MCP client reads a chat through a bearer key', () => {
       expect(found).toContain('call me back')
 
       const people = firstText(await client.callTool({ name: 'list_people', arguments: {} }))
-      expect(people).toBe('[]')
+      expect(people).toBe('{"people":[],"nextCursor":null}')
 
       expect(firstText(await client.callTool({ name: 'whoami', arguments: {} }))).toContain('Alex')
     } finally {

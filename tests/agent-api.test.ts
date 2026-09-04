@@ -246,15 +246,35 @@ describe('publicPeople — which chats', () => {
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
     await createPerson({ name: 'Charles Babbage' })
 
-    const [ada] = await publicPeople({ q: 'ada' })
+    // Lean by default: the direct chat ids ride along (that is the one-hop
+    // answer to "open my chat with Ada"), the full chat list only on request.
+    const { people: [ada] } = await publicPeople({ q: 'ada' })
+    expect(Object.keys(ada).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes'])
     expect(ada.name).toBe('Ada Lovelace')
     expect(ada.chatCount).toBe(2)
-    expect(ada.chats.map(c => c.id).sort()).toEqual([dm.id, group.id].sort())
-    expect(ada.chats.find(c => c.id === dm.id)).toMatchObject({ title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' })
-    expect(ada.chats.find(c => c.id === group.id)).toMatchObject({ title: 'Work', kind: 'group' })
+    expect(ada.dm).toEqual([{ id: dm.id, channel: 'whatsapp' }])
     expect(JSON.stringify(ada)).not.toContain('1555123')
-    expect((await publicPeople()).map(p => p.name).sort()).toEqual(['Ada Lovelace', 'Charles Babbage'])
-    expect(await publicPeople({ q: 'nobody' })).toEqual([])
+
+    const { people: [full] } = await publicPeople({ q: 'ada', includeChats: true })
+    expect(full.chats!.map(c => c.id).sort()).toEqual([dm.id, group.id].sort())
+    expect(full.chats!.find(c => c.id === dm.id)).toMatchObject({ title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' })
+    expect(full.chats!.find(c => c.id === group.id)).toMatchObject({ title: 'Work', kind: 'group' })
+
+    expect((await publicPeople()).people.map(p => p.name)).toEqual(['Ada Lovelace', 'Charles Babbage'])
+    expect(await publicPeople({ q: 'nobody' })).toEqual({ people: [], nextCursor: null })
+  })
+
+  it('pages by name with a cursor, and clamps the limit', async () => {
+    for (const name of ['Charles', 'ada', 'Bob']) await createPerson({ name })
+    const first = await publicPeople({ limit: 2 })
+    expect(first.people.map(p => p.name)).toEqual(['ada', 'Bob'])
+    expect(first.nextCursor).not.toBeNull()
+    const second = await publicPeople({ limit: 2, cursor: first.nextCursor! })
+    expect(second.people.map(p => p.name)).toEqual(['Charles'])
+    expect(second.nextCursor).toBeNull()
+    // A cursor nobody minted starts from the top rather than failing.
+    expect((await publicPeople({ cursor: 'not-a-cursor' })).people).toHaveLength(3)
+    expect((await publicPeople({ limit: 0 })).people).toHaveLength(1)
   })
 })
 
@@ -380,12 +400,18 @@ describe('the MCP surface', () => {
     const { id } = await createPerson({ name: 'Ada Lovelace' })
     await linkIdentity(id, { channel: 'whatsapp', externalId: '15551230000@s.whatsapp.net' })
     await createPerson({ name: 'Charles Babbage' })
-    const out = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada' })) as Array<{
-      name: string; chats: Array<{ id: string; title: string | null; channel: string; kind: string }>
-    }>
-    expect(out.map(p => p.name)).toEqual(['Ada Lovelace'])
-    expect(out[0].chats).toEqual([{ id: dm.id, title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' }])
-    expect(JSON.stringify(out)).not.toContain('1555123')
+    type Person = { name: string; dm: Array<{ id: string; channel: string }>; chats?: Array<{ id: string; title: string | null; channel: string; kind: string }> }
+    const out = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada' })) as { people: Person[]; nextCursor: string | null }
+    expect(out.people.map(p => p.name)).toEqual(['Ada Lovelace'])
+    expect(out.people[0].dm).toEqual([{ id: dm.id, channel: 'whatsapp' }])
+    expect(out.people[0].chats).toBeUndefined()
+    expect(out.nextCursor).toBeNull()
+    const full = JSON.parse(await callTool(await agentKey(), 'list_people', { q: 'ada', include_chats: true })) as { people: Person[] }
+    expect(full.people[0].chats).toEqual([{ id: dm.id, title: 'Ada Lovelace', channel: 'whatsapp', kind: 'dm' }])
+    expect(JSON.stringify(full)).not.toContain('1555123')
+    const paged = JSON.parse(await callTool(await agentKey(), 'list_people', { limit: 1 })) as { people: Person[]; nextCursor: string | null }
+    expect(paged.people).toHaveLength(1)
+    expect(paged.nextCursor).not.toBeNull()
   })
 
   it('whoami falls back to the name the contact cache holds for the account itself', async () => {

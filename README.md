@@ -124,7 +124,9 @@ anything.
   3 MiB comes back as image content the agent can look at, anything else as
   metadata plus the `/media/<id>` path. Every message with an attachment says
   whether its bytes are ready, pending, failed or unavailable.
-- `list_people` takes `q` and names the chats each person appears in.
+- `list_people` takes `q`, pages fifty at a time with a cursor, and lists each
+  person with the ids of their direct chats; pass `include_chats` for every
+  chat they appear in.
 
 **Shortest path:** open **Settings**, create a key, and press **Copy
 instructions** under "Let the agent set itself up". Paste that block into any

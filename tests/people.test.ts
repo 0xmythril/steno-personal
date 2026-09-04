@@ -207,7 +207,7 @@ describe('people', () => {
 describe('publicPeople — the one mapping both agent surfaces use', () => {
   beforeEach(resetDb)
 
-  it('carries the id, name, notes, channels, chat count and the chats themselves, and nothing else', async () => {
+  it('carries the id, name, notes, channels, chat count and the direct chats, and the chat list only on request', async () => {
     const tg = await makeConnection({ channel: 'telegram' })
     const dm = await makeChat(tg, { kind: 'dm', externalChatId: '42', title: 'Ada' })
     await addMessage(dm, { senderExternalId: '42', text: 'hello' })
@@ -218,17 +218,21 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     })
     await linkIdentity(id, { channel: 'whatsapp', externalId: ADA_JID, displayName: 'Ada' })
 
-    const [person] = await publicPeople()
+    const { people: [person] } = await publicPeople()
     expect(person).toEqual({
       id, name: 'Ada', notes: 'from the archive',
       channels: ['telegram', 'whatsapp'], chatCount: 1,
-      // The chat under the title the chat list shows, with nothing but the
-      // fields an agent can act on: the id get_messages takes, and how to
-      // recognise it. No external id, no phone.
-      chats: [{ id: dm.id, title: 'Ada', channel: 'telegram', kind: 'dm' }],
+      // The direct chat's id — the one get_messages takes — and its channel.
+      // No external id, no phone.
+      dm: [{ id: dm.id, channel: 'telegram' }],
     })
-    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'chats', 'id', 'name', 'notes'])
-    expect(Object.keys(person.chats[0]).sort()).toEqual(['channel', 'id', 'kind', 'title'])
+    expect(Object.keys(person).sort()).toEqual(['channels', 'chatCount', 'dm', 'id', 'name', 'notes'])
+
+    // The chats under the titles the chat list shows, with nothing but the
+    // fields an agent can act on, when asked for.
+    const { people: [full] } = await publicPeople({ includeChats: true })
+    expect(full.chats).toEqual([{ id: dm.id, title: 'Ada', channel: 'telegram', kind: 'dm' }])
+    expect(Object.keys(full.chats![0]).sort()).toEqual(['channel', 'id', 'kind', 'title'])
   })
 
   it('never serves a phone number or a channel identifier, however the person was linked', async () => {
@@ -242,7 +246,7 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     const grace = await createPerson({ name: 'Grace' })
     await linkIdentity(grace.id, { channel: 'whatsapp', externalId: GRACE_JID })
 
-    const json = JSON.stringify(await publicPeople())
+    const json = JSON.stringify(await publicPeople({ includeChats: true }))
     expect(json).not.toMatch(/\+\d/)
     expect(json).not.toContain('@s.whatsapp.net')
     expect(json).not.toContain('447700900123')
@@ -257,7 +261,7 @@ describe('publicPeople — the one mapping both agent surfaces use', () => {
     await linkIdentity(id, { channel: 'telegram', externalId: '43' })
     await createPerson({ name: 'Bob' })
 
-    expect((await publicPeople()).map(p => p.channels)).toEqual([['telegram'], []])
+    expect((await publicPeople()).people.map(p => p.channels)).toEqual([['telegram'], []])
   })
 })
 
@@ -295,6 +299,21 @@ describe('the self-populating address book', () => {
     // Idempotent: the second run over an unchanged archive does nothing.
     expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
     expect(await listPeople()).toHaveLength(2)
+  })
+
+  it('never creates a person from a name with no letter or digit in it', async () => {
+    // Contact lists carry entries like "'" and "…" — a saved number with no
+    // real name. Serving those to an agent as people is worse than skipping.
+    const tg = await makeConnection({ channel: 'telegram' })
+    await syncContacts(tg.id, 'telegram', [
+      { externalId: '1', displayName: "'", phone: null },
+      { externalId: '2', displayName: '…', phone: null },
+      { externalId: '3', displayName: ' - ', phone: null },
+      { externalId: '4', displayName: 'A1', phone: null },
+      { externalId: '5', displayName: '李', phone: null },
+    ])
+    expect(await populatePeople()).toMatchObject({ created: 2 })
+    expect((await listPeople()).map(p => p.name).sort()).toEqual(['A1', '李'])
   })
 
   // A WhatsApp history sync can leave the OWNER'S own display name in a direct
@@ -461,7 +480,7 @@ describe('the self-populating address book', () => {
 
     expect(await archivePerson(ada.id)).toBe(true)
     expect(await listPeople()).toEqual([])
-    expect(await publicPeople()).toEqual([])
+    expect((await publicPeople()).people).toEqual([])
     expect(await getPerson(ada.id)).toBeNull()
     expect(await personForIdentity({ channel: 'telegram', externalId: '42' })).toBeNull()
     expect(await updatePerson(ada.id, { name: 'Nope' })).toBe(false)
@@ -501,7 +520,7 @@ describe('the self-populating address book', () => {
     expect(await populatePeople()).toMatchObject({ created: 0 })
 
     expect(await listPeople()).toEqual([])
-    expect(await publicPeople()).toEqual([])
+    expect((await publicPeople()).people).toEqual([])
     const [stillHidden] = await listArchivedPeople()
     expect(stillHidden.id).toBe(ada.id)
     expect(stillHidden.identities.map(i => [i.channel, i.externalId, i.source])).toEqual([

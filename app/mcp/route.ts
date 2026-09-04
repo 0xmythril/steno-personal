@@ -104,6 +104,9 @@ const searchInput = z.object({
 })
 const listPeopleInput = z.object({
   q: z.string().optional(),
+  limit: limit.optional(),
+  cursor: z.string().optional(),
+  include_chats: z.boolean().optional(),
 })
 const getMediaInput = z.object({
   media_id: z.string(),
@@ -218,16 +221,18 @@ const handler = createMcpHandler(server => {
     {
       annotations: READ_ONLY,
       description:
-        "The people in this instance's address book: id, name, your notes, which channels are linked, and the chats "
-        + 'they appear in (id, title, channel, kind — the same ids get_messages takes). Pass q to match a substring of '
-        + "the name. The notes are the owner's own free text and are returned verbatim. "
+        "The people in this instance's address book: id, name, your notes, which channels are linked, how many chats "
+        + 'they appear in, and dm — the ids of the direct chats with them, which get_messages takes. Pass q to match a '
+        + 'substring of the name. Fifty per page, sorted by name; pass nextCursor back to continue. Pass include_chats '
+        + 'to also list every chat they appear in (id, title, channel, kind); it is long for a well-connected person, '
+        + "so ask for it with q. The notes are the owner's own free text and are returned verbatim. "
         + 'Never a phone number. ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: listPeopleInput,
     },
     guarded('list_people', async (args: z.infer<typeof listPeopleInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
-      return text(await publicPeople({ q: args.q }))
+      return text(await publicPeople({ q: args.q, limit: args.limit, cursor: args.cursor, includeChats: args.include_chats }))
     }),
   )
 
