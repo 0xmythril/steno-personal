@@ -74,8 +74,8 @@ it.
 holding one does not self-censor the way a person does: asked to summarise
 work, it can read and repeat a family chat that happened to match. Today the
 only scoping is the agent's own instructions and the `channel` and `kind`
-filters the tools take (the README's "What an agent can see" says how to use
-them), which limit what a well-behaved agent asks for and nothing about what a
+filters the tools take ("What an agent can see" in [mcp.md](mcp.md) says how
+to use them), which limit what a well-behaved agent asks for and nothing about what a
 key can return. The planned control is a per-key chat allowlist: a key minted
 for one agent that can only ever see the chats named on it, enforced in the
 MCP route and `/api`, so a leaked or over-eager agent key exposes that list
