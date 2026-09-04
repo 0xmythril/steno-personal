@@ -1,14 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-
-// These tests reason about "no key" and "a key"; the build's real default
-// would turn every "no key" case into "a key". Hoisted, so lib/env.ts sees it.
-vi.mock('@/lib/telemetry-defaults', () => ({ POSTHOG_DEFAULT_KEY: '', POSTHOG_DEFAULT_HOST: 'https://us.i.posthog.com' }))
 import { resetDb } from './helpers/db'
 import { seedConnection, seedChat, seedMessage } from './helpers/archive'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { getSettings, updateSettings } from '@/lib/services/settings'
 import { EVENTS, ALLOWED_PROPERTY_KEYS, sendEvent, telemetryInstanceId, track } from '@/lib/services/telemetry'
 import { APP_VERSION } from '@/lib/version'
+import { POSTHOG_DEFAULT_KEY } from '@/lib/telemetry-defaults'
 import { _resetEnvCacheForTests } from '@/lib/env'
 
 function withKey(key: string | undefined) {
@@ -17,9 +14,9 @@ function withKey(key: string | undefined) {
   _resetEnvCacheForTests()
 }
 
-// The default key is '' until a build is pointed at a project, so a test
-// that wants sending ON must set one; the tests that want it off rely on the
-// same default the shipped build has today.
+// withKey(undefined) leaves the SHIPPED default in place — the build carries
+// a real token, so "unset" means "reports to the project", not "off". Tests
+// that want a known key set one; tests that want it off use the real gates.
 describe('telemetry', () => {
   beforeEach(async () => {
     await resetDb()
@@ -96,10 +93,14 @@ describe('telemetry', () => {
     }
   })
 
-  it('sends nothing without a key, however the toggle is set', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    expect(await sendEvent('search', { surface: 'portal' })).toBe('no_key')
-    expect(fetchSpy).not.toHaveBeenCalled()
+  // The reason the token ships in the build at all: with nothing set on the
+  // host, an instance reports to the project from its first event.
+  it('uses the shipped token when nothing is set on the host', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 200 }))
+    expect(await sendEvent('search', { surface: 'portal' })).toBe('sent')
+    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))
+    expect(body.api_key).toBe(POSTHOG_DEFAULT_KEY)
+    expect(body.api_key).toMatch(/^phc_/)
   })
 
   it('sends nothing when the owner has opted out', async () => {
