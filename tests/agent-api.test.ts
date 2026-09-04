@@ -134,14 +134,17 @@ describe('pageChats — the aimed chat list', () => {
     expect(await snippet()).toBe('a caption')
     await addMessage(chat, { text: '👍', type: 'reaction', sentAt: at('2026-01-04T00:00:00Z') })
     expect(await snippet()).toBe('Reacted 👍')
+    // A row the parser could not name and that says nothing is not the
+    // latest useful message: the snippet walks back past it. So does a
+    // system row (someone joined, the subject changed).
     await addMessage(chat, { text: null, type: 'unknown', sentAt: at('2026-01-05T00:00:00Z') })
-    expect(await snippet()).toBe('[unsupported message]')
-    // A system row (someone joined, the subject changed) is not conversation.
+    expect(await snippet()).toBe('Reacted 👍')
     await addMessage(chat, { text: null, type: 'system', sentAt: at('2026-01-06T00:00:00Z') })
-    expect(await snippet()).toBe('[unsupported message]')
-    const onlySystem = await makeChat(conn, { kind: 'group', title: 'New group' })
-    await addMessage(onlySystem, { text: null, type: 'system', sentAt: at('2026-01-07T00:00:00Z') })
-    expect((await pageChats()).chats.find(c => c.id === onlySystem.id)!.snippet).toBeNull()
+    expect(await snippet()).toBe('Reacted 👍')
+    const onlyNoise = await makeChat(conn, { kind: 'group', title: 'New group' })
+    await addMessage(onlyNoise, { text: null, type: 'system', sentAt: at('2026-01-07T00:00:00Z') })
+    await addMessage(onlyNoise, { text: null, type: 'unknown', sentAt: at('2026-01-08T00:00:00Z') })
+    expect((await pageChats()).chats.find(c => c.id === onlyNoise.id)!.snippet).toBeNull()
   })
 })
 

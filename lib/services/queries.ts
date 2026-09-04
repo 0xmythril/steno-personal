@@ -33,10 +33,11 @@ export type ChatSummary = {
   // the account identifier.
   createdAt: Date; connectionId: string
   person: PersonRef | null
-  // The latest live non-system message, cut to SNIPPET_CHARS: enough to tell
-  // an agent what a chat is about without opening it. A textless message
-  // shows as a bracketed placeholder ("[image]"); null only when the chat has
-  // no live message at all.
+  // The latest live message that says something, cut to SNIPPET_CHARS:
+  // enough to tell an agent what a chat is about without opening it. A
+  // textless attachment shows as a bracketed placeholder ("[image]"); system
+  // rows and textless unknown rows are walked past; null only when the chat
+  // has nothing else.
   snippet: string | null
 }
 
@@ -162,17 +163,21 @@ const displayTitle = sql<string | null>`case when ${chats.kind} = 'dm'
 // The latest live message's text, already cut to size in SQL so a chat list
 // never drags a whole essay per row out of the database. A message with no
 // text still says what it is — "[image]", "Reacted 👍" — because a blank
-// snippet beside a busy chat read as a bug, and system rows (a join, a
-// subject change) are skipped because they are not conversation.
+// snippet beside a busy chat read as a bug. Two kinds of row are walked
+// past rather than shown: system rows (a join, a subject change), which are
+// not conversation, and a row the parser could not name that says nothing,
+// which is the latest message of a busy group far too often to be the
+// thing an agent sees first.
 const snippetText = sql`coalesce(substr(${messages.text}, 1, ${SNIPPET_CHARS}),
   case ${messages.type}
     when 'image' then '[image]' when 'video' then '[video]' when 'audio' then '[audio]'
     when 'document' then '[document]' when 'sticker' then '[sticker]' when 'location' then '[location]'
-    when 'contact' then '[contact]' when 'poll' then '[poll]' when 'unknown' then '[unsupported message]' end)`
+    when 'contact' then '[contact]' when 'poll' then '[poll]' end)`
 const latestSnippet = nested(sql<string | null>`(select case when ${messages.type} = 'reaction'
     then 'Reacted ' || coalesce(${messages.text}, '') else ${snippetText} end
   from ${messages}
   where ${messages.chatId} = ${chats.id} and ${messages.deletedAt} is null and ${messages.type} <> 'system'
+    and not (${messages.type} = 'unknown' and ${messages.text} is null)
   order by ${messages.sentAt} desc, ${messages.id} desc limit 1)`)
 
 // A chat with no messages yet still belongs in the list; sort it by when we

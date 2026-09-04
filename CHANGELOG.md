@@ -36,7 +36,8 @@ All notable changes to this project are documented here. The format follows
   sender ever carried, then the contact list. One person reads the same in
   every chat.
 - **Chat snippets** show a placeholder (`[image]`, `Reacted 👍`) instead of
-  nothing when the latest message has no text, and skip system rows.
+  nothing when the latest message has no text, and walk past system rows and
+  unrecognised rows with no text.
 - **`whoami`** names a WhatsApp account from the push name on the owner's
   own messages when the socket gave none.
 - **Merge suggestions** on the People page now say which row is on Telegram
