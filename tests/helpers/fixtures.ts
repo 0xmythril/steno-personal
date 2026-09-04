@@ -44,7 +44,7 @@ export async function makeChat(connection: { id: string; channel: 'telegram' | '
 export async function addMessage(chat: { id: string }, opts: {
   text?: string | null; sentAt?: Date; senderName?: string | null; senderExternalId?: string | null; fromOwner?: boolean
   externalMessageId?: string; deletedAt?: Date; hasMedia?: boolean
-  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
+  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
 } = {}) {
   const [row] = await db.insert(messages).values({
     chatId: chat.id,

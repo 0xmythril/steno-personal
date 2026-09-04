@@ -51,7 +51,7 @@ export async function seedMessage(chatId: string, opts: {
   senderName?: string | null
   fromOwner?: boolean
   deletedAt?: Date | null
-  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
+  type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
 } = {}): Promise<string> {
   const id = randomUUID()
   const sentAt = opts.sentAt ?? new Date()

@@ -30,7 +30,7 @@ export type IncomingMessage = {
   senderName: string | null
   fromOwner: boolean
   sentAt: Date
-  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'system' | 'unknown'
+  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
   text: string | null
   // Set when the message carries a downloadable attachment. M1 stores it on
   // the message row (has_media); M4 enqueues a media row from it.

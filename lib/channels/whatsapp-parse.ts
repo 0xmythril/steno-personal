@@ -256,8 +256,45 @@ export function parseWaMessage(m: any): ParsedWaMessage | null {
     if (!node) continue
     return { ...base, type, text: node.caption ?? null, media: mediaMeta(type, node) }
   }
+  // Content that is not text and not a file, given a type and the one line
+  // of text a reader would want: without it every reaction, poll, pin and
+  // shared contact was an `unknown` row with nothing in it, and a chat whose
+  // latest message was one had no snippet at all.
+  const reaction = content?.reactionMessage
+  if (reaction) return { ...base, type: 'reaction', text: nonEmpty(reaction.text), media: null }
+  const poll = content?.pollCreationMessageV3 ?? content?.pollCreationMessageV2 ?? content?.pollCreationMessage
+  if (poll) {
+    const options: string[] = Array.isArray(poll.options)
+      ? poll.options.map((o: any) => nonEmpty(o?.optionName)).filter((s: string | null): s is string => s !== null)
+      : []
+    return { ...base, type: 'poll', text: [nonEmpty(poll.name), ...options].filter(Boolean).join('\n') || null, media: null }
+  }
+  const location = content?.locationMessage ?? content?.liveLocationMessage
+  if (location) return { ...base, type: 'location', text: locationText(location), media: null }
+  // A contact card's vcard carries the number; only the display name is kept.
+  const contact = content?.contactMessage
+  if (contact) return { ...base, type: 'contact', text: nonEmpty(contact.displayName), media: null }
+  const contacts = content?.contactsArrayMessage
+  if (contacts) {
+    const n = Array.isArray(contacts.contacts) ? contacts.contacts.length : 0
+    const name = nonEmpty(contacts.displayName)
+    const count = n > 0 ? `${n} contact${n === 1 ? '' : 's'}` : null
+    return { ...base, type: 'contact', text: name && count ? `${name} (${count})` : name ?? count, media: null }
+  }
   if (m?.messageStubType != null) return { ...base, type: 'system', text: null, media: null }
   return { ...base, type: 'unknown', text: null, media: null }
+}
+
+const nonEmpty = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
+
+// A place reads as its name, else its address, else its coordinates to five
+// decimals (about a metre): a pin with no label is still a pin.
+function locationText(node: any): string | null {
+  const label = nonEmpty(node?.name) ?? nonEmpty(node?.address)
+  if (label) return label
+  const lat = Number(node?.degreesLatitude)
+  const lng = Number(node?.degreesLongitude)
+  return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : null
 }
 
 export type ToIncomingCtx = {

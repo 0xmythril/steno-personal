@@ -81,9 +81,45 @@ function messageType(msg: Message): IncomingMessage['type'] {
     case 'audio': case 'voice': return 'audio'
     case 'document': return 'document'
     case 'sticker': return 'sticker'
-    // contact, dice, game, location, poll, venue, webpage, story, invoice…
+    case 'location': case 'live_location': case 'venue': return 'location'
+    case 'contact': return 'contact'
+    case 'poll': return 'poll'
+    // dice, game, webpage, story, invoice…
     default: return 'unknown'
   }
+}
+
+// The one line a reader wants from content that is not text: a venue's name,
+// a pin's coordinates, a contact's name, a poll's question and options. Every
+// field is read through a narrow cast and guarded, like mediaMeta below;
+// a shape mtcute changes degrades to null, never to a throw in ingest.
+function mediaText(msg: Message): string | null {
+  const m = msg.media as {
+    type: string; title?: string; address?: string; latitude?: number; longitude?: number
+    firstName?: string; lastName?: string; question?: string; answers?: ReadonlyArray<{ text?: string }>
+  } | null
+  if (!m) return null
+  const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null)
+  switch (m.type) {
+    case 'venue':
+      return str(m.title) ?? str(m.address) ?? coords(m)
+    case 'location': case 'live_location':
+      return coords(m)
+    case 'contact':
+      return [str(m.firstName), str(m.lastName)].filter(Boolean).join(' ') || null
+    case 'poll': {
+      const answers = Array.isArray(m.answers) ? m.answers.map(a => str(a?.text)).filter(Boolean) : []
+      return [str(m.question), ...answers].filter(Boolean).join('\n') || null
+    }
+    default:
+      return null
+  }
+}
+
+function coords(m: { latitude?: number; longitude?: number }): string | null {
+  return typeof m.latitude === 'number' && typeof m.longitude === 'number' && Number.isFinite(m.latitude) && Number.isFinite(m.longitude)
+    ? `${m.latitude.toFixed(5)}, ${m.longitude.toFixed(5)}`
+    : null
 }
 
 const DOWNLOADABLE = new Set(['photo', 'video', 'audio', 'voice', 'document', 'sticker'])
@@ -144,7 +180,7 @@ function toIncoming(msg: Message, selfId: string): IncomingMessage {
     fromOwner: msg.isOutgoing || String(msg.chat.id) === selfId,
     sentAt: msg.date,
     type: messageType(msg),
-    text: msg.text || null,
+    text: msg.text || mediaText(msg),
     media: mediaMeta(msg),
     raw: encodeTlRaw(msg.raw),
   }

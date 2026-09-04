@@ -113,7 +113,7 @@ export const messages = sqliteTable('messages', {
   senderName: text('sender_name'),
   fromOwner: integer('from_owner', { mode: 'boolean' }).notNull().default(false),
   sentAt: integer('sent_at', { mode: 'timestamp_ms' }).notNull(),
-  type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'system', 'unknown'] }).notNull(),
+  type: text('type', { enum: ['text', 'image', 'video', 'audio', 'document', 'sticker', 'reaction', 'poll', 'location', 'contact', 'system', 'unknown'] }).notNull(),
   text: text('text'),
   hasMedia: integer('has_media', { mode: 'boolean' }).notNull().default(false),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
