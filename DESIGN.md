@@ -19,7 +19,7 @@ The mark is fixed and must be reproduced exactly (see Components → Mark). Ever
 These are settled product decisions for steno-personal (see CONTRIBUTING.md, "Ground rules"). Do not design them away.
 
 - **Access-key login.** There is a login page — a passkey button first when one is registered, the key form beneath — and the nav shows `key` or `passkey` with the session's label and a Log out. There is no avatar, no accounts, no OAuth.
-- **Three pages.** Chats, Connections, Settings. Agent access is a panel inside Settings.
+- **Four pages.** Chats, People, Connections, Settings. Agent access is a panel inside Settings.
 - **WhatsApp live is first-class.** No gate, no switch. Its three risk sentences sit on the card, unsoftened, in the `bad` colour.
 - **Keys are re-revealable.** A key can be shown again from the Settings table.
 - **Nothing leaves the machine.** Fonts are bundled at build time with `next/font`; no page view fetches from Google. No telemetry, opt-in or otherwise.
@@ -39,7 +39,8 @@ Mint and pencil tint are taken from the mark and never change. Everything else i
 | `ink` | `#14201B` | Headings, names, primary text |
 | `body` | `#2A3A33` | Running text |
 | `muted` | `#5E6F67` | Secondary text, timestamps, labels. 5.0:1 on paper, 4.6:1 on card |
-| `hairline` | `#D7E1DB` | Borders and dividers |
+| `hairline` | `#D7E1DB` | Dividers, card and table borders. Never the boundary of a control |
+| `edge` | `#7C8C84` | The boundary of an interactive control: buttons, inputs, selects, filter chips. 3.5:1 on card, 3.1:1 on well |
 | `rule` | `#B9D3C7` | The transcript rule only |
 | `mint` | `#A7E1D3` | Brand. The mark, selection stripe, avatar fill. Never a status |
 | `mint-soft` | `#DDF3EC` | Brand tint for chips and the one hosted card |
@@ -65,6 +66,7 @@ Not an inversion. The canvas keeps its green cast, mint becomes the primary butt
 | `body` | `#C9D5CF` |
 | `muted` | `#93A39B` |
 | `hairline` | `#263029` |
+| `edge` | `#607068` |
 | `rule` | `#2F4038` |
 | `mint` | `#A7E1D3` |
 | `mint-soft` | `#1C332C` |
@@ -77,6 +79,8 @@ Not an inversion. The canvas keeps its green cast, mint becomes the primary butt
 
 ### Rules
 
+- **An outline means you can press it.** Only a control carries an `edge` border. A static readout may share the `well` fill — a key field, `code`, `pre` — but never takes a border, so the edge alone answers "can I press this?". `hairline` divides; it never bounds a control.
+- Every control boundary holds 3:1 against card, paper and well, on both palettes. That is why `edge` exists and `hairline` is not allowed to do the job.
 - Status colours are separate from the accent. `ok`, `warn`, `bad` carry meaning; `mint` never does. A mint chip is always brand.
 - Interactive is pine. Links, focus rings, active states. Not mint, not ink.
 - Text on any tint is checked against that tint, not against white. `muted` must hold 4.5:1 on `paper` and on `card`. The contrast test runs in CI.
@@ -106,13 +110,24 @@ Rules: running text stays near 65 characters. Headings use `text-wrap: balance`.
 
 ## Layout
 
-A 4px base. Rows sit on 10px vertical padding, panels on 14px. Sibling groups are laid out with flex or grid and `gap`; per-element margins are avoided.
+A 4px base, and four steps, used in this order:
+
+| Step | Value | Between |
+|---|---|---|
+| bind | 8px | a label and the control it describes; 7px for a heading and the sentence explaining it |
+| within | 14px | siblings inside one panel |
+| panel | 18px | a card's own padding. Table rows sit on 11px, the nav and footer on 14px |
+| part | 24px | one section and the next |
+
+The ratio matters more than the values: a section boundary must read as clearly larger than the space inside a section. This started at 14px between cards and 10px inside them — nearly the same number for "these are different things" and "these belong together" — and the whole page read as one undifferentiated stack. Density is still welcome; sameness is not.
+
+Sibling groups are laid out with flex or grid and `gap`; per-element margins are avoided, with one deliberate exception at `.card > h2 + p`, which pulls a card's opening sentence up to its heading.
 
 App shell: a paper-coloured top nav (mark, wordmark, product label, links, key label, Log out), a page column of at most 1120px on a `card` surface, then the footer.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ ● Steno · PERSONAL      Chats  Connections  Settings   key laptop │
+│ ● Steno · PERSONAL  Chats  People  Connections  Settings  key laptop │
 ├──────────────────────────────────────────────────────────────────┤
 │ ← All chats                                                      │
 │ HK Founders Dinner                        [Read-only · Telegram] │
@@ -161,14 +176,24 @@ Favicon: the same paths on a rounded square with literal hex values, palette inv
 ### Buttons
 
 - Primary (`.primary`): `btn-bg` fill, `btn-fg` text, 36px tall, 8px radius, 500 weight 14px, 14px horizontal padding. In dark mode this is mint with ink text.
-- Secondary (the default for a bare `<button>`): transparent fill, `ink` text, `hairline` border.
-- Danger (`.danger`): transparent fill, `bad` text, `hairline` border.
+- Secondary (the default for a bare `<button>`): transparent fill, `ink` text, `edge` border. Hover fills with `well` and firms the border to `ink`.
+- Danger (`.danger`): `bad-soft` fill, `bad` text, `bad` border. Destructive is a fill, not a text colour — a red word on the same rectangle as its harmless neighbour is not a warning.
 - Inside a table row buttons are 26px tall.
 - Labels say what happens: "Create key", "Connect WhatsApp", "Delete this account and everything it archived". Never "Submit" or "OK".
 
+### Passkey icon
+
+The one icon in the interface. A person and a key, drawn in `currentColor` strokes at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px. It does not license a general icon set; see Known Gaps.
+
+### Confirm
+
+Anything that cannot be undone opens its consequence before it can be pressed. A `<details class="confirm">`, so it needs no JavaScript and no dialog: the summary is an *outlined* danger control that only opens, and the button inside the `bad-soft` body is the *filled* one that acts. Outline opens, fill acts — that pairing is the whole grammar.
+
+The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke all keys, remove all passkeys.
+
 ### Chips
 
-22px tall, 6px radius, 12px 500 text. Brand chip: `mint-soft` fill, `pine-ink` text, no dot. Status chips carry a 7px dot in their own colour: `ok` on `mint-soft`; `warn`, `bad` and `off` on a transparent fill with a hairline border so they never look like brand. The Chats filter is a row of chips; the current one is the brand chip.
+22px tall, 6px radius, 12px 500 text. Brand chip: `mint-soft` fill, `pine-ink` text, no dot. Status chips carry a 7px dot in their own colour: `ok` on `mint-soft`; `warn`, `bad` and `off` on a transparent fill with a hairline border so they never look like brand. The Chats filter is a row of chips; the current one is the brand chip and the rest are `.chip.filter` — transparent, `edge` border, `pine` text, no dot. Never `.off` for a filter: `off` is a status, and its dot on a link says "this is switched off" about something you are meant to click. A chip that is a link carries a 36px touch target through a transparent `::after`.
 
 ### The transcript (signature)
 
@@ -178,9 +203,23 @@ Each run of messages from one sender is a two-column grid: a 64px time column an
 
 `card` fill, hairline border, 10px radius, 14px padding, h2 then 13.5px body. The one exception is the hosted card (`.hosted-cta`): `mint-soft` fill, no border, `pine-ink` heading. There is at most one mint card on any screen.
 
+### Select
+
+`appearance: none` always. A native select draws its arrow inside the padding box, so an un-reset one runs its own text under the arrow. 32px right padding, and the caret is drawn from two gradient halves in `muted` rather than an SVG, so no colour literal enters the stylesheet.
+
+Never put a select in a half-width column when the end of its option text carries meaning. The enrichment model pickers name their provider after a dash, and that is the data-destination disclosure; it is the half that a narrow select truncates.
+
 ### Key field
 
-Mono 12px on a `well` fill with hairline border and 6px radius. Long values truncate in the middle.
+Mono 12px on a `well` fill, 6px radius, and no border — it is a readout, not a control. Long values truncate in the middle.
+
+### Login
+
+Three parts at 28px — the header block, the ways in, the tail — and inside the ways, two choices at 18px either side of an `or` rule. Each choice is a lead-in sentence over its control at 12px: these are 15px sentences carrying a 36px button, not the 13px field labels the 8px bind step is drawn for. Passkey first when one is registered: "Use your fingerprint, face, or screen lock." over a full-width primary button; then the rule; then "Paste one of your access keys." over the key card, whose submit is full width too so the two ways mirror each other. Both lead-ins are the same 15px `muted`.
+
+**Never name a platform's biometric brand here.** "Touch ID" means nothing on Windows, "Windows Hello" nothing on a Mac, and one page is served to all of them. "Fingerprint, face, or screen lock" is the phrasing FIDO's own guidance and Google both use, and it covers the PIN fallback that biometrics-only wording leaves out.
+
+The `or` rule belongs to the passkey block and disappears with it, because only the browser knows whether a passkey can really be offered and a rule with one side empty is worse than no passkey button at all. Each half labels itself, so neither depends on the other's copy. The passkey button is not wrapped in a card: a card around a single control is a container with nothing to contain. The headline runs at 28px/1.15 — the display 1.04 is drawn for 30–44px and closes up on two lines at this size.
 
 ### Nav
 
@@ -222,8 +261,8 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 
 ## Known Gaps
 
-- No icon set is specified. Prefer text labels; the two footer icons are the only ones.
+- No icon set is specified. Prefer text labels. The exceptions are the two footer marks and the passkey glyph, each justified where it is drawn; a third exception needs the same kind of argument.
 - Motion is limited to 150ms colour transitions.
-- Form validation beyond the `bad` colour is not designed.
+- Form validation beyond the `bad` colour is not designed. A field error goes inside its `.field`, under the input; `.row > .danger` breaks to its own full-width line as a backstop, because `align-items: flex-end` would otherwise sit it on the submit button's baseline.
 - Print styles are not designed.
 - Chat titles for unnamed WhatsApp direct chats still show the full phone number. Masking to the last four digits is a copy rule for a later change.

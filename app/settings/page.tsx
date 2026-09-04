@@ -65,9 +65,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <label className="field">
               <span>Label</span>
               <input name="label" maxLength={MAX_LABEL_LENGTH} placeholder="e.g. Claude Code on laptop" />
+              {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
             </label>
             <button type="submit" className="primary">Create key</button>
-            {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
           </form>
 
           <div className="tbl"><div className="scroll">
@@ -90,7 +90,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                             <input type="hidden" name="keyId" value={k.id} />
                             <button type="submit">Reveal</button>
                           </form>
-                          {revealError === k.id && <span className="danger">Cannot decrypt: SECRET_KEY changed since this key was made.</span>}
+                          {revealError === k.id && <span className="danger" role="alert">Cannot decrypt: SECRET_KEY changed since this key was made.</span>}
                         </span>
                       )}
                     </td>
@@ -108,9 +108,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </table>
           </div></div>
 
-          <form action={revokeAllKeysAction} className="actions">
-            <button type="submit" className="danger small">Revoke all keys and log out</button>
-          </form>
+          <details className="confirm">
+            <summary>Revoke all keys and log out</summary>
+            <div className="confirm-body">
+              <p>
+                {keys.length === 1 ? 'Your only key stops' : `All ${keys.length} keys stop`} working at once. Every agent using
+                one loses access immediately, this browser is logged out, and no key can be revealed again. Your archive is untouched.
+              </p>
+              <form action={revokeAllKeysAction}>
+                <button type="submit" className="danger small">{keys.length === 1 ? 'Yes, revoke it' : `Yes, revoke all ${keys.length} keys`}</button>
+              </form>
+            </div>
+          </details>
         </section>
 
         <section className="card">
@@ -145,23 +154,33 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </table>
               </div></div>
 
-              <form action={revokeAllPasskeysAction} className="actions">
-                <button type="submit" className="danger small">Remove all passkeys</button>
-              </form>
+              <details className="confirm">
+                <summary>Remove all passkeys</summary>
+                <div className="confirm-body">
+                  <p>
+                    {passkeyRows.length === 1 ? 'Your only passkey stops' : `All ${passkeyRows.length} passkeys stop`} working. If
+                    this session signed in with one you are logged out, and you will need an access key to get back in.
+                  </p>
+                  <form action={revokeAllPasskeysAction}>
+                    <button type="submit" className="danger small">{passkeyRows.length === 1 ? 'Yes, remove it' : `Yes, remove all ${passkeyRows.length} passkeys`}</button>
+                  </form>
+                </div>
+              </details>
             </>
           )}
         </section>
 
-        <div className="two-up">
-          <ConnectAgent
-            rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
-            selectedId={chosen?.id ?? minted?.id ?? null}
-            keys={keys.map(k => ({ id: k.id, label: k.label }))}
-            error={instructionsError}
-          />
+        {/* Not a .two-up. Both of these hold content that a half-width column
+            truncates: an MCP URL and JSON snippets on one side, and on the other
+            a model name plus the provider that receives your files. */}
+        <ConnectAgent
+          rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
+          selectedId={chosen?.id ?? minted?.id ?? null}
+          keys={keys.map(k => ({ id: k.id, label: k.label }))}
+          error={instructionsError}
+        />
 
-          <EnrichmentSection />
-        </div>
+        <EnrichmentSection />
       </main>
     </>
   )

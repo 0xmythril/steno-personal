@@ -19,18 +19,26 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main>
       <div className="login">
-        <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
-        <h1>A private copy of your Telegram and WhatsApp chats, kept on your own computer.</h1>
-        {hasPasskeys && <PasskeyLogin />}
-        <p className="muted">{hasPasskeys ? 'Or paste one of your access keys.' : 'Paste one of your access keys.'}</p>
-        <form action={loginAction} className="card">
-          <label className="field">
-            <span>Access key</span>
-            <input name="key" className="mono" autoComplete="off" spellCheck={false} required />
-          </label>
-          {error && <p className="danger" role="alert">That key is not valid or has been revoked.</p>}
-          <div className="actions"><button type="submit" className="primary">Log in</button></div>
-        </form>
+        <header className="login-head">
+          <span className="brand"><BrandLogo size={28} /><Wordmark /></span>
+          <h1>A private copy of your Telegram and WhatsApp chats, kept on your own computer.</h1>
+        </header>
+        {/* PasskeyLogin draws the divider under itself, or renders nothing at
+            all — see the note in that file. This half labels itself either way. */}
+        <div className="login-ways">
+          {hasPasskeys && <PasskeyLogin />}
+          <div className="choice">
+            <p className="muted">Paste one of your access keys.</p>
+            <form action={loginAction} className="card">
+              <label className="field">
+                <span>Access key</span>
+                <input name="key" className="mono" autoComplete="off" spellCheck={false} required />
+              </label>
+              {error && <p className="danger" role="alert">That key is not valid or has been revoked.</p>}
+              <button type="submit" className="primary">Log in</button>
+            </form>
+          </div>
+        </div>
         <p className="help">
           Lost every key? <Link href="/login/recover">Pair your phone again</Link> to prove the archive is yours and get a new one.
         </p>

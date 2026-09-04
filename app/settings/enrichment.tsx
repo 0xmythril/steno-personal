@@ -1,5 +1,6 @@
 import { getSettings } from '@/lib/services/settings'
-import { TRANSCRIPTION_CATALOG, VISION_CATALOG } from '@/lib/services/analysis-catalog'
+import { TRANSCRIPTION_CATALOG, VISION_CATALOG, DEFAULT_VISION_MODEL, DEFAULT_TRANSCRIPTION_MODEL } from '@/lib/services/analysis-catalog'
+import { ModelField } from './model-field'
 import { clearOpenrouterKeyAction, saveOpenrouterKeyAction, updateEnrichmentAction } from './actions'
 
 // Off by default and off without a key: the toggles are disabled until one is
@@ -47,24 +48,14 @@ export async function EnrichmentSection() {
           <input type="checkbox" name="analyzeAudio" defaultChecked={s.analyzeAudio} disabled={!s.hasOpenrouterKey} />
           Transcribe voice notes
         </label>
-        <div className="two-up">
-          <label className="field">
-            <span>Vision model</span>
-            <select name="visionModel" defaultValue={s.visionModel}>
-              {VISION_CATALOG.map(e => (
-                <option key={e.id} value={e.id}>{e.label} — {e.provider}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Transcription model</span>
-            <select name="transcriptionModel" defaultValue={s.transcriptionModel}>
-              {TRANSCRIPTION_CATALOG.map(e => (
-                <option key={e.id} value={e.id}>{e.label} — {e.provider}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <ModelField
+          label="Vision model" name="visionModel"
+          options={VISION_CATALOG} selected={s.visionModel ?? DEFAULT_VISION_MODEL}
+        />
+        <ModelField
+          label="Transcription model" name="transcriptionModel"
+          options={TRANSCRIPTION_CATALOG} selected={s.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL}
+        />
         <div className="actions"><button type="submit" className="small">Save enrichment settings</button></div>
       </form>
     </section>

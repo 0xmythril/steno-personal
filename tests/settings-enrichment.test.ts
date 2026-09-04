@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 // catalog, and the new actions obey both M0 invariants for this file.
 describe('settings enrichment section', () => {
   const section = readFileSync('app/settings/enrichment.tsx', 'utf8')
+  const modelField = readFileSync('app/settings/model-field.tsx', 'utf8')
   const actions = readFileSync('app/settings/actions.ts', 'utf8')
   const page = readFileSync('app/settings/page.tsx', 'utf8')
 
@@ -25,12 +26,23 @@ describe('settings enrichment section', () => {
   it('offers both toggles and both catalog-driven pickers', () => {
     expect(section).toMatch(/name="analyzeImages"/)
     expect(section).toMatch(/name="analyzeAudio"/)
+    // The pickers moved into <ModelField>; the catalogs still drive them, and
+    // the name= lives there now, so both files are the contract.
     expect(section).toMatch(/name="visionModel"/)
     expect(section).toMatch(/name="transcriptionModel"/)
-    expect(section).toMatch(/VISION_CATALOG\.map/)
-    expect(section).toMatch(/TRANSCRIPTION_CATALOG\.map/)
-    // The provider is the data-destination disclosure; it must be on screen.
-    expect(section).toMatch(/e\.provider/)
+    expect(section).toMatch(/options=\{VISION_CATALOG\}/)
+    expect(section).toMatch(/options=\{TRANSCRIPTION_CATALOG\}/)
+    expect(modelField).toMatch(/options\.map/)
+  })
+
+  // Was asserted on the option text (`{e.label} — {e.provider}`). A closed
+  // select truncates its own tail, so at 375px the provider — the half that
+  // matters — was the half that vanished. It now has its own line, which no
+  // width can cut off, and the option carries the model name alone.
+  it('names the provider that receives the files, outside the option text', () => {
+    expect(modelField).toMatch(/\{chosen\.provider\}/)
+    expect(modelField).toMatch(/className="help"/)
+    expect(modelField).not.toMatch(/<option[^>]*>[^<]*\{o\.provider\}/)
   })
 
   it('adds three guarded actions and no new flash cookie', () => {

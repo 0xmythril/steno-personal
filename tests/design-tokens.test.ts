@@ -75,6 +75,19 @@ describe('the palette', () => {
     for (const k of ['ok', 'warn', 'bad']) expect(contrast(t[k], t.card), k).toBeGreaterThanOrEqual(4.5)
   })
 
+  // SC 1.4.11: the boundary of a control needs 3:1 against what it sits on.
+  // --hairline is a divider and holds ~1.2:1, which is why controls use --edge.
+  it.each(Object.entries(palettes))('%s: the control edge holds 3:1 on every surface it sits on', (_name, t) => {
+    for (const bg of [t.card, t.paper, t.well]) {
+      expect(contrast(t.edge, bg), `edge ${t.edge} on ${bg}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it.each(Object.entries(palettes))('%s: the danger button reads on its own fill', (_name, t) => {
+    expect(contrast(t.bad, t['bad-soft'])).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(t.bad, t.card)).toBeGreaterThanOrEqual(3)
+  })
+
   it('mint is the brand green the mark has always used', () => {
     expect(palettes.light.mint).toBe('#A7E1D3')
     expect(palettes.dark.mint).toBe('#A7E1D3')
@@ -102,6 +115,46 @@ describe('theme mechanics', () => {
 
   it('no pills', () => {
     expect(css).not.toMatch(/border-radius:\s*(999|9999)px/)
+  })
+})
+
+// The bug this guards: a bare <button>, a .token key readout and inline <code>
+// once rendered the same well fill, hairline border and 6px radius, so nothing
+// on the page said which of them you could press. The edge is the answer, and
+// only a control may carry one.
+describe('an outline means you can press it', () => {
+  function rule(selector: string): string {
+    const re = new RegExp(`(^|\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`)
+    const m = css.match(re)
+    expect(m, `globals.css has a \`${selector}\` rule`).not.toBeNull()
+    return m![2]
+  }
+
+  it.each(['button, .btn', 'input:not([type="checkbox"]):not([type="hidden"]), select, textarea'])(
+    '%s is outlined in --edge, never --hairline', selector => {
+      const body = rule(selector)
+      expect(body).toMatch(/border:[^;]*var\(--edge\)/)
+      expect(body).not.toMatch(/var\(--hairline\)/)
+    })
+
+  it.each(['.token', 'code', 'pre'])('%s is a readout and carries no border', selector => {
+    expect(rule(selector)).not.toMatch(/\bborder(-color)?\s*:/)
+  })
+
+  it('a destructive button is filled, not just recoloured', () => {
+    expect(rule('button.danger, .btn.danger')).toMatch(/background:\s*var\(--bad-soft\)/)
+  })
+
+  it('a native select gets room for its arrow, so its text never runs under it', () => {
+    const body = rule('select')
+    expect(body).toMatch(/appearance:\s*none/)
+    expect(body).toMatch(/padding-right:\s*3[0-9]px/)
+  })
+
+  it('smooth scrolling is inside the reduced-motion guard', () => {
+    const at = css.indexOf('scroll-behavior')
+    expect(at).toBeGreaterThan(-1)
+    expect(css.lastIndexOf('prefers-reduced-motion: no-preference', at)).toBeGreaterThan(-1)
   })
 })
 

@@ -2,6 +2,7 @@
 import { useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser'
+import { PasskeyIcon } from '@/app/passkey-icon'
 
 // Enrols the current browser. Used on /welcome (under the first key) and in
 // Settings. The label is the owner's name for the device; the server never
@@ -59,6 +60,7 @@ export function RegisterPasskey() {
       </label>
       <div className="actions">
         <button type="button" className="primary" onClick={register} disabled={state.kind === 'busy'}>
+          <PasskeyIcon />
           {state.kind === 'busy' ? 'Waiting for your passkey…' : 'Register this device'}
         </button>
       </div>
