@@ -7,7 +7,7 @@ import { POSTHOG_DEFAULT_KEY, POSTHOG_DEFAULT_HOST } from '@/lib/telemetry-defau
 // ships bare keys. Every optional var goes through this so '' means unset.
 const blank = <T extends z.ZodTypeAny>(inner: T) => z.preprocess(v => (v === '' ? undefined : v), inner)
 
-export const envSchema = z.object({
+const baseSchema = z.object({
   DATA_DIR: blank(z.string().min(1).optional()).default('./data'),
   PORT: blank(z.coerce.number().int().positive().optional()).default(3000),
   SECRET_KEY: blank(z.string().min(32, 'SECRET_KEY must be at least 32 characters').optional()),
@@ -26,8 +26,9 @@ export const envSchema = z.object({
   // Rows enqueued and drained per medium per pass. Meters a backfill out over
   // many passes instead of one open-ended one.
   ANALYSIS_BACKFILL_BATCH: blank(z.coerce.number().int().positive().optional()).default(20),
-  // The project defaults are empty until the owner registers the app; an
-  // api_id of 0 and an empty hash both read as "unset" to the worker.
+  // The project's own pair by default (lib/channels/telegram-defaults.ts); a
+  // self-hoster overrides both together, and TELEGRAM_API_ID=0 runs without
+  // Telegram. Half a pair is refused below.
   TELEGRAM_API_ID: blank(z.coerce.number().int().nonnegative().optional()).default(TELEGRAM_DEFAULT_API_ID),
   TELEGRAM_API_HASH: blank(z.string().optional()).default(TELEGRAM_DEFAULT_API_HASH),
   // Host-operator operations, each performed by scripts/boot.ts once per value
@@ -46,7 +47,26 @@ export const envSchema = z.object({
   STENO_POSTHOG_HOST: blank(z.url().optional()).default(POSTHOG_DEFAULT_HOST),
 })
 
-export type Env = z.infer<typeof envSchema>
+// A pair is a pair: one variable set and the other blank would silently run
+// the deployer's id under the project's hash (or the reverse) and fail only
+// when Telegram rejects the login. Checked on the raw input, before the
+// defaults fill the blank in; TELEGRAM_API_ID=0 on its own is the opt-out.
+const rawString = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+export const envSchema = z.preprocess((input, ctx) => {
+  const r = (input ?? {}) as Record<string, unknown>
+  const id = rawString(r.TELEGRAM_API_ID)
+  const hash = rawString(r.TELEGRAM_API_HASH)
+  const idSet = id !== '' && id !== '0'
+  if (idSet !== (hash !== '') && id !== '0') {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'TELEGRAM_API_ID and TELEGRAM_API_HASH must be set together (or TELEGRAM_API_ID=0 to run without Telegram)',
+    })
+  }
+  return input
+}, baseSchema)
+
+export type Env = z.infer<typeof baseSchema>
 let cached: Env | null = null
 
 function load(): Env {

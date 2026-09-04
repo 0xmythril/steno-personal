@@ -270,12 +270,12 @@ describe('the owner as a person', () => {
   beforeEach(resetDb)
 
   it('populate makes one row for the owner, named after the account and linked to each connected account id', async () => {
-    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '777' })
     const wa = await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
     // Not counted as a created contact: it is not one.
     expect(await populatePeople()).toEqual({ created: 0, merged: 0, renamed: 0 })
     const me = (await ownerPerson())!
-    expect(me).toMatchObject({ name: 'Cham', isOwner: true, nameSource: 'channel' })
+    expect(me).toMatchObject({ name: 'Casey', isOwner: true, nameSource: 'channel' })
     expect(me.identities.map(i => [i.channel, i.externalId, i.source]).sort()).toEqual([
       ['telegram', '777', 'auto'], ['whatsapp', ADA_JID, 'auto'],
     ])
@@ -300,7 +300,7 @@ describe('the owner as a person', () => {
   it('adopts a contact row that already held the owner’s account id, and folds later ones in', async () => {
     // An install from before the owner row existed: populate had already made
     // a visible contact for the owner's own number. That row IS the owner.
-    await makeConnection({ channel: 'whatsapp', displayName: 'Cham', externalAccountId: ADA_JID })
+    await makeConnection({ channel: 'whatsapp', displayName: 'Casey', externalAccountId: ADA_JID })
     const mine = await createPerson({ name: 'Me (saved)', nameSource: 'channel' })
     await linkIdentity(mine.id, { channel: 'whatsapp', externalId: ADA_JID }, 'auto')
     await populatePeople()
@@ -321,11 +321,11 @@ describe('the owner as a person', () => {
   })
 
   it('is not renamed by a contact-list entry for the owner’s own number', async () => {
-    const tg = await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    const tg = await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '777' })
     await populatePeople()
     await syncContacts(tg.id, 'telegram', [{ externalId: '777', displayName: "'", phone: null }])
     expect(await populatePeople()).toMatchObject({ renamed: 0 })
-    expect((await ownerPerson())!.name).toBe('Cham')
+    expect((await ownerPerson())!.name).toBe('Casey')
     // A garbage name never lands on anyone through the refresh either.
     const ada = await createPerson({ name: 'Ada', nameSource: 'channel' })
     await linkIdentity(ada.id, { channel: 'telegram', externalId: '42' }, 'auto')
@@ -339,9 +339,9 @@ describe('the owner as a person', () => {
     expect(await ownerPerson()).toBeNull()
     const wa = await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
     const chat = await makeChat(wa, { kind: 'group', title: 'Team' })
-    await addMessage(chat, { fromOwner: true, senderName: 'Cham on WA', senderExternalId: ADA_JID })
+    await addMessage(chat, { fromOwner: true, senderName: 'Casey on WA', senderExternalId: ADA_JID })
     await populatePeople()
-    expect((await ownerPerson())!.name).toBe('Cham on WA')
+    expect((await ownerPerson())!.name).toBe('Casey on WA')
     // With no name anywhere, the row still exists so own messages resolve.
     await resetDb()
     await makeConnection({ channel: 'whatsapp', displayName: null, externalAccountId: ADA_JID })
@@ -350,7 +350,7 @@ describe('the owner as a person', () => {
   })
 
   it('a hidden owner stays hidden across populates and is nobody on read paths, and restore brings them back', async () => {
-    await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '777' })
     await populatePeople()
     const me = (await ownerPerson())!
     expect(await archivePerson(me.id)).toBe(true)
@@ -362,11 +362,11 @@ describe('the owner as a person', () => {
   })
 
   it('is served to agents with self: true, and the owner’s name is theirs to change', async () => {
-    await makeConnection({ channel: 'telegram', displayName: 'Cham', externalAccountId: '777' })
+    await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '777' })
     await populatePeople()
     await createPerson({ name: 'Ada' })
     const { people: listed } = await publicPeople()
-    expect(listed.map(p => [p.name, p.self])).toEqual([['Ada', false], ['Cham', true]])
+    expect(listed.map(p => [p.name, p.self])).toEqual([['Ada', false], ['Casey', true]])
     const me = (await ownerPerson())!
     expect(await updatePerson(me.id, { name: 'C. Ham' })).toBe(true)
     expect((await ownerPerson())!).toMatchObject({ name: 'C. Ham', nameSource: 'owner' })

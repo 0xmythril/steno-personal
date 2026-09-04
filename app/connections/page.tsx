@@ -141,7 +141,7 @@ export default async function ConnectionsPage() {
               reads, and a key is revoked in the same place.
             </p>
             <div className="actions">
-              <Link href="/settings" className="btn primary">Connect an agent</Link>
+              <Link href="/settings" className="btn primary">Make an access key</Link>
             </div>
           </section>
         )}
