@@ -17,22 +17,60 @@ import type { IncomingMessage } from '@/lib/services/ingest'
 // identifier, and never a phone number (people design decision 6).
 export type PersonRef = { id: string; name: string }
 
+export type ChatChannel = 'telegram' | 'whatsapp'
+export const CHAT_CHANNELS: readonly ChatChannel[] = ['telegram', 'whatsapp']
+export type ChatKind = 'dm' | 'group' | 'channel'
+export const CHAT_KINDS: readonly ChatKind[] = ['dm', 'group', 'channel']
+
 export type ChatSummary = {
-  id: string; channel: Channel; kind: 'dm' | 'group' | 'channel'
+  id: string; channel: Channel; kind: ChatKind
   title: string | null; lastMessageAt: Date | null; messageCount: number
   person: PersonRef | null
+  // The latest live message's text, cut to SNIPPET_CHARS: enough to tell an
+  // agent what a chat is about without opening it. Null when the chat has no
+  // live message or its latest one has no text (an image, a sticker).
+  snippet: string | null
+}
+
+// Where an attachment's bytes are. 'ready' is the only state with a url: the
+// worker has the file and /media/[id] will serve it. 'pending' means queued
+// or still retrying, 'failed' means the drain gave up, and 'unavailable' is a
+// message that says it carried an attachment but was never queued for one
+// (archived before attachments were kept). The distinction is the whole
+// point: an agent looking at `type: 'image'` must be able to tell "no
+// attachment" from "not downloaded yet" from "never will be".
+export type MediaStatus = 'ready' | 'pending' | 'failed' | 'unavailable'
+export type MediaView = {
+  id: string | null; status: MediaStatus; url: string | null
+  mimeType: string | null; sizeBytes: number | null
+  durationSeconds: number | null; isVoiceNote: boolean | null
+  extractedText: string | null; description: string | null
 }
 
 export type MessageView = {
   id: string; externalMessageId: string; senderName: string | null; fromOwner: boolean; sentAt: Date
   type: IncomingMessage['type']; text: string | null; editedAt: Date | null
   person: PersonRef | null
-  media: { id: string; url: string; mimeType: string | null; extractedText: string | null } | null
+  media: MediaView | null
+}
+
+// A message with its chat named on the same line, for the read paths that
+// cross chats: search hits and the inbox.
+export type MessageInChat = MessageView & {
+  chatId: string; chatTitle: string | null; channel: Channel; kind: ChatKind
 }
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
 const DEFAULT_SEARCH_LIMIT = 50
+// An agent's first call must be answerable: a chat list or an inbox defaults
+// to one screenful, and the cursor is there for the rest.
+const DEFAULT_CHAT_LIMIT = 20
+const DEFAULT_RECENT_LIMIT = 20
+const SNIPPET_CHARS = 160
+
+const clampLimit = (limit: number | undefined, fallback: number): number =>
+  Math.max(1, Math.min(limit ?? fallback, MAX_LIMIT))
 
 // A raw sql`...` template does not table-qualify interpolated columns on its
 // own (confirmed against drizzle-orm 0.45.2: `${messages.chatId} = ${chats.id}`
@@ -98,20 +136,32 @@ const displayTitle = sql<string | null>`case when ${chats.kind} = 'dm'
   then coalesce(${dmPersonName}, nullif(${chats.title}, ${ownerDisplayName}), ${latestCounterparty}, ${whatsappNumber}, ${chats.title})
   else ${chats.title} end`
 
+// The latest live message's text, already cut to size in SQL so a chat list
+// never drags a whole essay per row out of the database.
+const latestSnippet = nested(sql<string | null>`(select substr(${messages.text}, 1, ${SNIPPET_CHARS}) from ${messages}
+  where ${messages.chatId} = ${chats.id} and ${messages.deletedAt} is null
+  order by ${messages.sentAt} desc, ${messages.id} desc limit 1)`)
+
+// A chat with no messages yet still belongs in the list; sort it by when we
+// learned about it rather than dropping it to the bottom forever. Selected as
+// well as ordered by, because the page cursor is built from it.
+const activityAt = sql<number>`coalesce(${chats.lastMessageAt}, ${chats.createdAt})`
+
 const chatSelection = {
   id: chats.id, channel: chats.channel, kind: chats.kind,
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
   personId: dmPersonId, personName: dmPersonName,
+  snippet: latestSnippet, activityAt: nested(activityAt),
 }
 
 // Exactly what chatSelection returns: the person arrives as two columns and
 // leaves as one nested object, so no caller has to know the join.
-type ChatRow = Omit<ChatSummary, 'person'> & { personId: string | null; personName: string | null }
+type ChatRow = Omit<ChatSummary, 'person'> & { personId: string | null; personName: string | null; activityAt: number }
 
 const personRef = (id: string | null, name: string | null): PersonRef | null =>
   id !== null && name !== null ? { id, name } : null
 
-const toSummary = ({ personId, personName, ...row }: ChatRow): ChatSummary =>
+const toSummary = ({ personId, personName, activityAt: _activity, ...row }: ChatRow): ChatSummary =>
   ({ ...row, person: personRef(personId, personName) })
 
 // WhatsApp history sync carries no push name, so almost every synced message
@@ -149,25 +199,35 @@ const senderIdentity = sql`${messages.fromOwner} = 0
 const senderPersonId = nested(sql<string | null>`(select ${personIdentities.personId} from ${personIdentities}
   inner join ${people} on ${people.id} = ${personIdentities.personId}
   where ${senderIdentity} and ${people.archivedAt} is null)`).as('person_id')
-const senderPersonName = nested(sql<string | null>`(select ${people.name} from ${personIdentities}
+// Unaliased, because the sender filter below uses it in a WHERE, where an
+// alias would render as a column that does not exist.
+const senderPersonNameSql = nested(sql<string | null>`(select ${people.name} from ${personIdentities}
   inner join ${people} on ${people.id} = ${personIdentities.personId}
-  where ${senderIdentity} and ${people.archivedAt} is null)`).as('person_name')
+  where ${senderIdentity} and ${people.archivedAt} is null)`)
+const senderPersonName = senderPersonNameSql.as('person_name')
 
 const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
   senderName: senderLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
   personId: senderPersonId, personName: senderPersonName,
+  hasMedia: messages.hasMedia,
 }
 
 // Exactly what messageSelection returns: MessageView minus the field the
 // database cannot answer yet, with the person still in its two columns.
-type MessageRow = Omit<MessageView, 'media' | 'person'> & { personId: string | null; personName: string | null }
+type MessageRow = Omit<MessageView, 'media' | 'person'> & { personId: string | null; personName: string | null; hasMedia: boolean }
 
-// M4 fills the second argument from mediaForMessages; it stays defaulted so
-// any caller that has no media map still gets a well-formed MessageView.
-const toView = ({ personId, personName, ...row }: MessageRow, media: MessageView['media'] = null): MessageView =>
-  ({ ...row, person: personRef(personId, personName), media })
+// Every message has a media row from the moment ingest sees an attachment,
+// but not every archive was built that way; a message that says has_media
+// with no row behind it still tells the reader an attachment existed.
+const unavailableMedia = (): MediaView => ({
+  id: null, status: 'unavailable', url: null, mimeType: null, sizeBytes: null,
+  durationSeconds: null, isVoiceNote: null, extractedText: null, description: null,
+})
+
+const toView = ({ personId, personName, hasMedia, ...row }: MessageRow, media?: MediaView): MessageView =>
+  ({ ...row, person: personRef(personId, personName), media: media ?? (hasMedia ? unavailableMedia() : null) })
 
 // base64url of `${sentAt}:${id}` — opaque to the caller, and a URL cursor
 // never leaks a timestamp or an id into a log or a Referer in readable form.
@@ -185,16 +245,59 @@ function decodeCursor(cursor: string): { sentAt: Date; id: string } | null {
   return { sentAt: new Date(ms), id }
 }
 
-export type ChatChannel = 'telegram' | 'whatsapp'
-export const CHAT_CHANNELS: readonly ChatChannel[] = ['telegram', 'whatsapp']
+// A substring the caller typed, as a LIKE pattern that means exactly that:
+// the wildcards and the escape are escaped so "100%" finds "100%", not
+// everything starting with 100. SQLite's LIKE is already case-insensitive.
+const LIKE_ESCAPE = '\\'
+const likePattern = (q: string): string =>
+  `%${q.replace(/[\\%_]/g, ch => LIKE_ESCAPE + ch)}%`
+const like = (column: SQL, q: string): SQL => sql`${column} like ${likePattern(q)} escape ${LIKE_ESCAPE}`
 
 export async function listChats(opts: { channel?: ChatChannel } = {}): Promise<ChatSummary[]> {
   const rows = await db.select(chatSelection).from(chats)
     .where(opts.channel ? eq(chats.channel, opts.channel) : undefined)
-    // A chat with no messages yet still belongs in the list; sort it by when
-    // we learned about it rather than dropping it to the bottom forever.
-    .orderBy(desc(sql`coalesce(${chats.lastMessageAt}, ${chats.createdAt})`), desc(chats.id))
+    .orderBy(desc(activityAt), desc(chats.id))
   return rows.map(toSummary)
+}
+
+export type ChatFilters = {
+  channel?: ChatChannel
+  kind?: ChatKind
+  // Matched against the title the reader sees — the resolved one, so a DM
+  // with no stored title is still found by the name of the person in it.
+  q?: string
+}
+
+// The chat list an agent can aim: filtered, one screenful at a time, with the
+// same cursor discipline as a transcript. listChats above stays whole for the
+// portal, which renders every chat on one page.
+export async function pageChats(
+  opts: ChatFilters & { limit?: number; cursor?: string } = {},
+): Promise<{ chats: ChatSummary[]; nextCursor: string | null }> {
+  const limit = clampLimit(opts.limit, DEFAULT_CHAT_LIMIT)
+  const conds: SQL[] = []
+  if (opts.channel) conds.push(eq(chats.channel, opts.channel))
+  if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+  const q = opts.q?.trim()
+  if (q) conds.push(like(displayTitle, q))
+  const cursor = opts.cursor ? decodeCursor(opts.cursor) : null
+  if (cursor) {
+    const ms = cursor.sentAt.getTime()
+    conds.push(or(
+      sql`${activityAt} < ${ms}`,
+      and(sql`${activityAt} = ${ms}`, lt(chats.id, cursor.id)),
+    )!)
+  }
+  const rows = await db.select(chatSelection).from(chats)
+    .where(conds.length > 0 ? and(...conds) : undefined)
+    .orderBy(desc(activityAt), desc(chats.id))
+    .limit(limit + 1)
+  const page = rows.slice(0, limit)
+  const last = page[page.length - 1]
+  const nextCursor = rows.length > limit && last
+    ? encodeCursor({ sentAt: new Date(last.activityAt), id: last.id })
+    : null
+  return { chats: page.map(toSummary), nextCursor }
 }
 
 async function chatSummary(chatId: string): Promise<ChatSummary | null> {
@@ -202,14 +305,22 @@ async function chatSummary(chatId: string): Promise<ChatSummary | null> {
   return row ? toSummary(row) : null
 }
 
-export async function getMessages(chatId: string, opts: {
-  cursor?: string; limit?: number; before?: Date; after?: Date
-} = {}): Promise<{ chat: ChatSummary; messages: MessageView[]; nextCursor: string | null } | null> {
-  const chat = await chatSummary(chatId)
-  if (!chat) return null
-  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_LIMIT))
+// The summaries for a known set of ids, most recently active first. One
+// query, so a caller holding many ids (the address book, naming each
+// person's chats) does not make one round trip per chat.
+export async function chatSummaries(ids: string[]): Promise<ChatSummary[]> {
+  if (ids.length === 0) return []
+  const rows = await db.select(chatSelection).from(chats)
+    .where(inArray(chats.id, ids))
+    .orderBy(desc(activityAt), desc(chats.id))
+  return rows.map(toSummary)
+}
 
-  const conds = [eq(messages.chatId, chatId), isNull(messages.deletedAt)]
+// Newest first, cut at `limit`, with the keyset condition a cursor implies.
+// Shared by the one-chat transcript and the cross-chat inbox so they page the
+// same way.
+function messagePageConds(opts: { cursor?: string; before?: Date; after?: Date }): SQL[] {
+  const conds: SQL[] = [isNull(messages.deletedAt)]
   if (opts.before) conds.push(lt(messages.sentAt, opts.before))
   if (opts.after) conds.push(gt(messages.sentAt, opts.after))
   const cursor = opts.cursor ? decodeCursor(opts.cursor) : null
@@ -222,8 +333,51 @@ export async function getMessages(chatId: string, opts: {
       and(eq(messages.sentAt, cursor.sentAt), lt(messages.id, cursor.id)),
     )!)
   }
+  return conds
+}
+
+export async function getMessages(chatId: string, opts: {
+  cursor?: string; limit?: number; before?: Date; after?: Date
+} = {}): Promise<{ chat: ChatSummary; messages: MessageView[]; nextCursor: string | null } | null> {
+  const chat = await chatSummary(chatId)
+  if (!chat) return null
+  const limit = clampLimit(opts.limit, DEFAULT_LIMIT)
 
   const rows = await db.select(messageSelection).from(messages)
+    .where(and(eq(messages.chatId, chatId), ...messagePageConds(opts)))
+    .orderBy(desc(messages.sentAt), desc(messages.id))
+    .limit(limit + 1)
+
+  const page = rows.slice(0, limit)
+  const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
+  const mediaById = await mediaForMessages(page.map(r => r.id))
+  return { chat, messages: page.map(r => toView(r, mediaById.get(r.id))), nextCursor }
+}
+
+// chatTitle is the SAME expression the chat list uses, not chats.title: a
+// WhatsApp DM's stored title is routinely null or the owner's own name, so
+// the raw column would make a hit read as `null` in the exact chat the list
+// beside it names after a person.
+const chatColumns = {
+  chatId: messages.chatId,
+  chatTitle: displayTitle.as('chat_title'),
+  channel: chats.channel,
+  kind: chats.kind,
+}
+
+// The inbox: the newest messages across every chat, or one channel or kind of
+// chat, each line naming the chat it came from. What a person sees when they
+// open the app, and the one-hop answer to "what happened today".
+export async function recentMessages(opts: {
+  channel?: ChatChannel; kind?: ChatKind; limit?: number; cursor?: string; before?: Date; after?: Date
+} = {}): Promise<{ messages: MessageInChat[]; nextCursor: string | null }> {
+  const limit = clampLimit(opts.limit, DEFAULT_RECENT_LIMIT)
+  const conds = messagePageConds(opts)
+  if (opts.channel) conds.push(eq(chats.channel, opts.channel))
+  if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+
+  const rows = await db.select({ ...messageSelection, ...chatColumns }).from(messages)
+    .innerJoin(chats, eq(chats.id, messages.chatId))
     .where(and(...conds))
     .orderBy(desc(messages.sentAt), desc(messages.id))
     .limit(limit + 1)
@@ -231,7 +385,11 @@ export async function getMessages(chatId: string, opts: {
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
   const mediaById = await mediaForMessages(page.map(r => r.id))
-  return { chat, messages: page.map(r => toView(r, mediaById.get(r.id) ?? null)), nextCursor }
+  return {
+    messages: page.map(({ chatId, chatTitle, channel, kind, ...r }) =>
+      ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })),
+    nextCursor,
+  }
 }
 
 // FTS5 treats bare words as syntax (AND, OR, NOT, NEAR, *, ^, :, quotes), so a
@@ -245,12 +403,34 @@ function toMatchExpression(query: string): string | null {
   return tokens.map(t => `"${t}"`).join(' ')
 }
 
-export async function searchMessages(query: string, chatId?: string, limit = DEFAULT_SEARCH_LIMIT): Promise<Array<MessageView & { chatId: string; chatTitle: string | null }>> {
+export type SearchOptions = {
+  chatId?: string
+  channel?: ChatChannel
+  kind?: ChatKind
+  // A substring of the sender as the reader would see them: the name the
+  // channel sent, the name in the owner's contacts, or the address-book name.
+  sender?: string
+  before?: Date
+  after?: Date
+  limit?: number
+}
+
+export async function searchMessages(query: string, opts: SearchOptions = {}): Promise<MessageInChat[]> {
   const match = toMatchExpression(query)
   if (!match) return []
 
   const conds = [sql`search_index MATCH ${match}`, isNull(messages.deletedAt)]
-  if (chatId) conds.push(eq(messages.chatId, chatId))
+  if (opts.chatId) conds.push(eq(messages.chatId, opts.chatId))
+  if (opts.channel) conds.push(eq(chats.channel, opts.channel))
+  if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+  if (opts.before) conds.push(lt(messages.sentAt, opts.before))
+  if (opts.after) conds.push(gt(messages.sentAt, opts.after))
+  // The one filter that costs a name lookup per matched row rather than per
+  // page: it has to, because a page cut before the filter would be short.
+  const sender = opts.sender?.trim()
+  if (sender) {
+    conds.push(or(like(sql`${messages.senderName}`, sender), like(contactName, sender), like(senderPersonNameSql, sender))!)
+  }
 
   // bm25() only evaluates inside the query that holds the MATCH constraint on
   // the fts5 table itself — SQLite raises "unable to use function bm25 in the
@@ -265,6 +445,7 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
     rank: sql<number>`bm25(search_index)`.as('rank'),
   }).from(searchIndex)
     .innerJoin(messages, eq(messages.id, searchIndex.messageId))
+    .innerJoin(chats, eq(chats.id, messages.chatId))
     .where(and(...conds))
     .orderBy(sql`rank`)
     .limit(1_000_000)
@@ -282,7 +463,7 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
   }).from(ranked)
     .groupBy(ranked.messageId)
     .orderBy(asc(sql`min(${ranked.rank})`))
-    .limit(Math.max(1, Math.min(limit, MAX_LIMIT)))
+    .limit(clampLimit(opts.limit, DEFAULT_SEARCH_LIMIT))
     .as('best')
 
   // Only now, on the page and nothing more, are the names resolved.
@@ -290,53 +471,84 @@ export async function searchMessages(query: string, chatId?: string, limit = DEF
   // person, the owner's contact name, and the two the display title needs);
   // inside `ranked` they ran once per FTS-matched row, which for a common word
   // is the whole corpus rather than the fifty rows anybody sees.
-  //
-  // chatTitle is the SAME expression the chat list uses, not chats.title: a
-  // WhatsApp DM's stored title is routinely null or the owner's own name, so
-  // the raw column made a search hit read as `null` in the exact chat the list
-  // beside it names after a person.
-  const rows = await db.select({
-    ...messageSelection,
-    chatId: messages.chatId,
-    chatTitle: displayTitle.as('chat_title'),
-  }).from(best)
+  const rows = await db.select({ ...messageSelection, ...chatColumns }).from(best)
     .innerJoin(messages, eq(messages.id, best.messageId))
     .innerJoin(chats, eq(chats.id, messages.chatId))
     .orderBy(asc(best.rank))
 
   const mediaById = await mediaForMessages(rows.map(r => r.id))
-  return rows.map(r => ({ ...toView(r, mediaById.get(r.id) ?? null), chatId: r.chatId, chatTitle: r.chatTitle }))
+  return rows.map(({ chatId, chatTitle, channel, kind, ...r }) =>
+    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind }))
 }
 
-// One query for a whole page's attachments, so a 100-message transcript costs
-// two round trips rather than 101. Only `done` rows are returned — the same
-// condition /media/[id] serves under, so the transcript never renders a link
-// to bytes that are not there.
-export async function mediaForMessages(
-  messageIds: string[],
-): Promise<Map<string, NonNullable<MessageView['media']>>> {
-  const out = new Map<string, NonNullable<MessageView['media']>>()
-  if (messageIds.length === 0) return out
-  const rows = await db.select({
-    id: media.id,
-    messageId: media.messageId,
-    mimeType: media.mimeType,
-    extractedText: mediaAnalysis.extractedText,
-  })
-    .from(media)
-    // The status is part of the JOIN, not a WHERE clause: a media row with a
-    // pending, failed or skipped analysis must still come back, just without
-    // extracted text. Stating it here means this query no longer depends on
-    // "extracted_text is only ever written on a done row" holding elsewhere.
-    .leftJoin(mediaAnalysis, and(eq(mediaAnalysis.mediaId, media.id), eq(mediaAnalysis.status, 'done')))
-    .where(and(inArray(media.messageId, messageIds), eq(media.status, 'done')))
-  for (const r of rows) {
-    out.set(r.messageId, {
-      id: r.id,
-      url: `/media/${r.id}`,
-      mimeType: r.mimeType,
-      extractedText: r.extractedText ?? null,
-    })
+const mediaColumns = {
+  id: media.id,
+  messageId: media.messageId,
+  status: media.status,
+  mimeType: media.mimeType,
+  sizeBytes: media.sizeBytes,
+  durationSeconds: media.durationSeconds,
+  isVoiceNote: media.isVoiceNote,
+  extractedText: mediaAnalysis.extractedText,
+  description: mediaAnalysis.description,
+}
+type MediaRowIn = {
+  id: string; messageId: string; status: 'pending' | 'done' | 'failed'
+  mimeType: string | null; sizeBytes: number | null
+  durationSeconds: number | null; isVoiceNote: boolean | null
+  extractedText: string | null; description: string | null
+}
+
+// The url exists only for bytes /media/[id] will actually serve — the same
+// `done` condition that route checks — so a transcript never links to a file
+// that is not there.
+function toMediaView(r: MediaRowIn): MediaView {
+  const ready = r.status === 'done'
+  return {
+    id: r.id,
+    status: r.status === 'done' ? 'ready' : r.status,
+    url: ready ? `/media/${r.id}` : null,
+    mimeType: r.mimeType,
+    sizeBytes: r.sizeBytes,
+    durationSeconds: r.durationSeconds,
+    isVoiceNote: r.isVoiceNote,
+    extractedText: r.extractedText ?? null,
+    description: r.description ?? null,
   }
+}
+
+// The status is part of the JOIN, not a WHERE clause: a media row with a
+// pending, failed or skipped analysis must still come back, just without
+// extracted text. Stating it here means this query no longer depends on
+// "extracted_text is only ever written on a done row" holding elsewhere.
+const doneAnalysis = and(eq(mediaAnalysis.mediaId, media.id), eq(mediaAnalysis.status, 'done'))
+
+// One query for a whole page's attachments, so a 100-message transcript costs
+// two round trips rather than 101. Every row comes back whatever its state;
+// toMediaView decides what each state may say.
+export async function mediaForMessages(messageIds: string[]): Promise<Map<string, MediaView>> {
+  const out = new Map<string, MediaView>()
+  if (messageIds.length === 0) return out
+  const rows = await db.select(mediaColumns)
+    .from(media)
+    .leftJoin(mediaAnalysis, doneAnalysis)
+    .where(inArray(media.messageId, messageIds))
+  for (const r of rows) out.set(r.messageId, toMediaView(r))
   return out
+}
+
+// One attachment by its own id, with the message and chat it belongs to, for
+// the get_media tool. Null when there is no such row or its message has been
+// deleted — a tombstoned message's attachment is as gone as its text.
+export type MediaDetail = MediaView & { id: string; messageId: string; chatId: string; sentAt: Date }
+
+export async function mediaView(id: string): Promise<MediaDetail | null> {
+  const [r] = await db.select({ ...mediaColumns, chatId: messages.chatId, sentAt: messages.sentAt })
+    .from(media)
+    .innerJoin(messages, and(eq(messages.id, media.messageId), isNull(messages.deletedAt)))
+    .leftJoin(mediaAnalysis, doneAnalysis)
+    .where(eq(media.id, id))
+    .limit(1)
+  if (!r) return null
+  return { ...toMediaView(r), id: r.id, messageId: r.messageId, chatId: r.chatId, sentAt: r.sentAt }
 }

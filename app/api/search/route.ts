@@ -12,6 +12,6 @@ export const GET = withErrorBoundary(async (request: Request): Promise<Response>
   if (!limit.ok) return badRequest(limit.error)
 
   return Response.json({
-    results: await searchMessages(q, searchParams.get('chat_id') ?? undefined, limit.value),
+    results: await searchMessages(q, { chatId: searchParams.get('chat_id') ?? undefined, limit: limit.value }),
   })
 })

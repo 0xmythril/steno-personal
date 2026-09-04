@@ -3,7 +3,10 @@ import { POST } from '@/app/mcp/route'
 // mcp-handler 2.x answers a POST with a single SSE frame carrying the
 // JSON-RPC message, and refuses any request that does not accept both media
 // types. Both facts live here so no test has to know them.
-export type ToolInfo = { name: string; description?: string }
+export type ToolInfo = {
+  name: string; description?: string
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean }
+}
 type RpcMessage = {
   result?: { content?: Array<{ type: string; text?: string }>; tools?: ToolInfo[]; isError?: boolean }
   error?: { code: number; message: string }

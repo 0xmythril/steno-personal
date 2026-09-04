@@ -5,6 +5,9 @@ import type { MessageView } from '@/lib/services/queries'
 // (DESIGN.md → The transcript). No form, no textarea, no submit — enforced by
 // tests/transcript-page-structure.test.ts.
 export function MediaAttachment({ media }: { media: NonNullable<MessageView['media']> }) {
+  // Only a ready attachment has a url. A pending or failed one is a message
+  // the transcript still shows, with nothing to render for it yet.
+  if (!media.url) return null
   const mime = (media.mimeType ?? '').split(';')[0].trim().toLowerCase()
 
   if (mime.startsWith('image/')) {

@@ -167,8 +167,8 @@ and it is why you mint a key per agent and revoke it when you are done.
 display name and status, never a phone number. On an instance with nothing
 connected that list is simply empty; it is not gated.
 
-The four content tools — `list_chats`, `get_messages`, `search_messages`,
-`list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
+The six content tools — `list_chats`, `recent_messages`, `get_messages`,
+`search_messages`, `get_media`, `list_people` — answer with exactly one sentence, *"No personal account is connected."*, when
 there is nothing at all to serve: no active connection **and** an empty
 archive. They will not describe chats you do not have, invent an empty state,
 or hint at what they could do once you connect something.

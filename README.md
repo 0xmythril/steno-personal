@@ -104,8 +104,22 @@ Everything an agent sees goes through the MCP endpoint at
 token. Mint a separate key per agent in **Settings** so you can revoke one
 without disturbing the others.
 
-The tools are `list_chats`, `get_messages`, `search_messages`, `list_people`,
-and `whoami`. They only read. There is no tool that sends anything.
+The tools are `list_chats`, `recent_messages`, `get_messages`,
+`search_messages`, `get_media`, `list_people` and `whoami`. They only read,
+and each declares itself read-only to the client. There is no tool that sends
+anything.
+
+- `list_chats` filters by channel, by kind (dm, group, channel) or by `q`, a
+  substring of the title, and pages twenty at a time with a cursor; each chat
+  carries a snippet of its latest message.
+- `recent_messages` is the inbox: the newest messages across every chat, or
+  one channel or kind, each naming the chat it came from.
+- `search_messages` narrows by chat, channel, kind, sender and a date range.
+- `get_media` returns one attachment by its `media.id`: a ready image up to
+  3 MiB comes back as image content the agent can look at, anything else as
+  metadata plus the `/media/<id>` path. Every message with an attachment says
+  whether its bytes are ready, pending, failed or unavailable.
+- `list_people` takes `q` and names the chats each person appears in.
 
 **Shortest path:** open **Settings**, create a key, and press **Copy
 instructions** under "Let the agent set itself up". Paste that block into any
