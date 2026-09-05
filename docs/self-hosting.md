@@ -224,6 +224,75 @@ devtools. `sp_session` must show `Secure` and `HttpOnly`.
 The long `proxy_read_timeout` is for the MCP transport, which holds a response
 open. A 60-second default will make an agent's connection drop mid-conversation.
 
+## Pushing conversations in
+
+Telegram and WhatsApp arrive live. Anything else — a Slack workspace an agent
+can already read, an exported chat, an agent's own transcript — is pushed:
+something you run posts a batch to your instance under a **push key**.
+
+Mint a push key in **Settings** (scope: Push). It cannot log in and cannot
+read anything; it only delivers. Then post a `steno/1` batch:
+
+```bash
+curl -sS -X POST "https://<your-host>/api/import" \
+  -H "Authorization: Bearer sp_YOUR_PUSH_KEY" \
+  -H "Content-Type: application/json" \
+  --data @batch.json
+```
+
+`batch.json`:
+
+```json
+{
+  "format": "steno/1",
+  "source": { "type": "slack", "id": "acme", "label": "Slack (Acme)" },
+  "messages": [
+    {
+      "externalChatId": "C0123ABC",
+      "chatKind": "group",
+      "chatTitle": "#eng",
+      "externalMessageId": "1725500000.000100",
+      "senderExternalId": "U0AB12",
+      "senderName": "Ada",
+      "fromOwner": false,
+      "sentAt": "2026-09-05T10:00:00Z",
+      "type": "text",
+      "text": "the vendor agreed to net 30"
+    }
+  ],
+  "deletes": []
+}
+```
+
+- `source.type` and `source.id` are lowercase slugs (`^[a-z][a-z0-9-]{1,31}$`);
+  together they name the source, and every later batch for the same pair
+  lands in the same place. `label` is what the portal shows.
+- Message identity is `externalChatId` plus `externalMessageId`. Resending is
+  safe: a message already stored is counted as a duplicate and left alone, so
+  a cron job can post the last hour every ten minutes. Set `editedAt` on a
+  resent message to update its text. A `deletes` entry removes a message from
+  every read for good.
+- `replyToExternalId` names the message this one answers, in the same chat.
+  `type` is `text` unless you say otherwise; `raw` is any object you want kept
+  with the message (64 KiB).
+- Limits: 1 000 messages and 1 000 deletes per batch, 8 MiB per request,
+  64 KiB of text per message. Attachments are not accepted yet; steno never
+  fetches a URL on your behalf.
+- The response counts `inserted`, `duplicates`, `edited` and `deleted`, and
+  returns the source's id. `400` lists what was wrong; nothing is written
+  from a batch that fails validation.
+
+A cron line that pushes whatever an agent left in `~/slack/latest.json`:
+
+```
+*/10 * * * * curl -sS -X POST "https://<your-host>/api/import" -H "Authorization: Bearer sp_YOUR_PUSH_KEY" -H "Content-Type: application/json" --data @"$HOME/slack/latest.json" >/dev/null
+```
+
+Everything pushed is read back exactly like the live channels: in the portal,
+over `/api` and in every MCP tool's results. `/api/chats?channel=<type>`
+filters by the source type you chose; the MCP tools' own `channel` filter
+learns pushed types in the next release.
+
 ## Backups
 
 Everything is `DATA_DIR`. Copy it and you have copied the instance.

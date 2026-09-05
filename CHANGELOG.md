@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Push conversations in.** `POST /api/import` accepts a `steno/1` batch —
+  messages and deletes for one named source — under a new kind of access key.
+  Anything an agent or a script can read (a Slack workspace, an exported chat,
+  an agent's own transcript) can now live in your own archive next to Telegram
+  and WhatsApp, searchable in the portal, over `/api` and in every MCP tool's
+  results (the MCP `channel` filter still names only the live channels for
+  now). Resending is safe; deletes stay deleted. Attachments are not accepted
+  yet. See "Pushing conversations in" in `docs/self-hosting.md`.
+- **Read keys and push keys.** Settings mints a key as *Read* (the portal and
+  the MCP tools, as before) or *Push* (the import door and nothing else). No
+  key does both, so a push key left in a cron job can never read your archive
+  and an agent's read key can never write to it. Every existing key is a read
+  key.
+
 ### Security
 - **The first-run claim is instance-wide.** Setup bound a pairing to the
   browser that started it, but only per channel: while the owner's Telegram
