@@ -577,7 +577,9 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
     ownerName: connections.displayName,
   }).from(chats)
     .innerJoin(connections, eq(connections.id, chats.connectionId))
-    .where(and(eq(chats.channel, channel), eq(chats.kind, 'dm')))
+    // Live connections only: a pushed source's chats are not the owner's
+    // address book, whatever channel name the pusher gave them.
+    .where(and(eq(chats.channel, channel), eq(chats.kind, 'dm'), eq(connections.mode, 'live')))
 
   // Grouped by (id, name) with max(sent_at) so a sender who has been renamed
   // is offered under the name they most recently wrote under, deterministically
@@ -589,8 +591,10 @@ export async function listIdentityCandidates(channel: Channel): Promise<Identity
     lastAt: sql<number>`max(${messages.sentAt})`,
   }).from(messages)
     .innerJoin(chats, eq(chats.id, messages.chatId))
+    .innerJoin(connections, eq(connections.id, chats.connectionId))
     .where(and(
       eq(chats.channel, channel),
+      eq(connections.mode, 'live'),
       eq(messages.fromOwner, false),
       isNull(messages.deletedAt),
       isNotNull(messages.senderExternalId),
