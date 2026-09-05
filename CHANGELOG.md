@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format follows
   address book) and `docs/self-hosting.md` (the full environment-variable
   table). No guarantee changed: read-only, the WhatsApp consent sentences, and
   what can leave the machine all still say what they said.
+- **The Deploy on Railway button points at the published template.** Railway
+  swaps a draft's random code for the slug on publishing, so the old link died
+  the moment the template went live; the overview it was published with is in
+  `docs/railway-template.md`.
 
 ### Added
 - **Connections** says what comes next once an account is live: connect an

@@ -80,7 +80,7 @@ variable: [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Deploy on Railway
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/steno-personal?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
 
 The path if you have no computer to leave on. One click gives you a service
 built from this repo's `Dockerfile`, a 5 GB volume mounted at `/data`, and a
