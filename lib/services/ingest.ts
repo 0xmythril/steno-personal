@@ -1,7 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { chats, messages } from '@/lib/db/schema'
-import type { Channel } from '@/lib/channels/port'
 
 // Pure-database ingest. NO channel library code lives here — every port hands
 // over already-normalised DTOs, which is what makes the whole write path
@@ -58,7 +57,8 @@ const MIN_COMMON_CHAT_ID = -999999999999
 // last_message_at moves forward only, so out-of-order backfill cannot rewind
 // it. SQLite's two-argument max() returns NULL if either side is NULL, hence
 // the coalesce on the existing value.
-async function upsertChat(connectionId: string, channel: Channel, m: IncomingMessage): Promise<string> {
+// channel is a source type (lib/services/sources.ts): a live port's channel, or the slug a pushed source chose.
+async function upsertChat(connectionId: string, channel: string, m: IncomingMessage): Promise<string> {
   const [row] = await db.insert(chats).values({
     connectionId, channel, externalChatId: m.externalChatId,
     kind: m.chatKind, title: m.chatTitle, lastMessageAt: m.sentAt,
@@ -74,7 +74,7 @@ async function upsertChat(connectionId: string, channel: Channel, m: IncomingMes
   return row.id
 }
 
-export async function recordMessage(connectionId: string, channel: Channel, m: IncomingMessage): Promise<{ chatId: string; messageId: string; inserted: boolean }> {
+export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage): Promise<{ chatId: string; messageId: string; inserted: boolean }> {
   const chatId = await upsertChat(connectionId, channel, m)
   const inserted = await db.insert(messages).values({
     chatId, externalMessageId: m.externalMessageId,
@@ -89,7 +89,7 @@ export async function recordMessage(connectionId: string, channel: Channel, m: I
   return { chatId, messageId: existing.id, inserted: false }
 }
 
-export async function applyEdit(connectionId: string, channel: Channel, m: IncomingMessage): Promise<void> {
+export async function applyEdit(connectionId: string, channel: string, m: IncomingMessage): Promise<void> {
   const chatId = await upsertChat(connectionId, channel, m)
   const updated = await db.update(messages)
     .set({ text: m.text, editedAt: new Date() })
