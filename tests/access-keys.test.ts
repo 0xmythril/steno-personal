@@ -15,7 +15,7 @@ describe('access keys', () => {
     expect(r.rawKey.length).toBeGreaterThan(40)
     const before = (await listActiveAccessKeys())[0]
     expect(before.lastUsedAt).toBeNull()
-    expect(await verifyAccessKey(r.rawKey)).toEqual({ id: r.id, label: 'laptop' })
+    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'laptop', scope: 'read' })
     const after = (await listActiveAccessKeys())[0]
     expect(after.lastUsedAt).toBeInstanceOf(Date)
     expect(after.prefix).toBe(r.rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 8))
@@ -24,12 +24,25 @@ describe('access keys', () => {
   it('rejects unknown, revoked, and empty keys', async () => {
     const r = await mintAccessKey('a')
     if (!r.ok) throw new Error(r.reason)
-    expect(await verifyAccessKey('sp_nope')).toBeNull()
-    expect(await verifyAccessKey('')).toBeNull()
+    expect(await verifyAccessKey('sp_nope', 'read')).toBeNull()
+    expect(await verifyAccessKey('', 'read')).toBeNull()
     expect(await revokeAccessKey(r.id)).toBe(true)
     expect(await revokeAccessKey(r.id)).toBe(false) // already revoked
-    expect(await verifyAccessKey(r.rawKey)).toBeNull()
+    expect(await verifyAccessKey(r.rawKey, 'read')).toBeNull()
     expect(await listActiveAccessKeys()).toEqual([])
+  })
+
+  it('a push key verifies only as a push key, and a read key only as a read key', async () => {
+    const push = await mintAccessKey('cron', 'push')
+    const read = await mintAccessKey('agent')
+    if (!push.ok || !read.ok) throw new Error('mint failed')
+    expect(await verifyAccessKey(push.rawKey, 'push')).toEqual({ id: push.id, label: 'cron', scope: 'push' })
+    expect(await verifyAccessKey(push.rawKey, 'read')).toBeNull()
+    expect(await verifyAccessKey(read.rawKey, 'push')).toBeNull()
+    // A refused verification is not a use.
+    const rows = await listActiveAccessKeys()
+    expect(rows.find(k => k.id === read.id)?.lastUsedAt).toBeNull()
+    expect(rows.map(k => [k.label, k.scope])).toEqual([['agent', 'read'], ['cron', 'push']])
   })
 
   it('reveals only active keys', async () => {

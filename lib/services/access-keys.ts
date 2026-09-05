@@ -7,6 +7,8 @@ import { decryptSecret, encryptSecret } from './crypto'
 
 export const KEY_PREFIX = 'sp_'
 export const MAX_LABEL_LENGTH = 100
+export type KeyScope = 'read' | 'push'
+export const KEY_SCOPES: readonly KeyScope[] = ['read', 'push']
 const PREFIX_SHOWN = 8
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -15,12 +17,13 @@ export type MintResult =
   | { ok: true; id: string; rawKey: string }
   | { ok: false; reason: 'label_empty' | 'label_too_long' | 'not_first' }
 
-function newKeyRow(label: string) {
+function newKeyRow(label: string, scope: KeyScope) {
   const rawKey = `${KEY_PREFIX}${randomBytes(32).toString('base64url')}`
   return {
     rawKey,
     values: {
       label,
+      scope,
       keyHash: sha256(rawKey),
       keyCiphertext: encryptSecret(rawKey),
       prefix: rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + PREFIX_SHOWN),
@@ -38,10 +41,10 @@ function checkLabel(label: string): { ok: true; label: string } | { ok: false; r
 // The raw key is returned exactly once here; afterwards it is reachable only
 // through revealAccessKey (decrypting the ciphertext). There is no cap on the
 // number of keys: one user, their own devices.
-export async function mintAccessKey(label: string): Promise<MintResult> {
+export async function mintAccessKey(label: string, scope: KeyScope = 'read'): Promise<MintResult> {
   const checked = checkLabel(label)
   if (!checked.ok) return checked
-  const { rawKey, values } = newKeyRow(checked.label)
+  const { rawKey, values } = newKeyRow(checked.label, scope)
   const [row] = await db.insert(accessKeys).values(values).returning({ id: accessKeys.id })
   // That a key was made. Never its label, prefix or value.
   track('access_key_minted', {})
@@ -56,7 +59,7 @@ export async function mintAccessKey(label: string): Promise<MintResult> {
 export async function mintFirstAccessKey(label: string): Promise<MintResult> {
   const checked = checkLabel(label)
   if (!checked.ok) return checked
-  const { rawKey, values } = newKeyRow(checked.label)
+  const { rawKey, values } = newKeyRow(checked.label, 'read')
   const row = db.transaction(tx => {
     const existing = tx.select({ id: accessKeys.id }).from(accessKeys).limit(1).all()
     if (existing.length > 0) return null
@@ -67,12 +70,15 @@ export async function mintFirstAccessKey(label: string): Promise<MintResult> {
   return { ok: true, id: row.id, rawKey }
 }
 
-// Shared by the portal login and (M3) the MCP bearer check.
-export async function verifyAccessKey(rawKey: string): Promise<{ id: string; label: string } | null> {
+// Shared by the portal login, the MCP bearer check and the import door. The
+// caller says which scope it is a door for, and a key of the other scope is
+// no key at all here: a push key cannot read, a read key cannot push, and a
+// refusal leaves last_used_at alone because nothing was used.
+export async function verifyAccessKey(rawKey: string, scope: KeyScope): Promise<{ id: string; label: string; scope: KeyScope } | null> {
   if (!rawKey.startsWith(KEY_PREFIX)) return null
-  const [row] = await db.select({ id: accessKeys.id, label: accessKeys.label })
+  const [row] = await db.select({ id: accessKeys.id, label: accessKeys.label, scope: accessKeys.scope })
     .from(accessKeys)
-    .where(and(eq(accessKeys.keyHash, sha256(rawKey)), isNull(accessKeys.revokedAt)))
+    .where(and(eq(accessKeys.keyHash, sha256(rawKey)), eq(accessKeys.scope, scope), isNull(accessKeys.revokedAt)))
   if (!row) return null
   await db.update(accessKeys).set({ lastUsedAt: new Date() }).where(eq(accessKeys.id, row.id))
   return row
@@ -81,7 +87,7 @@ export async function verifyAccessKey(rawKey: string): Promise<{ id: string; lab
 // Selects only what the page shows — never the hash or ciphertext.
 export async function listActiveAccessKeys() {
   return db.select({
-    id: accessKeys.id, label: accessKeys.label, prefix: accessKeys.prefix,
+    id: accessKeys.id, label: accessKeys.label, scope: accessKeys.scope, prefix: accessKeys.prefix,
     createdAt: accessKeys.createdAt, lastUsedAt: accessKeys.lastUsedAt,
   }).from(accessKeys)
     .where(isNull(accessKeys.revokedAt))

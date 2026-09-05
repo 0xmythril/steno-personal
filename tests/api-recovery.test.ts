@@ -96,7 +96,7 @@ describe('recovery actions', () => {
     expect(keys).toHaveLength(1)
     const flash = JSON.parse(jar.get(FIRST_KEY_COOKIE)!)
     expect(flash.id).toBe(keys[0].id)
-    expect(await verifyAccessKey(flash.rawKey)).toMatchObject({ id: keys[0].id })
+    expect(await verifyAccessKey(flash.rawKey, 'read')).toMatchObject({ id: keys[0].id })
     expect(jar.get(SESSION_COOKIE)).toBeTruthy()
     expect(jar.get(RECOVERY_COOKIE)).toBeUndefined()
     expect((await getRecoveryAttempt(id))!.hasKey).toBe(false)

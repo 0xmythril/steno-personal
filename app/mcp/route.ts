@@ -302,7 +302,7 @@ const authed = withMcpAuth(
   handler,
   async (_req, token) => {
     if (!token) return undefined
-    const key = await verifyAccessKey(token)
+    const key = await verifyAccessKey(token, 'read')
     if (!key) return undefined
     return { token, clientId: key.id, scopes: [] }
   },

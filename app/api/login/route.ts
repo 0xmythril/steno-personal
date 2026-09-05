@@ -18,7 +18,7 @@ const handlePost = withErrorBoundary(async (req: Request): Promise<Response> => 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return Response.json({ error: 'bad_request' }, { status: 400 })
 
-  const verified = await verifyAccessKey(parsed.data.key.trim())
+  const verified = await verifyAccessKey(parsed.data.key.trim(), 'read')
   if (!verified) {
     log.warn('api login rejected') // no key, no prefix, no address: the shape only
     return Response.json({ error: 'invalid_key' }, { status: 401 })

@@ -6,7 +6,7 @@ import { requireSession, startSession, endSession } from '@/lib/auth'
 
 export async function loginAction(formData: FormData) {
   const raw = String(formData.get('key') ?? '').trim()
-  const key = raw ? await verifyAccessKey(raw) : null
+  const key = raw ? await verifyAccessKey(raw, 'read') : null
   if (!key) redirect('/login?error=1')
   await startSession({ keyId: key.id })
   redirect('/')
