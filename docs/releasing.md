@@ -169,12 +169,15 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
 
 ## The Railway template
 
-The template exists, unpublished, as code `1Vhm3c` (editor:
-<https://railway.com/workspace/templates/546731b9-54bf-467b-9d40-67f685511bb6>),
-generated from the `steno-personal` project in the maintainer's workspace, and
-the README button already points at it. What remains is the editor cleanup in
-step 3 to 5, the verification in step 6, and publishing. This is the whole
-procedure, kept for the day the template has to be rebuilt. It is manual on
+The template is published as `steno-personal` — id
+`546731b9-54bf-467b-9d40-67f685511bb6`, editor
+<https://railway.com/workspace/templates/546731b9-54bf-467b-9d40-67f685511bb6>,
+marketplace page <https://railway.com/deploy/steno-personal> — generated from
+the `steno-personal` project in the maintainer's workspace and published on
+2026-09-05. A draft carries a random code (`1Vhm3c` was this one's);
+**publishing replaces it with the slug**, and the old code stops resolving the
+moment it does, so the README button is updated in the same sitting. This is
+the whole procedure, kept for the day the template has to be rebuilt. It is manual on
 purpose — Railway has no committed template manifest; a template is built in the
 dashboard composer or generated from a live project, per
 <https://docs.railway.com/templates/create>. Verify against that page before you
@@ -247,21 +250,31 @@ markdown. Or CLI:
 ```bash
 railway templates publish <template-id> \
   --category Other \
-  --description "Archive your own Telegram and WhatsApp chats to SQLite, read-only, for your agents" \
-  --readme-file README.md
+  --description "Your Telegram and WhatsApp conversations, connected to your AI agents." \
+  --readme-file docs/railway-template.md
 ```
 
-First publication requires `--readme-file` or `--readme`; `railway templates
-update` replaces the metadata later. Docs:
+The marketplace validates both. The description must be **75 characters or
+fewer**. The overview must carry six headings, matched by prefix: `# Deploy
+and Host`, `## About Hosting`, `## Why Deploy`, `## Common Use Cases`,
+`## Dependencies for`, `### Deployment Dependencies` —
+[railway-template.md](railway-template.md) is the one that passed, kept in the
+repo so the next publish starts from it. Angle-bracket autolinks
+(`<https://…>`) are stripped as HTML on the way in, so write every link as
+`[text](url)`. First publication requires `--readme-file` or `--readme`;
+`railway templates update` replaces the metadata later. Docs:
 <https://docs.railway.com/cli/templates>.
 
 **8. Check the button.** The README button points at:
 
 ```
-https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
+https://railway.com/new/template/steno-personal?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal
 ```
 
-If the template is ever recreated, its code changes and this URL must follow.
+If the template is ever recreated it gets a new random draft code, and on
+publishing the slug again; either way this URL must follow, and
+`tests/launch-invariants.test.ts` only checks that it is *a* template URL, not
+that it resolves — open it.
 
 `45_zFw` is the maintainer's code from the workspace's referrals page
 (<https://railway.com/account/referrals>): a signup through it gets $20 in
