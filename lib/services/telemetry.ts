@@ -40,11 +40,14 @@ export type Events = {
   channel_connected: { channel: 'telegram' | 'whatsapp' }
   access_key_minted: Record<never, never>
   enrichment_toggled: { images: boolean; audio: boolean }
+  // A batch reached the push door. Which door, never which source: a source
+  // type is text the pusher chose.
+  source_pushed: { surface: 'api' | 'mcp' }
 }
 export type EventName = keyof Events
 export const EVENTS = [
   'search', 'mcp_tool_call', 'transcript_viewed', 'person_linked',
-  'channel_connected', 'access_key_minted', 'enrichment_toggled',
+  'channel_connected', 'access_key_minted', 'enrichment_toggled', 'source_pushed',
 ] as const satisfies readonly EventName[]
 
 // Property keys any event may carry, for the structural test. `version` is
