@@ -92,7 +92,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
     const live = tx.select({ id: connections.id, status: connections.status })
       .from(connections)
       .where(and(
-        eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+        eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt),
         inArray(connections.status, ['pending', 'active']),
       )).all()
     if (live.some(r => r.id !== mine)) return { ok: false, reason: 'claimed' }
@@ -111,7 +111,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
 export async function otherSetupClaimExists(mine: string | null): Promise<boolean> {
   const rows = await db.select({ id: connections.id }).from(connections)
     .where(and(
-      eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+      eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt),
       inArray(connections.status, ['pending', 'active']),
     ))
   return rows.some(r => r.id !== mine)
@@ -129,7 +129,7 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
   if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   const live = await db.select({ id: connections.id, status: connections.status })
     .from(connections)
-    .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), isNull(connections.revokedAt)))
+    .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt)))
 
   if (live.some(r => r.status === 'active')) return { ok: false, reason: 'already_connected' }
 
@@ -363,6 +363,6 @@ export async function deleteConnection(id: string): Promise<boolean> {
 
 export async function hasActiveConnection(): Promise<boolean> {
   const [row] = await db.select({ id: connections.id }).from(connections)
-    .where(and(eq(connections.status, 'active'), isNull(connections.revokedAt))).limit(1)
+    .where(and(eq(connections.status, 'active'), eq(connections.mode, 'live'), isNull(connections.revokedAt))).limit(1)
   return row !== undefined
 }

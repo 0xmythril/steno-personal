@@ -40,5 +40,5 @@ export const CHANNEL_LABELS = { telegram: 'Telegram', whatsapp: 'WhatsApp' } as 
 // The human name of a source type: the proper noun for a live channel, the
 // slug itself for anything a pusher chose ("slack", "chatgpt").
 export function sourceLabel(channel: string): string {
-  return channel in CHANNEL_LABELS ? CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] : channel
+  return Object.hasOwn(CHANNEL_LABELS, channel) ? CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] : channel
 }

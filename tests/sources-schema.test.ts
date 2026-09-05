@@ -5,6 +5,7 @@ import { resetDb } from './helpers/db'
 import { makeConnection } from './helpers/fixtures'
 import { isSourceType, isLiveChannel, SOURCE_TYPE_RE } from '@/lib/services/sources'
 import { sourceLabel } from '@/lib/format'
+import { createConnection, hasActiveConnection, otherSetupClaimExists } from '@/lib/services/connections'
 
 // A pushed source is a connections row the worker never opens: mode 'push',
 // any slug as its channel, the pusher's source id as external_account_id.
@@ -59,5 +60,28 @@ describe('source types', () => {
   it('labels a live channel by its proper noun and a pushed type by its slug', () => {
     expect(sourceLabel('whatsapp')).toBe('WhatsApp')
     expect(sourceLabel('slack')).toBe('slack')
+    expect(sourceLabel('constructor')).toBe('constructor')
+  })
+})
+
+describe('a pushed source is not a live claim', () => {
+  beforeEach(resetDb)
+
+  it('does not block pairing the same channel live', async () => {
+    await pushed('telegram', 'export-2026')
+    const r = await createConnection('telegram')
+    expect(r.ok).toBe(true)
+  })
+
+  it('does not look like somebody else\'s setup claim', async () => {
+    await pushed('slack', 'acme')
+    expect(await otherSetupClaimExists(null)).toBe(false)
+  })
+
+  it('does not count as a connected account', async () => {
+    await pushed('slack', 'acme')
+    expect(await hasActiveConnection()).toBe(false)
+    await makeConnection({ channel: 'whatsapp' })
+    expect(await hasActiveConnection()).toBe(true)
   })
 })
