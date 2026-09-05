@@ -11,6 +11,29 @@ function walk(dir: string): string[] {
   })
 }
 
+// Every verifyAccessKey( call's argument text, found by scanning to the
+// matching close paren, so an argument that contains its own parentheses
+// (header.slice('Bearer '.length).trim()) is captured whole and a call
+// with a computed scope is still seen.
+function callArgs(src: string): string[] {
+  const out: string[] = []
+  const needle = 'verifyAccessKey('
+  let from = src.indexOf(needle)
+  while (from !== -1) {
+    const start = from + needle.length
+    let depth = 1
+    let i = start
+    while (i < src.length && depth > 0) {
+      if (src[i] === '(') depth++
+      else if (src[i] === ')') depth--
+      i++
+    }
+    out.push(src.slice(start, i - 1))
+    from = src.indexOf(needle, i)
+  }
+  return out
+}
+
 // Every door names the scope it is a door for, as a literal at the call
 // site. A verifyAccessKey(token) with no scope would not compile; this
 // catches the other mistake — a read door that asks for 'push' or a route
@@ -18,10 +41,7 @@ function walk(dir: string): string[] {
 describe('every verifyAccessKey call names its scope', () => {
   const sources = [...walk('lib'), ...walk('app'), ...walk('worker'), ...walk('scripts')]
     .filter(f => !f.endsWith(path.join('lib', 'services', 'access-keys.ts')))
-  const calls = sources.flatMap(f => {
-    const src = readFileSync(f, 'utf8')
-    return [...src.matchAll(/verifyAccessKey\(([\s\S]*?,\s*'(?:read|push)'\s*)\)/g)].map(m => ({ file: f, args: m[1] }))
-  })
+  const calls = sources.flatMap(f => callArgs(readFileSync(f, 'utf8')).map(args => ({ file: f, args })))
 
   it('finds the known doors', () => {
     const files = new Set(calls.map(c => c.file.split(path.sep).join('/')))
@@ -37,5 +57,11 @@ describe('every verifyAccessKey call names its scope', () => {
   it('only the import door asks for push', () => {
     const pushDoors = calls.filter(c => /'push'/.test(c.args)).map(c => c.file.split(path.sep).join('/'))
     expect(pushDoors.every(f => f === 'app/api/import/route.ts')).toBe(true)
+  })
+
+  it('the scanner sees nested parentheses and the check rejects a computed scope', () => {
+    const src = "await verifyAccessKey(header.slice('Bearer '.length).trim(), 'read')\nverifyAccessKey(token, scope)"
+    expect(callArgs(src)).toEqual(["header.slice('Bearer '.length).trim(), 'read'", 'token, scope'])
+    expect('token, scope').not.toMatch(/,\s*'(read|push)'\s*$/)
   })
 })
