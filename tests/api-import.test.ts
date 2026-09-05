@@ -21,8 +21,8 @@ const batch = {
   }],
 }
 
-function post(body: string, rawKey?: string): Request {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
+function post(body: string, rawKey?: string, extraHeaders?: Record<string, string>): Request {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...extraHeaders }
   if (rawKey !== undefined) headers.authorization = `Bearer ${rawKey}`
   return new Request('http://localhost:3000/api/import', { method: 'POST', headers, body })
 }
@@ -33,6 +33,12 @@ describe('POST /api/import', () => {
   it('401s without a bearer token or with an unknown one', async () => {
     expect((await POST(post(JSON.stringify(batch)))).status).toBe(401)
     expect((await POST(post(JSON.stringify(batch), 'sp_nope'))).status).toBe(401)
+  })
+
+  it('401s a cookie-only request: this door takes a bearer push key, never a portal session', async () => {
+    const res = await POST(post(JSON.stringify(batch), undefined, { cookie: 'sp_session=anything' }))
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: 'unauthorized' })
   })
 
   it('403s a read key: this door is for push keys', async () => {

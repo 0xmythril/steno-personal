@@ -111,6 +111,9 @@ function toIncoming(m: Batch['messages'][number]): IncomingMessage {
     externalMessageId: m.externalMessageId, senderExternalId: m.senderExternalId, senderName: m.senderName,
     fromOwner: m.fromOwner, sentAt: new Date(m.sentAt), type: m.type, text: m.text,
     media: null, replyToExternalId: m.replyToExternalId,
+    // Every other batch field already has its own column, so this fallback
+    // (rather than the batch's real raw payload) loses nothing and does not
+    // duplicate the entry's own fields into raw a second time.
     raw: m.raw ?? { externalMessageId: m.externalMessageId, sentAt: m.sentAt },
   }
 }

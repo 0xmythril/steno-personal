@@ -8,6 +8,7 @@ describe('the push door stays where it is', () => {
     const src = read('lib/services/login.ts')
     expect(src.match(/eq\(connections\.mode, 'live'\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
     expect(read('lib/services/recovery.ts')).toMatch(/eq\(connections\.mode, 'live'\)/)
+    expect(read('lib/services/connections.ts')).toMatch(/revokedWhatsappConnectionIds[\s\S]*?eq\(connections\.mode, 'live'\)/)
   })
 
   it('the port seam knows nothing about pushed sources', () => {

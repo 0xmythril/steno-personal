@@ -309,7 +309,7 @@ export async function removeWhatsappAuthDirs(id: string, sessionCiphertext: stri
 // — which is exactly why whatsappDirsFor derives it from the id first.
 export async function revokedWhatsappConnectionIds(): Promise<string[]> {
   const rows = await db.select({ id: connections.id }).from(connections)
-    .where(and(eq(connections.channel, 'whatsapp'), eq(connections.status, 'revoked')))
+    .where(and(eq(connections.channel, 'whatsapp'), eq(connections.status, 'revoked'), eq(connections.mode, 'live')))
   return rows.map(r => r.id)
 }
 
