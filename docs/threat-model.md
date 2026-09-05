@@ -196,7 +196,7 @@ an agent you can revoke.
 **The risk.** This connects through an unofficial WhatsApp client, which
 WhatsApp's terms do not cover; a number linked this way can be restricted.
 Use it at your own risk. Anyone who would rather not link their own number can
-use Steno Cloud, which records with a number it provides.
+use Steno Team, which records with a number it provides.
 
 **Controls.** Honesty and nothing else. The consent screen says so before the
 QR; the README says so on the front page. The client never sends

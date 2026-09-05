@@ -8,7 +8,7 @@
 
 Steno archives conversations and makes them readable by the people who could already see them, and by their agents. The name means shorthand writing, and the look comes from the steno pad: pale green paper, a single rule down the page, time in the margin, speech beside it. The interface is a record, set like one.
 
-Steno Personal is open source and single-user: one person's own Telegram and WhatsApp chats, kept on their own machine, readable by their agents over MCP. It shares this visual system with Steno Cloud, the team product; the only visible difference is the product label beside the wordmark.
+Steno Personal is open source and single-user: one person's own Telegram and WhatsApp chats, kept on their own machine, readable by their agents over MCP. It shares this visual system with Steno Team, the team product; the only visible difference is the product label beside the wordmark.
 
 Register: quiet, exact, trustworthy. This is software that holds private conversations. Nothing on screen should feel promotional, playful, or loud. Density is welcome; decoration is not.
 
@@ -140,7 +140,7 @@ App shell: a paper-coloured top nav (mark, wordmark, product label, links, key l
 │  19:51 │ Marcus                                                  │
 │        │ ▭ Voice note 0:42 "…twelve months."                     │
 ├──────────────────────────────────────────────────────────────────┤
-│ ● Steno   Open source · AGPL-3.0 · GitHub · X   Steno Cloud →    │
+│ ● Steno   Open source · AGPL-3.0 · GitHub · X   Steno Team →     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -231,7 +231,7 @@ Paper-coloured, hairline bottom border, 10px vertical padding. Links are 500 14p
 
 ### Footer
 
-Mark and wordmark on the left, licence and the GitHub and X links in the middle, "Steno Cloud for teams →" on the right. 12px `muted`. This and the hosted card are the only two cross-promotion placements.
+Mark and wordmark on the left, licence and the GitHub and X links in the middle, "Steno Team →" on the right. 12px `muted`. This and the hosted card are the only two cross-promotion placements.
 
 ## Do's and Don'ts
 
