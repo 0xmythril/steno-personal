@@ -202,8 +202,15 @@ export async function agentConnections(): Promise<AgentConnection[]> {
   return out
 }
 
+// The connections page is the LIVE list only: a pushed source (mode 'push')
+// is never rendered as a channel card, even when its slug collides with a
+// live channel's name (a pushed 'whatsapp' export must not hijack the real
+// WhatsApp card's Disconnect/Delete controls). Pushed sources get their own
+// Sources card in a later release; until then they are visible only through
+// what they archived, not through this list.
 export async function listConnections(): Promise<ConnectionStatus[]> {
   const rows = await db.select().from(connections)
+    .where(eq(connections.mode, 'live'))
     .orderBy(desc(connections.createdAt), desc(connections.id))
   return rows.map(toStatus)
 }
