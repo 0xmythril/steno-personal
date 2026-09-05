@@ -3,13 +3,14 @@
 [![CI](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmythril/steno-personal/actions/workflows/ci.yml)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 
-**Your Telegram and WhatsApp, in one file your AI agents can read.**
+**Your Telegram and WhatsApp conversations, connected to your AI agents.**
 
-Your conversations from both apps live in a single SQLite file on a computer you
-control, and stay current as new messages arrive. Your agents reach them over
-**MCP**. Context that was split across two apps — what you agreed to, who said
-it, when — becomes one thing an agent can search, so it works from what you
-actually said instead of what you can be bothered to paste into a prompt.
+Agents have no way into your personal Telegram or WhatsApp. This gives them one,
+and only ever a read: both apps reachable over **MCP**, on a computer you
+control, staying current as new messages arrive. Context that was split across
+two apps — what you agreed to, who said it, when — becomes one thing an agent
+can search, so it works from what you actually said instead of what you can be
+bothered to paste into a prompt.
 
 It connects to **your** accounts — your Telegram account, your number as a
 linked WhatsApp device — reads what is already there, and writes nothing back.
@@ -17,8 +18,8 @@ No bot, no second phone number, no account on our servers.
 
 - **Read-only by construction** — the code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
-- **Yours** — one container, one volume, one file. No sign-up. Two things can
-  leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
+- **Yours** — one container, one volume, one SQLite file. No sign-up. Two
+  things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
   off until you turn it on, and anonymous usage events — that a feature was
   used, never what it was used on — which you can turn off.
 - **One person, not two accounts** — the address book links the same human
