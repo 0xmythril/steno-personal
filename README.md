@@ -22,13 +22,18 @@ No bot, no second phone number, no account on our servers.
   things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
   off until you turn it on, and anonymous usage events — that a feature was
   used, never what it was used on — which you can turn off.
-- **One person, not two accounts** — the address book links the same human
-  across both apps, so a chat and a transcript say *Ada* whether she wrote from
-  Telegram or from WhatsApp.
-- **Agent-ready** — MCP tools to list, search and read chats, fetch an
-  attachment, and list the people in your address book.
+- **One person, not two accounts** — the [address book](docs/people.md) links
+  the same human across both apps, so a chat and a transcript say *Ada* whether
+  she wrote from Telegram or from WhatsApp.
+- **Agent-ready** — [MCP tools](docs/mcp.md) to list, search and read chats,
+  fetch an attachment, and list the people in your address book.
 
 [Quick start](#quick-start) · [Connect an agent](#connect-your-agent) · [Deploy on Railway](#deploy-on-railway) · [Teams → Steno.chat](https://steno.chat)
+
+> [!WARNING]
+> WhatsApp connects through an unofficial client and your number can be
+> restricted or banned. Telegram carries no comparable risk.
+> [Read this before you pair WhatsApp.](#the-whatsapp-risk-in-one-paragraph)
 
 Licensed under the GNU Affero General Public License v3.0.
 
@@ -74,11 +79,16 @@ variable: [docs/self-hosting.md](docs/self-hosting.md).
 Agents talk to `https://<your-host>/mcp` (or `http://localhost:3000/mcp` on your
 laptop) with an access key as a bearer token.
 
+There is no `--read-only` flag to remember, because there is nothing to switch
+off: every tool declares itself read-only to the client, and the code has no
+path that sends. Read-only is how it is built, not a mode it is in.
+
 **Fastest path:** Settings → create a key → **Copy instructions** under "Let the
 agent set itself up" → paste into an agent that can edit its own MCP config. It
 verifies with `whoami`.
 
-**Cursor** — `~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (this one):
+<details>
+<summary><b>Cursor</b> — <code>~/.cursor/mcp.json</code> (all projects) or <code>.cursor/mcp.json</code> (this one)</summary>
 
 ```json
 {
@@ -91,14 +101,20 @@ verifies with `whoami`.
 }
 ```
 
-**Claude Code:**
+</details>
+
+<details>
+<summary><b>Claude Code</b> — one command</summary>
 
 ```bash
 claude mcp add --transport http steno-personal https://<your-host>/mcp \
   --header "Authorization: Bearer sp_your_key_here"
 ```
 
-**Claude Desktop** — `claude_desktop_config.json`, then restart the app:
+</details>
+
+<details>
+<summary><b>Claude Desktop</b> — <code>claude_desktop_config.json</code>, then restart the app</summary>
 
 ```json
 {
@@ -114,6 +130,8 @@ claude mcp add --transport http steno-personal https://<your-host>/mcp \
   }
 }
 ```
+
+</details>
 
 Ask it *"which chat accounts are connected?"* — that is `whoami`, and it answers
 with channels and display names, never a phone number.
