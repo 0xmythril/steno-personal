@@ -79,7 +79,7 @@ when you touch the Dockerfile, `scripts/start.mjs`, migrations or auth.
 - Add a line under **Unreleased** in `CHANGELOG.md` for anything a user would
   notice.
 - New environment variables go in `lib/env.ts` (validated), `.env.example`,
-  and the README's Configuration table, in the same change.
+  and the Configuration table in `docs/self-hosting.md`, in the same change.
 - Schema changes ship as a new `drizzle/NNNN_*.sql` migration generated with
   `npm run db:generate`; never edit an applied migration.
 - No new runtime dependency without saying why in the description. The

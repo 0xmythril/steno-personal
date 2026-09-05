@@ -9,5 +9,5 @@
 - [ ] `npm run lint && npm run typecheck && npm test && npm run build` pass locally
 - [ ] Tests added or updated (a bug fix starts with the failing test)
 - [ ] `CHANGELOG.md` Unreleased updated, if a user would notice
-- [ ] New env vars: `lib/env.ts`, `.env.example`, README table
+- [ ] New env vars: `lib/env.ts`, `.env.example`, `docs/self-hosting.md` table
 - [ ] No new way to write to a chat account, no new outbound call, no new dependency without a reason above

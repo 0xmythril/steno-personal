@@ -14,6 +14,14 @@ All notable changes to this project are documented here. The format follows
   browser on every channel from the moment a pairing is live, and the finish
   step refuses while any other live pairing exists.
 
+### Documentation
+- **The README is a front page again.** Problem, quick start, connect an agent,
+  in that order; the long-form detail moved to `docs/mcp.md` (the seven MCP
+  tools, their filters and the agent safety notes), `docs/people.md` (the
+  address book) and `docs/self-hosting.md` (the full environment-variable
+  table). No guarantee changed: read-only, the WhatsApp consent sentences, and
+  what can leave the machine all still say what they said.
+
 ### Added
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
