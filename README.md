@@ -14,7 +14,8 @@ bothered to paste into a prompt.
 
 It connects to **your** accounts — your Telegram account, your number as a
 linked WhatsApp device — reads what is already there, and writes nothing back.
-No bot, no second phone number, no account on our servers.
+No bot, no second phone number, no account on our servers. Runs on a laptop, a
+Mac mini, or a Raspberry Pi at home — or on Railway in one click.
 
 - **Read-only by construction** — the code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
@@ -28,7 +29,7 @@ No bot, no second phone number, no account on our servers.
 - **Agent-ready** — [MCP tools](docs/mcp.md) to list, search and read chats,
   fetch an attachment, and list the people in your address book.
 
-[Quick start](#quick-start) · [Connect an agent](#connect-your-agent) · [Deploy on Railway](#deploy-on-railway) · [Teams → Steno.chat](https://steno.chat)
+[Quick start](#quick-start) · [Deploy on Railway](#deploy-on-railway) · [Connect an agent](#connect-your-agent) · [Teams → Steno.chat](https://steno.chat)
 
 > [!WARNING]
 > WhatsApp connects through an unofficial client and your number can be
@@ -39,9 +40,12 @@ Licensed under the GNU Affero General Public License v3.0.
 
 ## Quick start
 
-You need Docker and a couple of minutes. **Start with Telegram** — it carries
-the lower risk. WhatsApp is optional; read [the WhatsApp risk](#the-whatsapp-risk-in-one-paragraph)
-before you pair it.
+You need [Docker](https://docs.docker.com/get-docker/) and a couple of
+minutes. No computer you can leave on? [Railway](#deploy-on-railway) runs it
+for about $5 a month.
+
+**Start with Telegram** — it carries the lower risk. WhatsApp is optional; read
+[the WhatsApp risk](#the-whatsapp-risk-in-one-paragraph) before you pair it.
 
 ```bash
 git clone https://github.com/0xmythril/steno-personal.git
@@ -61,8 +65,8 @@ the log; the first visit sets the instance up.
    you into the portal and authenticates your agents. Optionally register a
    **passkey** for the browser you are in, so that browser logs in with Touch
    ID, Windows Hello, or your phone.
-4. Wait for backfill. Chats appear as they land. Mint more keys under
-   **Settings** — one per agent or device.
+4. Wait while it reads your history. Chats appear as they land. Create more
+   keys under **Settings** — one per agent or device.
 
 **Lost your key?** Choose **Pair your phone again** on the login page: the same
 account gets you a new one. Every other path — no phone, start over — is in
@@ -73,6 +77,40 @@ everything away with `docker compose down -v`.
 
 More ways to run it — bare Node, reverse proxy, upgrades, every environment
 variable: [docs/self-hosting.md](docs/self-hosting.md).
+
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
+
+The path if you have no computer to leave on. One click gives you a service
+built from this repo's `Dockerfile`, a 5 GB volume mounted at `/data`, and a
+generated `SECRET_KEY`. Open the generated `*.up.railway.app` URL as soon as the
+deploy is green and finish **Setup**: pair a channel, save your first key.
+
+**What it costs.** Railway's Hobby plan is $5 a month and includes $5 of usage,
+which one instance sitting quietly should stay inside. The free trial and the
+Free plan cap a volume at 0.5 GB and the template asks for 5 GB, so plan on
+Hobby.
+
+**Before you click**
+
+1. A Railway deploy has a public URL. Until you have your first access key,
+   **Setup** is open to whoever reaches that URL first (once you have started
+   pairing, every other visitor is refused on both channels until you finish) —
+   so claim the deploy promptly. Afterwards, an access key (or a passkey) is the
+   only thing between the internet and your archive; read
+   [docs/threat-model.md](docs/threat-model.md).
+2. Pair **Telegram** here. Read [the WhatsApp paragraph](#the-whatsapp-risk-in-one-paragraph)
+   before you pair WhatsApp on any cloud host: that is where account
+   restrictions are most likely, and a machine at home is the safer place for
+   it.
+
+New to Railway? Signing up through <https://railway.com?referralCode=45_zFw>
+gives you starter credits. It is the maintainer's referral link — Railway pays a
+share of your first year's bills to this project — and it is entirely optional.
+
+Publishing the template yourself, or self-hosting on Railway without it, is in
+[docs/self-hosting.md](docs/self-hosting.md).
 
 ## Connect your agent
 
@@ -136,7 +174,7 @@ claude mcp add --transport http steno-personal https://<your-host>/mcp \
 Ask it *"which chat accounts are connected?"* — that is `whoami`, and it answers
 with channels and display names, never a phone number.
 
-A key reads the **whole** archive. Mint one key per agent, put the scope in the
+A key reads the **whole** archive. Create one key per agent, put the scope in the
 agent's own instructions (`channel`, `kind`, named chats), and revoke on any
 doubt. All seven tools, their filters and the agent safety notes:
 [docs/mcp.md](docs/mcp.md).
@@ -175,39 +213,13 @@ is higher on a public cloud host than on a machine at home.
 Telegram carries no comparable risk: it connects through Telegram's own
 published user API, the same one every third-party Telegram client uses.
 
+steno-personal is not affiliated with Telegram, WhatsApp, or Meta.
+
 ## Need it for a team?
 
 For teams, shared **group** archives, or if you would rather not link your own
 account, use [Steno.chat](https://steno.chat). It records through its own number,
 so your personal account stays unlinked.
-
-## Deploy on Railway
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/1Vhm3c?referralCode=45_zFw&utm_medium=integration&utm_source=button&utm_campaign=steno-personal)
-
-One click gives you a service built from this repo's `Dockerfile`, a 5 GB volume
-mounted at `/data`, and a generated `SECRET_KEY`. Open the generated
-`*.up.railway.app` URL as soon as the deploy is green and finish **Setup**: pair
-a channel, save your first key.
-
-**Before you click**
-
-1. A Railway deploy has a public URL. Until you have your first access key,
-   **Setup** is open to whoever reaches that URL first (once you have started
-   pairing, every other visitor is refused on both channels until you finish) —
-   so claim the deploy promptly. Afterwards, an access key (or a passkey) is the
-   only thing between the internet and your archive; read
-   [docs/threat-model.md](docs/threat-model.md).
-2. Re-read the WhatsApp paragraph above. Cloud hosting is where account
-   restrictions are most likely; a laptop, a Mac mini, or a Raspberry Pi at home
-   is the safer place to run this.
-
-New to Railway? Signing up through <https://railway.com?referralCode=45_zFw>
-gives you starter credits. It is the maintainer's referral link — Railway pays a
-share of your first year's bills to this project — and it is entirely optional.
-
-Publishing the template yourself, or self-hosting on Railway without it, is in
-[docs/self-hosting.md](docs/self-hosting.md).
 
 ## People (address book)
 
@@ -241,9 +253,8 @@ blank and that traffic never leaves your machine.
 
 ## Backups
 
-Everything is under `DATA_DIR`. Stop the app first — SQLite in WAL mode leaves a
-`-wal` file, and a copy taken mid-write can be a moment behind — then copy the
-directory.
+Everything is under `DATA_DIR`. Stop the app first — a copy taken while it is
+still writing can be a moment behind — then copy the directory.
 
 ```bash
 docker compose stop app
@@ -269,6 +280,25 @@ Restoring, bare Node, and Railway volumes:
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Ground rules, development setup, what the project will not become. |
 | [docs/releasing.md](docs/releasing.md) | How a release is cut. |
 | [CHANGELOG.md](CHANGELOG.md) | Releases. |
+
+## Stuck?
+
+The three things people hit first:
+
+- **No key in the log.** That is normal — the first key is handed out on
+  `/setup`, never printed. Locked out later? [Lost access](docs/self-hosting.md#lost-access).
+- **Setup says the instance already has an owner.** A key exists, so Setup is
+  closed. Log in with a key, or **Pair your phone again** on the login page.
+- **WhatsApp keeps disconnecting.** Its session ends if the phone is offline
+  for long, and instantly if you unlink from the phone. Re-pair from
+  Connections. Repeated forced logouts can be the first sign of a restriction.
+
+More in [Troubleshooting](docs/self-hosting.md#troubleshooting). Still stuck?
+Ask in [Discussions](https://github.com/0xmythril/steno-personal/discussions);
+if it looks like a bug, [open one](https://github.com/0xmythril/steno-personal/issues/new/choose).
+A security problem goes to the
+[private advisory form](https://github.com/0xmythril/steno-personal/security/advisories/new),
+never a public issue.
 
 ## Contributing
 
