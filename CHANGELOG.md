@@ -50,6 +50,10 @@ All notable changes to this project are documented here. The format follows
   yet" from "nothing found".
 
 ### Changed
+- **The team edition is called Steno Team.** The footer link, the hosted card
+  on the login page and Connections, and the WhatsApp "rather not link your
+  own number?" line beside each connect button now read Steno Team instead of
+  Steno Cloud. The destination is unchanged.
 - **`search_messages`** returns `{hits, nextCursor}` and pages fifty at a
   time. Order is relevance for a bare query and newest first when a date
   bound is given; `order: relevance | newest` picks. `GET /api/search` takes

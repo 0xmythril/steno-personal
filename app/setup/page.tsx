@@ -65,7 +65,7 @@ function SetupChannelCard({ channel, live }: { channel: Channel; live: Connectio
       <ConnectButton channel={channel} action={setupConnectAction} />
       {channel === 'whatsapp' && (
         <p className="muted">
-          Rather not link your own number? <a href={HOSTED_URL}>Steno Cloud</a> records with a number it provides.
+          Rather not link your own number? <a href={HOSTED_URL}>Steno Team</a> records with a number it provides.
         </p>
       )}
     </section>

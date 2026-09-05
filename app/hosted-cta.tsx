@@ -7,7 +7,7 @@ export function HostedCta() {
   return (
     <aside className="card hosted-cta">
       <h2>For a team, or if you don&rsquo;t want to connect your own account</h2>
-      <p>Steno Cloud runs the recorder for you, with one archive every member can read. <a href={HOSTED_URL}>Go to Steno.chat &rarr;</a></p>
+      <p>Steno Team runs the recorder for you, with one archive every member can read. <a href={HOSTED_URL}>Go to Steno.chat &rarr;</a></p>
     </aside>
   )
 }
