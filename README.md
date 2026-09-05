@@ -294,7 +294,7 @@ The three things people hit first:
   Connections. Repeated forced logouts can be the first sign of a restriction.
 
 More in [Troubleshooting](docs/self-hosting.md#troubleshooting). Still stuck?
-Ask in [Discussions](https://github.com/0xmythril/steno-personal/discussions);
+Ask in [Q&A](https://github.com/0xmythril/steno-personal/discussions/categories/q-a);
 if it looks like a bug, [open one](https://github.com/0xmythril/steno-personal/issues/new/choose).
 A security problem goes to the
 [private advisory form](https://github.com/0xmythril/steno-personal/security/advisories/new),
