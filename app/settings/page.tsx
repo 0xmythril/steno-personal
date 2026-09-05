@@ -49,7 +49,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section className="card">
           <h2>Access keys</h2>
           <p className="muted">
-            A key logs you into this portal and lets an agent read your archive over MCP. Make one per device or agent so you can revoke them one at a time.
+            A read key logs you into this portal and lets an agent search your archive over MCP. A push key does one
+            thing only: deliver conversations to this instance from something you run. Make one per device, agent or
+            source so you can revoke them one at a time.
           </p>
 
           {minted && (
@@ -68,16 +70,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <input name="label" maxLength={MAX_LABEL_LENGTH} placeholder="e.g. Claude Code on laptop" />
               {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
             </label>
+            <label className="field">
+              <span>Scope</span>
+              <select name="scope" defaultValue="read">
+                <option value="read">Read: for an agent that searches</option>
+                <option value="push">Push: for something that delivers conversations</option>
+              </select>
+            </label>
             <button type="submit" className="primary">Create key</button>
           </form>
 
           <div className="tbl"><div className="scroll">
             <table>
-              <thead><tr><th>Label</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+              <thead><tr><th>Label</th><th>Scope</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
               <tbody>
                 {keys.map(k => (
                   <tr key={k.id}>
                     <td className="name">{k.label}{k.id === session.keyId && <> <span className="chip">this session</span></>}</td>
+                    <td className="muted">{k.scope === 'push' ? 'Push' : 'Read'}</td>
                     <td>
                       {revealed?.id === k.id ? (
                         <span className="token">
@@ -177,7 +187,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <ConnectAgent
           rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
           selectedId={chosen?.id ?? minted?.id ?? null}
-          keys={keys.map(k => ({ id: k.id, label: k.label }))}
+          keys={keys.filter(k => k.scope === 'read').map(k => ({ id: k.id, label: k.label }))}
           error={instructionsError}
         />
 
