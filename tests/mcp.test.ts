@@ -23,6 +23,13 @@ describe('MCP bearer auth', () => {
     expect((await POST(mcpRequest('definitely-not-prefixed', body))).status).toBe(401)
   })
 
+  it('401s a push key: the MCP endpoint is a read door', async () => {
+    const push = await mintAccessKey('cron', 'push')
+    if (!push.ok) throw new Error(push.reason)
+    const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
+    expect((await POST(mcpRequest(push.rawKey, body))).status).toBe(401)
+  })
+
   it('401s the next call after that key is revoked', async () => {
     // The M3 exit criterion, driven end to end: the same key that worked a
     // moment ago is refused once it is revoked. The test above only covers
