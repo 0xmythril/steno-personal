@@ -15,6 +15,10 @@ export const accessKeys = sqliteTable('access_keys', {
   // First 8 chars after the prefix, shown in lists so a reader can match a
   // key to an agent config without revealing it.
   prefix: text('prefix').notNull(),
+  // What the key may do. 'read' logs into the portal and reads over MCP and
+  // /api; 'push' delivers batches to /api/import and nothing else. Never
+  // both: a leaked push key can plant text but not read any.
+  scope: text('scope', { enum: ['read', 'push'] }).notNull().default('read'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
@@ -65,7 +69,17 @@ export const sessions = sqliteTable('sessions', {
 // stores a session, and never owns a chat; it ends revoked with an outcome.
 export const connections = sqliteTable('connections', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // A source type. Live rows hold exactly 'telegram' or 'whatsapp' — the
+  // ports the worker can open — and only createConnection writes them. Pushed
+  // rows hold any slug the pusher chose (lib/services/sources.ts isSourceType).
+  channel: text('channel').notNull(),
+  // 'live' is opened by the worker through a ChannelPort; 'push' is written
+  // from outside under a push key and never reaches the worker at all.
+  mode: text('mode', { enum: ['live', 'push'] }).notNull().default('live'),
+  // Pushed rows only: the push key that created the source, so revoking that
+  // key can later offer to delete what it delivered. Keys are never hard
+  // deleted (revocation is revoked_at), so no ON DELETE action is declared.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   purpose: text('purpose', { enum: ['archive', 'recovery'] }).notNull().default('archive'),
   status: text('status', { enum: ['pending', 'active', 'revoked', 'error'] }).notNull().default('pending'),
   externalAccountId: text('external_account_id'),
@@ -88,13 +102,15 @@ export const connections = sqliteTable('connections', {
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
 }, t => [
-  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL`),
+  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL AND mode = 'live'`),
+  uniqueIndex('connections_push_source').on(t.channel, t.externalAccountId).where(sql`revoked_at IS NULL AND mode = 'push'`),
 ])
 
 export const chats = sqliteTable('chats', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // The source type of the connection this chat belongs to; see connections.
+  channel: text('channel').notNull(),
   externalChatId: text('external_chat_id').notNull(),
   kind: text('kind', { enum: ['dm', 'group', 'channel'] }).notNull(),
   title: text('title'),

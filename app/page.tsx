@@ -1,14 +1,15 @@
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
-import { listChats, CHAT_CHANNELS, type ChatChannel } from '@/lib/services/queries'
+import { listChats, CHAT_CHANNELS } from '@/lib/services/queries'
+import type { Channel } from '@/lib/channels/port'
 import { hasActiveConnection } from '@/lib/services/connections'
-import { formatRelativeTime, CHANNEL_LABELS } from '@/lib/format'
+import { formatRelativeTime, CHANNEL_LABELS, sourceLabel } from '@/lib/format'
 import { NO_CONNECTION } from '@/lib/mcp/copy'
 
 const KIND_LABELS = { dm: 'Direct', group: 'Group', channel: 'Channel' } as const
 
-const isChannel = (v: unknown): v is ChatChannel => typeof v === 'string' && (CHAT_CHANNELS as readonly string[]).includes(v)
+const isChannel = (v: unknown): v is Channel => typeof v === 'string' && (CHAT_CHANNELS as readonly string[]).includes(v)
 
 export default async function ChatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
@@ -61,7 +62,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
                 {chats.map(c => (
                   <tr key={c.id}>
                     <td className="name"><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                    <td>{CHANNEL_LABELS[c.channel]}</td>
+                    <td>{sourceLabel(c.channel)}</td>
                     <td className="muted">{KIND_LABELS[c.kind]}</td>
                     <td className="num">{c.messageCount.toLocaleString('en')}</td>
                     <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}</td>

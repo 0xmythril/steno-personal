@@ -22,7 +22,8 @@ export const PASSWORD_REJECTED = 'password_rejected'
 
 export type ConnectionStatus = {
   id: string
-  channel: Channel
+  // A source type: one of the two live channels, or a pushed source's slug.
+  channel: string
   // 'archive' reads the account; 'recovery' only proves the owner still holds
   // it (lib/services/recovery.ts). The connections page picks its live card
   // from archive rows alone and lists finished recovery attempts as history.
@@ -159,7 +160,7 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
 // `id` is this instance's own connection uuid, the one every chat carries as
 // connectionId — never the account identifier (spec invariant: no channel id
 // on an agent surface).
-export type AgentConnection = { id: string; channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
+export type AgentConnection = { id: string; channel: string; displayName: string | null; status: ConnectionStatus['status'] }
 
 export async function agentConnections(): Promise<AgentConnection[]> {
   const rows = await db.select({

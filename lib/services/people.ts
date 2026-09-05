@@ -5,6 +5,7 @@ import {
   channelContacts, chats, connections, dismissedSuggestions, messages, people, personIdentities,
 } from '@/lib/db/schema'
 import type { Channel } from '@/lib/channels/port'
+import { isLiveChannel } from '@/lib/services/sources'
 import { chatSummaries, clampLimit, type ChatKind } from '@/lib/services/queries'
 import { agentConnections } from '@/lib/services/connections'
 
@@ -124,8 +125,8 @@ async function chatCountsByPerson(personIds: string[]): Promise<Map<string, numb
 
 // The direct chats a person is the other side of, one per identity per
 // connection: the one-hop answer to "open my chat with Ada".
-async function dmChatsByPerson(personIds: string[]): Promise<Map<string, Array<{ id: string; channel: Channel }>>> {
-  const out = new Map<string, Array<{ id: string; channel: Channel }>>()
+async function dmChatsByPerson(personIds: string[]): Promise<Map<string, Array<{ id: string; channel: string }>>> {
+  const out = new Map<string, Array<{ id: string; channel: string }>>()
   if (personIds.length === 0) return out
   const rows = await db.select({ personId: personIdentities.personId, chatId: chats.id, channel: chats.channel })
     .from(personIdentities)
@@ -231,7 +232,10 @@ async function ensureOwnerPerson(): Promise<void> {
   const accounts = await db.select({
     id: connections.id, channel: connections.channel, externalAccountId: connections.externalAccountId,
   }).from(connections).where(eq(connections.purpose, 'archive')).orderBy(asc(connections.createdAt), asc(connections.id))
-  const accountIds = accounts.filter(a => a.externalAccountId).map(a => ({ channel: a.channel, externalId: a.externalAccountId! }))
+  // Live accounts only: a pushed source's external_account_id is the source
+  // slug its pusher chose, not an identity of the owner on any channel.
+  const accountIds = accounts.flatMap(a =>
+    a.externalAccountId && isLiveChannel(a.channel) ? [{ channel: a.channel, externalId: a.externalAccountId }] : [])
   if (accountIds.length === 0) return
   // Somebody already holding one of the owner's own account ids IS the owner:
   // an install from before this row existed made a visible contact for the
@@ -297,7 +301,7 @@ export type PublicPerson = {
   chatCount: number
   // The direct chats with this person, most recently active first — the ids
   // get_messages takes, so "open my chat with Ada" is one hop from here.
-  dm: Array<{ id: string; channel: Channel }>
+  dm: Array<{ id: string; channel: string }>
   // True on exactly one row: the owner, whose id every message they sent
   // carries as `person`.
   self: boolean
@@ -306,7 +310,7 @@ export type PublicPerson = {
   // well-connected person sits in fifty groups, and an address-book listing
   // that inlines all of them for everyone is the 140 KB answer the testers
   // could not use.
-  chats?: Array<{ id: string; title: string | null; channel: Channel; kind: ChatKind }>
+  chats?: Array<{ id: string; title: string | null; channel: string; kind: ChatKind }>
 }
 
 const DEFAULT_PEOPLE_LIMIT = 50

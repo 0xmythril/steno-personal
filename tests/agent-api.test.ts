@@ -24,7 +24,7 @@ async function agentKey(): Promise<string> {
 const at = (iso: string) => new Date(iso)
 
 // A chat whose activity is fixed, so ordering and cursors are deterministic.
-async function chatAt(conn: { id: string; channel: 'telegram' | 'whatsapp' }, title: string, iso: string, opts: {
+async function chatAt(conn: { id: string; channel: string }, title: string, iso: string, opts: {
   kind?: 'dm' | 'group' | 'channel'; text?: string | null
 } = {}) {
   const chat = await makeChat(conn, { title, kind: opts.kind ?? 'dm', lastMessageAt: at(iso) })

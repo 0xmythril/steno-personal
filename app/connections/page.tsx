@@ -6,7 +6,7 @@ import { TelegramUnavailable } from './telegram-unavailable'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
-import { CHANNEL_LABELS, formatRelativeTime } from '@/lib/format'
+import { CHANNEL_LABELS, formatRelativeTime, sourceLabel } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { Consent } from './consent'
 import { WhatsAppConsent } from './whatsapp-consent'
@@ -156,7 +156,7 @@ export default async function ConnectionsPage() {
                 <tbody>
                   {history.map(c => (
                     <tr key={c.id}>
-                      <td>{CHANNEL_LABELS[c.channel]}</td>
+                      <td>{sourceLabel(c.channel)}</td>
                       <td className="name">{c.purpose === 'recovery' ? <span className="chip off">Recovery attempt</span> : (c.displayName ?? '—')}</td>
                       <td className="mono">{formatRelativeTime(c.revokedAt)}</td>
                       <td>{errorText(c) ? <span className="chip bad">{errorText(c)}</span> : '—'}</td>

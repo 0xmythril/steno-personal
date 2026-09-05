@@ -19,13 +19,16 @@ import { getSettings, type Settings } from '@/lib/services/settings'
 // identifier, and never a phone number (people design decision 6).
 export type PersonRef = { id: string; name: string }
 
-export type ChatChannel = 'telegram' | 'whatsapp'
-export const CHAT_CHANNELS: readonly ChatChannel[] = ['telegram', 'whatsapp']
+// Any source type (lib/services/sources.ts), not only the two live channels:
+// a pushed source's chats carry whatever slug its pusher chose.
+export type ChatChannel = string
+// The live channels the portal offers as filter tabs.
+export const CHAT_CHANNELS: readonly Channel[] = ['telegram', 'whatsapp']
 export type ChatKind = 'dm' | 'group' | 'channel'
 export const CHAT_KINDS: readonly ChatKind[] = ['dm', 'group', 'channel']
 
 export type ChatSummary = {
-  id: string; channel: Channel; kind: ChatKind
+  id: string; channel: ChatChannel; kind: ChatKind
   title: string | null; lastMessageAt: Date | null; messageCount: number
   // A re-paired account makes a second row for every chat it re-syncs: same
   // title, different id and count. These two tell such rows apart, and
@@ -88,7 +91,7 @@ export type MessageView = {
 // A message with its chat named on the same line, for the read paths that
 // cross chats: search hits and the inbox.
 export type MessageInChat = MessageView & {
-  chatId: string; chatTitle: string | null; channel: Channel; kind: ChatKind
+  chatId: string; chatTitle: string | null; channel: ChatChannel; kind: ChatKind
 }
 
 const DEFAULT_LIMIT = 50
@@ -482,7 +485,7 @@ async function mentionNames(digits: string[]): Promise<Map<string, string>> {
   return out
 }
 
-async function resolveMentions<T extends { text: string | null }>(items: T[], channelOf: (item: T) => Channel): Promise<T[]> {
+async function resolveMentions<T extends { text: string | null }>(items: T[], channelOf: (item: T) => ChatChannel): Promise<T[]> {
   const digits = new Set<string>()
   for (const item of items) {
     if (channelOf(item) !== 'whatsapp' || !item.text) continue

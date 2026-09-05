@@ -4,7 +4,7 @@ import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { getPerson, listPeople, listIdentityCandidates, type IdentityCandidate } from '@/lib/services/people'
 import { listChats } from '@/lib/services/queries'
-import { CHANNEL_LABELS } from '@/lib/format'
+import { CHANNEL_LABELS, sourceLabel } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { candidateLabel, PEOPLE_ERRORS, CHANNELS, SOURCE_LABELS } from '../labels'
 import {
@@ -170,7 +170,7 @@ export default async function PersonPage({ params, searchParams }: {
                   {theirChats.map(c => (
                     <tr key={c.id}>
                       <td className="name"><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                      <td className="muted">{CHANNEL_LABELS[c.channel]}</td>
+                      <td className="muted">{sourceLabel(c.channel)}</td>
                       <td className="num">{c.messageCount}</td>
                     </tr>
                   ))}

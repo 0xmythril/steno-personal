@@ -5,6 +5,7 @@ import { connections } from '@/lib/db/schema'
 import { decryptSecret, encryptSecret } from '@/lib/services/crypto'
 import { PASSWORD_REJECTED } from '@/lib/services/connections'
 import type { Channel, ChannelAccount } from '@/lib/channels/port'
+import { isLiveChannel } from '@/lib/services/sources'
 
 // Worker-facing half of the DB-mediated login handshake. Pure database
 // operations — no channel library code lives here — so the whole login state
@@ -19,18 +20,30 @@ const STALE_SECRET_MS = 5 * 60_000
 // purpose rides along so the manager knows whether a finished handshake
 // becomes an archive connection (completeLogin) or a recovery verdict
 // (lib/services/recovery.ts#completeRecovery).
+// Both worker reads take live rows only: a pushed source (mode 'push') has no
+// session to open and no port to open it with, whatever its channel says —
+// a pushed 'telegram' export must never be handed to the Telegram port. The
+// narrowing is safe because only createConnection / createSetupConnection
+// write live rows, and both take a Channel.
+function liveChannel<T extends { channel: string }>(row: T): T & { channel: Channel } {
+  if (!isLiveChannel(row.channel)) throw new Error('live connection with a non-port channel')
+  return row as T & { channel: Channel }
+}
+
 export async function claimPendingLogins(): Promise<Array<{ id: string; channel: Channel; purpose: 'archive' | 'recovery'; createdAt: Date }>> {
-  return db.select({ id: connections.id, channel: connections.channel, purpose: connections.purpose, createdAt: connections.createdAt })
+  const rows = await db.select({ id: connections.id, channel: connections.channel, purpose: connections.purpose, createdAt: connections.createdAt })
     .from(connections)
-    .where(and(eq(connections.status, 'pending'), isNull(connections.revokedAt)))
+    .where(and(eq(connections.status, 'pending'), eq(connections.mode, 'live'), isNull(connections.revokedAt)))
+  return rows.map(liveChannel)
 }
 
 export async function activeConnections(): Promise<Array<{ id: string; channel: Channel; sessionCiphertext: string | null; lastSyncAt: Date | null }>> {
-  return db.select({
+  const rows = await db.select({
     id: connections.id, channel: connections.channel,
     sessionCiphertext: connections.sessionCiphertext, lastSyncAt: connections.lastSyncAt,
   }).from(connections)
-    .where(and(eq(connections.status, 'active'), isNull(connections.revokedAt)))
+    .where(and(eq(connections.status, 'active'), eq(connections.mode, 'live'), isNull(connections.revokedAt)))
+  return rows.map(liveChannel)
 }
 
 export async function publishQr(id: string, url: string): Promise<void> {
@@ -87,8 +100,10 @@ export async function completeLogin(id: string, sessionString: string, account: 
     isNull(connections.revokedAt),
   )).returning({ id: connections.id, channel: connections.channel })
   if (updated.length === 0) return 'gone'
-  // Which channel, and nothing about whose account.
-  track('channel_connected', { channel: updated[0].channel })
+  // Which channel, and nothing about whose account. A login only ever
+  // completes on a live row, so the guard is for the type, not the data.
+  const channel = updated[0].channel
+  if (isLiveChannel(channel)) track('channel_connected', { channel })
   return 'ok'
 }
 
