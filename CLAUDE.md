@@ -13,7 +13,8 @@ not negotiable. Summary for an agent:
 - Structural tests in `tests/` grep the source. If one fails, the promise it
   guards is what you broke — change the code, not the test, unless the
   change is deliberate and explained.
-- New env var: `lib/env.ts` + `.env.example` + README table, together.
+- New env var: `lib/env.ts` + `.env.example` + the `docs/self-hosting.md`
+  Configuration table, together.
 - UI: read `DESIGN.md` before touching anything under `app/`. Tokens live in
   `app/globals.css` and `tests/design-tokens.test.ts` guards them; no colour
   literal outside the token blocks, no font `<link>`, no pills.

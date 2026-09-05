@@ -99,7 +99,7 @@ The one-click template in the README is the short path. If you would rather wire
 it up yourself, or the template is not published yet:
 
 1. Sign in to Railway. A new account created through
-   <https://railway.com?referralCode=45_zFw> starts with $20 in credits; that is the
+   <https://railway.com?referralCode=45_zFw> starts with credits; that is the
    maintainer's referral link, and using it is optional.
 2. **New Project → Deploy from GitHub repo**, pick your fork.
 3. Railway reads `railway.json`: Dockerfile build, healthcheck on `/api/health`
@@ -129,6 +129,41 @@ on a small instance, size up rather than watch it OOM.
 
 Re-read the WhatsApp paragraph in the README before pairing WhatsApp on a cloud
 host. Telegram is fine there.
+
+## Configuration
+
+Every variable is optional; empty means unset. The README carries the short list
+most people touch; this is all of them.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `DATA_DIR` | `./data`; `/data` in Docker | Where everything lives: the SQLite file, downloaded media, WhatsApp auth state, and the generated secret key. |
+| `PORT` | `3000` | Port the portal and MCP endpoint listen on. |
+| `SECRET_KEY` | generated | Encrypts your OpenRouter key, your revealable access keys, and the Telegram session at rest. If unset, one is generated into `$DATA_DIR/secret.key` on first boot. Set it yourself and the file is not used. **Changing or losing it makes those encrypted values unreadable** — you re-pair the channels and re-enter the OpenRouter key; your messages are unaffected. |
+| `TELEGRAM_API_ID` | the project's own | Telegram application id. The project ships a registered pair, so leave it unset unless you registered your own at <https://my.telegram.org>. `0` runs without Telegram: every page that could pair it shows **Not available** and says so, and the worker logs one warning. |
+| `TELEGRAM_API_HASH` | the project's own | Telegram application hash, from the same page. Set both together or neither. |
+| `ANALYSIS_DAILY_LIMIT` | `500` | Images plus voice notes sent for enrichment per day. A ceiling, not an exact quota: the count is taken once per pass, before either medium runs, so a pass starting just under the limit can still drain a full batch of each — worst case `2 × ANALYSIS_BACKFILL_BATCH − 1` rows beyond it. `0` disables enrichment entirely. |
+| `ANALYSIS_BACKFILL_BATCH` | `20` | How many old attachments are enriched per pass, so a backfill does not spend the day's budget at once. |
+| `LOG_LEVEL` | `info` | Exactly one of `trace`, `debug`, `info`, `warn`, `error`, `silent` — any other value fails validation at boot and the container will not start. Logs carry counts and kinds, never chat text, names, numbers, or your search queries — at any level. |
+| `RUN_WEB` | on | Set to exactly `false` to run only the worker in this container. |
+| `RUN_WORKER` | on | Set to exactly `false` to run only the portal in this container. |
+| `STENO_POSTHOG_KEY` | the project's token | The PostHog project anonymous usage events are sent to. It is PostHog's write-only client token, shipped in the build as every PostHog client's is; a fork sets its own. It is **not** the off switch — that is the **Anonymous usage** box in Settings, or `DO_NOT_TRACK=1`. See [What leaves your machine](../PRIVACY.md#what-leaves-your-machine). |
+| `STENO_POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host. Set the EU host if your project lives there. |
+| `DO_NOT_TRACK` | unset | Set to `1` and no usage event is ever sent, whatever Settings says. The same variable GitHub CLI and other tools honour. |
+| `NEXT_TELEMETRY_DISABLED` | `1` in Docker, unset otherwise | Read by Next.js, not by this project: without it, `next build` and `next dev` report anonymous build statistics to Vercel. The Docker image sets it; set it yourself when you build from source. |
+| `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](#lost-access). |
+| `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
+
+**The one optional third party.** Image text extraction and voice-note
+transcription are off until you save an OpenRouter key in **Settings**. Once you
+do, the attachments you enabled are sent to OpenRouter to be read, and the text
+comes back into your search index. Leave the key blank and nothing ever leaves
+your machine. Per-item cost is recorded so you can see what it spent.
+
+Where to set one: Railway — the service's **Variables** tab. Docker Compose —
+the `environment:` block or an `.env` file next to the compose file. Bare Node —
+your shell, or an `Environment=` line in the systemd unit. `.env.example` in the
+repo lists the same set with the same defaults.
 
 ## Behind a reverse proxy
 

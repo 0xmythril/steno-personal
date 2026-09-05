@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Question or setup help
+    url: https://github.com/0xmythril/steno-personal/discussions/categories/q-a
+    about: Not sure it is a bug? Ask in Discussions first; the README's "Stuck?" section covers the three most common cases.
   - name: Security problem
     url: https://github.com/0xmythril/steno-personal/security/advisories/new
     about: Please report vulnerabilities privately, never as a public issue.
