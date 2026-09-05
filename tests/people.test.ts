@@ -362,7 +362,14 @@ describe('the owner as a person', () => {
   })
 
   it('is served to agents with self: true, and the owner’s name is theirs to change', async () => {
-    await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: '777' })
+    // Not '777' like the tests above: the payload checked at the end carries
+    // UUIDs, which are hex, and a random UUID contains any given three hex
+    // digits about once in two hundred draws — enough to fail CI now and
+    // then. The substring check stays, because it is shape-agnostic on
+    // purpose (a new field leaking the id must trip it); the id just has to
+    // be one no UUID can hold.
+    const OWNER_EXTERNAL_ID = '7770001234'
+    await makeConnection({ channel: 'telegram', displayName: 'Casey', externalAccountId: OWNER_EXTERNAL_ID })
     await populatePeople()
     await createPerson({ name: 'Ada' })
     const { people: listed } = await publicPeople()
@@ -370,7 +377,7 @@ describe('the owner as a person', () => {
     const me = (await ownerPerson())!
     expect(await updatePerson(me.id, { name: 'C. Ham' })).toBe(true)
     expect((await ownerPerson())!).toMatchObject({ name: 'C. Ham', nameSource: 'owner' })
-    expect(JSON.stringify(listed)).not.toContain('777')
+    expect(JSON.stringify(listed)).not.toContain(OWNER_EXTERNAL_ID)
   })
 })
 
