@@ -231,11 +231,19 @@ can already read, an exported chat, an agent's own transcript — is pushed:
 something you run posts a batch to your instance under a **push key**.
 
 Mint a push key in **Settings** (scope: Push). It cannot log in and cannot
-read anything; it only delivers. Then post a `steno/1` batch:
+read anything; it only delivers. Keep the key out of the command line — a
+key on argv shows up in `ps` for any other user on the box and sits in
+plain text in your shell history or crontab. Put it in a curl config file
+instead:
+
+```
+# ~/.steno-push.curlrc, mode 0600
+header = "Authorization: Bearer sp_YOUR_PUSH_KEY"
+```
 
 ```bash
-curl -sS -X POST "https://<your-host>/api/import" \
-  -H "Authorization: Bearer sp_YOUR_PUSH_KEY" \
+chmod 600 ~/.steno-push.curlrc
+curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" \
   -H "Content-Type: application/json" \
   --data @batch.json
 ```
@@ -282,10 +290,12 @@ curl -sS -X POST "https://<your-host>/api/import" \
   returns the source's id. `400` lists what was wrong; nothing is written
   from a batch that fails validation.
 
-A cron line that pushes whatever an agent left in `~/slack/latest.json`:
+A cron line that pushes whatever an agent left in `~/slack/latest.json`, using
+the same `~/.steno-push.curlrc` — a key in the crontab itself is just as
+readable (by anyone who can run `crontab -l` for that user) as one on argv:
 
 ```
-*/10 * * * * curl -sS -X POST "https://<your-host>/api/import" -H "Authorization: Bearer sp_YOUR_PUSH_KEY" -H "Content-Type: application/json" --data @"$HOME/slack/latest.json" >/dev/null
+*/10 * * * * curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" -H "Content-Type: application/json" --data @"$HOME/slack/latest.json" >/dev/null
 ```
 
 Everything pushed is read back exactly like the live channels: in the portal,
