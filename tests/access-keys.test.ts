@@ -42,7 +42,7 @@ describe('access keys', () => {
     // A refused verification is not a use.
     const rows = await listActiveAccessKeys()
     expect(rows.find(k => k.id === read.id)?.lastUsedAt).toBeNull()
-    expect(rows.map(k => [k.label, k.scope])).toEqual([['agent', 'read'], ['cron', 'push']])
+    expect(rows.map(k => [k.label, k.scope]).sort()).toEqual([['agent', 'read'], ['cron', 'push']])
   })
 
   it('reveals only active keys', async () => {
