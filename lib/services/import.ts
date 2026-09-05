@@ -20,7 +20,7 @@ export const MAX_ID_BYTES = 256
 export const MAX_PROBLEMS = 20
 export const MAX_LABEL_LENGTH = 100
 const EARLIEST_MS = Date.parse('1990-01-01T00:00:00Z')
-const LATEST_SLACK_MS = 86_400_000
+const ONE_DAY_MS = 86_400_000
 
 const MESSAGE_TYPES = ['text', 'image', 'video', 'audio', 'document', 'sticker', 'reaction', 'poll', 'location', 'contact', 'system', 'unknown'] as const
 
@@ -30,7 +30,7 @@ const slug = z.string().regex(SOURCE_TYPE_RE, { message: 'a lowercase slug: ^[a-
 const timestamp = z.iso.datetime({ offset: true })
 const sentAt = timestamp.refine(iso => {
   const t = Date.parse(iso)
-  return t >= EARLIEST_MS && t <= Date.now() + LATEST_SLACK_MS
+  return t >= EARLIEST_MS && t <= Date.now() + ONE_DAY_MS
 }, { message: 'sentAt must be between 1990-01-01 and one day from now' })
 
 const messageSchema = z.object({
@@ -83,23 +83,26 @@ export function parseBatch(input: unknown): { ok: true; batch: Batch } | { ok: f
 
 // One row per (type, id) among live pushed sources — connections_push_source
 // makes that unique — so the second batch for a source finds the first's row
-// and only refreshes the label. Not an upsert on the partial index: two
-// statements are plainer, and one pusher per source is the expected shape.
+// and only refreshes the label. The select-or-insert runs in one immediate
+// transaction so two pushers racing for the same (type, id) cannot both pass
+// the select and both insert — the second would throw on the partial unique
+// index instead of finding the first's row.
 async function upsertSource(keyId: string, source: Batch['source']): Promise<string> {
-  const [existing] = await db.select({ id: connections.id }).from(connections)
-    .where(and(
-      eq(connections.mode, 'push'), eq(connections.channel, source.type),
-      eq(connections.externalAccountId, source.id), isNull(connections.revokedAt),
-    ))
-  if (existing) {
-    await db.update(connections).set({ displayName: source.label }).where(eq(connections.id, existing.id))
-    return existing.id
-  }
-  const [row] = await db.insert(connections).values({
-    channel: source.type, mode: 'push', status: 'active', purpose: 'archive',
-    externalAccountId: source.id, displayName: source.label, pushKeyId: keyId,
-  }).returning({ id: connections.id })
-  return row.id
+  return db.transaction((tx): string => {
+    const existing = tx.select({ id: connections.id }).from(connections)
+      .where(and(
+        eq(connections.mode, 'push'), eq(connections.channel, source.type),
+        eq(connections.externalAccountId, source.id), isNull(connections.revokedAt),
+      )).get()
+    if (existing) {
+      tx.update(connections).set({ displayName: source.label }).where(eq(connections.id, existing.id)).run()
+      return existing.id
+    }
+    return tx.insert(connections).values({
+      channel: source.type, mode: 'push', status: 'active', purpose: 'archive',
+      externalAccountId: source.id, displayName: source.label, pushKeyId: keyId,
+    }).returning({ id: connections.id }).get().id
+  }, { behavior: 'immediate' })
 }
 
 function toIncoming(m: Batch['messages'][number]): IncomingMessage {
@@ -126,8 +129,7 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
     if (m.editedAt) { await applyEdit(sourceId, batch.source.type, dto); edited++ }
   }
   for (const d of batch.deletes) {
-    await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
-    deleted++
+    deleted += await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
   }
   await db.update(connections).set({ lastSyncAt: new Date() }).where(eq(connections.id, sourceId))
   return { source: { id: sourceId }, inserted, duplicates, edited, deleted }

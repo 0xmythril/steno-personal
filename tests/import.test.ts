@@ -154,4 +154,23 @@ describe('importBatch', () => {
     expect(b.inserted).toBe(2)
     expect(await db.select().from(messages)).toHaveLength(4)
   })
+
+  it('counts only deletes that tombstoned something', async () => {
+    const keyId = await pushKey()
+    await importBatch(keyId, parsed(batch()))
+    const res = await importBatch(keyId, parsed(batch({ messages: [], deletes: [
+      { externalChatId: 'C01', externalMessageId: '1725500000.000100' },
+      { externalChatId: 'C01', externalMessageId: 'never-seen' },
+      { externalChatId: 'no-such-chat', externalMessageId: '1725500000.000100' },
+    ] })))
+    expect(res.deleted).toBe(1)
+  })
+
+  it('two concurrent batches for one source share one row', async () => {
+    const keyId = await pushKey()
+    const [a, b] = await Promise.all([importBatch(keyId, parsed(batch())), importBatch(keyId, parsed(batch()))])
+    expect(a.source.id).toBe(b.source.id)
+    expect(await db.select().from(connections)).toHaveLength(1)
+    expect(await db.select().from(messages)).toHaveLength(2)
+  })
 })

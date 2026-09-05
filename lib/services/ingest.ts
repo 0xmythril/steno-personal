@@ -120,7 +120,10 @@ export async function applyEdit(connectionId: string, channel: string, m: Incomi
   await recordMessage(connectionId, channel, m)
 }
 
-export async function applyDelete(connectionId: string, ref: DeleteRef): Promise<void> {
+// Returns the number of rows actually tombstoned, so a caller (importBatch)
+// can tell a real delete from a no-op on an unknown chat or a message never
+// recorded. The session manager, ingest's other caller, ignores it.
+export async function applyDelete(connectionId: string, ref: DeleteRef): Promise<number> {
   const scope = await db.select({ id: chats.id, externalChatId: chats.externalChatId })
     .from(chats).where(eq(chats.connectionId, connectionId))
 
@@ -131,11 +134,15 @@ export async function applyDelete(connectionId: string, ref: DeleteRef): Promise
     // the user follows. The numeric guard keeps a non-numeric id (WhatsApp
     // JIDs, M2) out of the comparison entirely rather than coercing it.
     : scope.filter(c => /^-?\d+$/.test(c.externalChatId) && Number(c.externalChatId) >= MIN_COMMON_CHAT_ID)
-  if (targets.length === 0) return
+  if (targets.length === 0) return 0
 
   const deletedAt = new Date()
+  let count = 0
   for (const chat of targets) {
-    await db.update(messages).set({ deletedAt })
+    const updated = await db.update(messages).set({ deletedAt })
       .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId), authoredBy(ref.actor)))
+      .returning({ id: messages.id })
+    count += updated.length
   }
+  return count
 }
