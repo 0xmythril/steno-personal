@@ -147,6 +147,20 @@ describe('importBatch', () => {
     expect(still.deletedAt).toBeInstanceOf(Date)
   })
 
+  it('a deleted message resent with other text is a duplicate, not a conflict, and stays deleted', async () => {
+    const keyId = await pushKey()
+    await importBatch(keyId, parsed(batch()))
+    await importBatch(keyId, parsed(batch({ messages: [], deletes: [{ externalChatId: 'C01', externalMessageId: '1725500000.000100' }] })))
+    const res = await importBatch(keyId, parsed(batch({ messages: [
+      message({ text: 'rewritten after deletion' }),
+      message({ text: 'edited after deletion', editedAt: '2026-09-05T12:00:00Z' }),
+    ] })))
+    expect(res).toMatchObject({ inserted: 0, duplicates: 2, edited: 0, conflicts: 0 })
+    const [row] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(row.deletedAt).toBeInstanceOf(Date)
+    expect(row.text).toBe('the vendor agreed to net 30')
+  })
+
   it('records which key pushed each message', async () => {
     const keyId = await pushKey()
     await importBatch(keyId, parsed(batch()))

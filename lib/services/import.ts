@@ -138,7 +138,10 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
     // unless the replay disagrees with what is stored, in which case first
     // writer wins: the disagreement is counted and named, never overwritten.
     // A fresh insert already carries the edited text, so it is not counted
-    // twice. No actor: the source vouches for its own edits.
+    // twice. No actor: the source vouches for its own edits. A tombstoned row
+    // is never a conflict and never an edit — deleted stays deleted, so a
+    // resend with different text or an editedAt is just an ordinary duplicate.
+    if (res.existingDeleted) continue
     if (m.editedAt) { await applyEdit(sourceId, batch.source.type, dto); edited++; continue }
     if (res.existingText !== m.text) {
       conflicts++
