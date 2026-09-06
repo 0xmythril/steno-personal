@@ -30,12 +30,12 @@ describe('POST /api/login', () => {
 // the real handler (no next/headers mock needed — startSession's cookie
 // write is not asserted here, only the response) against the real database.
 describe('POST /api/login rejects a push key', () => {
-  it('401s with invalid_key: this door only ever verifies scope "read"', async () => {
+  it('401s with invalid_key: this door only ever verifies capability "read"', async () => {
     const { resetDb } = await import('./helpers/db')
     await resetDb()
     const { mintAccessKey } = await import('@/lib/services/access-keys')
     const { POST } = await import('@/app/api/login/route')
-    const push = await mintAccessKey('cron', 'push')
+    const push = await mintAccessKey('cron', { read: false, push: true })
     if (!push.ok) throw new Error(push.reason)
     const req = new Request('http://localhost:3000/api/login', {
       method: 'POST',

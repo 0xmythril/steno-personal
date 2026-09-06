@@ -15,7 +15,7 @@ describe('access keys', () => {
     expect(r.rawKey.length).toBeGreaterThan(40)
     const before = (await listActiveAccessKeys())[0]
     expect(before.lastUsedAt).toBeNull()
-    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'laptop', scope: 'read' })
+    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'laptop', canRead: true, canPush: false })
     const after = (await listActiveAccessKeys())[0]
     expect(after.lastUsedAt).toBeInstanceOf(Date)
     expect(after.prefix).toBe(r.rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 8))
@@ -33,16 +33,24 @@ describe('access keys', () => {
   })
 
   it('a push key verifies only as a push key, and a read key only as a read key', async () => {
-    const push = await mintAccessKey('cron', 'push')
+    const push = await mintAccessKey('cron', { read: false, push: true })
     const read = await mintAccessKey('agent')
     if (!push.ok || !read.ok) throw new Error('mint failed')
-    expect(await verifyAccessKey(push.rawKey, 'push')).toEqual({ id: push.id, label: 'cron', scope: 'push' })
+    expect(await verifyAccessKey(push.rawKey, 'push')).toEqual({ id: push.id, label: 'cron', canRead: false, canPush: true })
     expect(await verifyAccessKey(push.rawKey, 'read')).toBeNull()
     expect(await verifyAccessKey(read.rawKey, 'push')).toBeNull()
     // A refused verification is not a use.
     const rows = await listActiveAccessKeys()
     expect(rows.find(k => k.id === read.id)?.lastUsedAt).toBeNull()
-    expect(rows.map(k => [k.label, k.scope]).sort()).toEqual([['agent', 'read'], ['cron', 'push']])
+    expect(rows.map(k => [k.label, k.canRead, k.canPush]).sort()).toEqual([['agent', true, false], ['cron', false, true]])
+  })
+
+  it('a key minted with both capabilities verifies as both, and a key with neither is refused', async () => {
+    const both = await mintAccessKey('agent+cron', { read: true, push: true })
+    if (!both.ok) throw new Error('mint failed')
+    expect(await verifyAccessKey(both.rawKey, 'read')).toEqual({ id: both.id, label: 'agent+cron', canRead: true, canPush: true })
+    expect(await verifyAccessKey(both.rawKey, 'push')).toEqual({ id: both.id, label: 'agent+cron', canRead: true, canPush: true })
+    expect(await mintAccessKey('neither', { read: false, push: false })).toEqual({ ok: false, reason: 'no_capability' })
   })
 
   it('reveals only active keys', async () => {

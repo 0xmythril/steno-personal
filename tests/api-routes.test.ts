@@ -73,7 +73,7 @@ describe('REST routes reject unauthenticated callers', () => {
   })
 
   it('a push key is refused as a bearer token on every read route', async () => {
-    const push = await mintAccessKey('cron', 'push')
+    const push = await mintAccessKey('cron', { read: false, push: true })
     if (!push.ok) throw new Error(push.reason)
     const bearer = (url: string) => new Request(url, { headers: { authorization: `Bearer ${push.rawKey}` } })
     expect((await getChats(bearer('http://localhost:3000/api/chats'))).status).toBe(401)

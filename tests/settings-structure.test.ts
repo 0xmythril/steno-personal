@@ -35,18 +35,17 @@ describe('settings keys page', () => {
     expect(actions).not.toMatch(/x-forwarded-proto/)
     expect(actions).toMatch(/isHttps\(\)/)
   })
-  it('offers the two key scopes and passes the choice through, defaulting to read', () => {
+  it('offers the two key capabilities and passes the choice through, defaulting to read', () => {
     const page = readFileSync('app/settings/page.tsx', 'utf8')
     const actions = readFileSync('app/settings/actions.ts', 'utf8')
-    expect(page).toMatch(/<select name="scope" defaultValue="read">/)
-    expect(page).toMatch(/<option value="read">/)
-    expect(page).toMatch(/<option value="push">/)
-    expect(page).toMatch(/<th>Scope<\/th>/)
-    expect(actions).toMatch(/formData\.get\('scope'\) === 'push' \? 'push' : 'read'/)
-    expect(actions).toMatch(/mintAccessKey\(label, scope\)/)
+    expect(page).toMatch(/name="canRead" defaultChecked/)
+    expect(page).toMatch(/name="canPush"/)
+    expect(page).toMatch(/<th>Can<\/th>/)
+    expect(actions).toMatch(/formData\.get\('canRead'\) === 'on'/)
+    expect(actions).toMatch(/mintAccessKey\(label, caps\)/)
   })
-  it('never offers a push key to the connect-an-agent snippets', () => {
+  it('never offers a push-only key to the connect-an-agent snippets', () => {
     const page = readFileSync('app/settings/page.tsx', 'utf8')
-    expect(page).toMatch(/keys=\{keys\.filter\(k => k\.scope === 'read'\)/)
+    expect(page).toMatch(/keys=\{keys\.filter\(k => k\.canRead\)/)
   })
 })

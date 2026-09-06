@@ -30,7 +30,7 @@ describe('sessions', () => {
   })
 
   it('refuses a session bound to a push key, even an unrevoked one', async () => {
-    const push = await mintAccessKey('cron', 'push')
+    const push = await mintAccessKey('cron', { read: false, push: true })
     if (!push.ok) throw new Error(push.reason)
     const id = await createSession({ keyId: push.id })
     expect(await resolveSession(id)).toBeNull()

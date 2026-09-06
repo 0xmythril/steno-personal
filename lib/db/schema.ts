@@ -15,10 +15,12 @@ export const accessKeys = sqliteTable('access_keys', {
   // First 8 chars after the prefix, shown in lists so a reader can match a
   // key to an agent config without revealing it.
   prefix: text('prefix').notNull(),
-  // What the key may do. 'read' logs into the portal and reads over MCP and
-  // /api; 'push' delivers batches to /api/import and nothing else. Never
-  // both: a leaked push key can plant text but not read any.
-  scope: text('scope', { enum: ['read', 'push'] }).notNull().default('read'),
+  // What the key may do. Either, or both: an agent that searches and also
+  // stores its own transcript holds one key with both. Settings says out
+  // loud that a key with both carries both risks (read = exfiltration,
+  // push = planted text).
+  canRead: integer('can_read', { mode: 'boolean' }).notNull().default(true),
+  canPush: integer('can_push', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
@@ -76,8 +78,9 @@ export const connections = sqliteTable('connections', {
   // 'live' is opened by the worker through a ChannelPort; 'push' is written
   // from outside under a push key and never reaches the worker at all.
   mode: text('mode', { enum: ['live', 'push'] }).notNull().default('live'),
-  // Pushed rows only: the push key that created the source, so revoking that
-  // key can later offer to delete what it delivered. Keys are never hard
+  // Pushed rows only: the push key that created the source — "created by"
+  // history, kept even though any push key may push to it afterward (see
+  // messages.pushKeyId for per-message provenance). Keys are never hard
   // deleted (revocation is revoked_at), so no ON DELETE action is declared.
   pushKeyId: text('push_key_id').references(() => accessKeys.id),
   purpose: text('purpose', { enum: ['archive', 'recovery'] }).notNull().default('archive'),
@@ -138,6 +141,10 @@ export const messages = sqliteTable('messages', {
   replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the key that delivered this message. Null for a message
+  // the worker read live. Sources are shared — any push key may push to any
+  // source — so provenance lives here, per message, not on the source.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   raw: text('raw', { mode: 'json' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [
@@ -146,6 +153,7 @@ export const messages = sqliteTable('messages', {
   // The sender-name lookup in lib/services/queries.ts walks one sender's
   // messages newest-first, once per row on a page.
   index('messages_sender_sent_idx').on(t.senderExternalId, t.sentAt),
+  index('messages_push_key_idx').on(t.pushKeyId),
 ])
 
 // Downloaded attachment bytes, one row per message that carries one. Queued

@@ -230,11 +230,12 @@ Telegram and WhatsApp arrive live. Anything else — a Slack workspace an agent
 can already read, an exported chat, an agent's own transcript — is pushed:
 something you run posts a batch to your instance under a **push key**.
 
-Mint a push key in **Settings** (scope: Push). It cannot log in and cannot
-read anything; it only delivers. Keep the key out of the command line — a
-key on argv shows up in `ps` for any other user on the box and sits in
-plain text in your shell history or crontab. Put it in a curl config file
-instead:
+Mint a key in **Settings** and tick **Push**. Leave **Read** unticked for a
+cron job — a key that only pushes cannot log in or read anything — and tick
+both for an agent that searches and also stores its own transcript. Keep
+the key out of the command line — a key on argv shows up in `ps` for any
+other user on the box and sits in plain text in your shell history or
+crontab. Put it in a curl config file instead:
 
 ```
 # ~/.steno-push.curlrc, mode 0600

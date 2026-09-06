@@ -13,10 +13,8 @@ import { revokePasskey, revokeAllPasskeys } from '@/lib/services/passkeys'
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
   const label = String(formData.get('label') ?? '').trim() || 'Agent key'
-  // Anything but an explicit push is a read key: the safe default is the one
-  // that cannot write.
-  const scope = formData.get('scope') === 'push' ? 'push' : 'read'
-  const result = await mintAccessKey(label, scope)
+  const caps = { read: formData.get('canRead') === 'on', push: formData.get('canPush') === 'on' }
+  const result = await mintAccessKey(label, caps)
   if (!result.ok) redirect(`/settings?mintError=${result.reason}`)
   const jar = await cookies()
   jar.set(MINTED_KEY_COOKIE, JSON.stringify({ id: result.id, rawKey: result.rawKey }), {

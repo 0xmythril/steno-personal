@@ -152,6 +152,7 @@ a.chip.filter::after { content: ""; position: absolute; inset: -7px 0; }
    button that submits it off to the far side of the card. */
 .field { display: flex; flex-direction: column; gap: 6px; max-width: 34rem; }
 .field > span, .field label { font-size: 13px; font-weight: 600; color: var(--ink); }
+fieldset { border: 0; padding: 0; margin: 0; }
 .help { font-size: 12px; color: var(--muted); }
 input:not([type="checkbox"]):not([type="hidden"]), select, textarea { height: 36px; padding: 0 10px; border: 1px solid var(--edge); border-radius: 6px; background: var(--well); color: var(--ink); font: 400 14px var(--sans); }
 /* The native arrow is drawn inside the padding box, so an un-reset select runs

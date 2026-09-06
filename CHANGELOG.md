@@ -35,11 +35,12 @@ All notable changes to this project are documented here. The format follows
   results (the MCP `channel` filter still names only the live channels for
   now). Resending is safe; deletes stay deleted. Attachments are not accepted
   yet. See "Pushing conversations in" in `docs/self-hosting.md`.
-- **Read keys and push keys.** Settings mints a key as *Read* (the portal and
-  the MCP tools, as before) or *Push* (the import door and nothing else). No
-  key does both, so a push key left in a cron job can never read your archive
-  and an agent's read key can never write to it. Every existing key is a read
-  key.
+- **Keys say what they may do.** Settings mints a key with Read (the portal
+  and the MCP tools, as before), Push (the import door), or both. A push-only
+  key left in a cron job can never read your archive; a read-only agent key
+  can never write to it; a key with both is for an agent that searches and
+  also stores its own conversations, and the page says what that costs if it
+  leaks. Every existing key is read-only.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.

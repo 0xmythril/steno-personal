@@ -49,15 +49,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section className="card">
           <h2>Access keys</h2>
           <p className="muted">
-            A read key logs you into this portal and lets an agent search your archive over MCP. A push key does one
-            thing only: deliver conversations to this instance from something you run. Make one per device, agent or
+            A key can read, push, or both. Read logs you into this portal and lets an agent search your archive over
+            MCP. Push lets something you run deliver conversations. A key that does both carries both risks if it
+            leaks: it can read everything and it can plant text every agent trusts. Make one per device, agent or
             source so you can revoke them one at a time.
           </p>
 
           {minted && (
             <div className="banner">
               <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
-                <span><strong>New key created.</strong> Copy it now; you can reveal it again later from this page.</span>
+                <span>
+                  <strong>New key created.</strong> Copy it now; you can reveal it again later from this page.
+                  {(() => {
+                    const row = keys.find(k => k.id === minted!.id)
+                    if (!row) return null
+                    const can = row.canRead && row.canPush ? 'read and push' : row.canPush ? 'push' : 'read'
+                    return ` This key can ${can}.`
+                  })()}
+                </span>
                 <span className="token"><code>{minted.rawKey}</code> <CopyButton value={minted.rawKey} /></span>
                 <form action={dismissMintedKeyAction}><button type="submit" className="small">Done</button></form>
               </div>
@@ -69,25 +78,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <span>Label</span>
               <input name="label" maxLength={MAX_LABEL_LENGTH} placeholder="e.g. Claude Code on laptop" />
               {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
+              {mintError === 'no_capability' && <p className="danger" role="alert">Tick at least one of Read and Push.</p>}
             </label>
-            <label className="field">
-              <span>Scope</span>
-              <select name="scope" defaultValue="read">
-                <option value="read">Read: for an agent that searches</option>
-                <option value="push">Push: for something that delivers conversations</option>
-              </select>
-            </label>
+            <fieldset className="field">
+              <span>What it may do</span>
+              <label><input type="checkbox" name="canRead" defaultChecked /> Read: log in here and search over MCP</label>
+              <label><input type="checkbox" name="canPush" /> Push: deliver conversations to /api/import</label>
+            </fieldset>
             <button type="submit" className="primary">Create key</button>
           </form>
 
           <div className="tbl"><div className="scroll">
             <table>
-              <thead><tr><th>Label</th><th>Scope</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+              <thead><tr><th>Label</th><th>Can</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
               <tbody>
                 {keys.map(k => (
                   <tr key={k.id}>
                     <td className="name">{k.label}{k.id === session.keyId && <> <span className="chip">this session</span></>}</td>
-                    <td className="muted">{k.scope === 'push' ? 'Push' : 'Read'}</td>
+                    <td className="muted">{k.canRead && k.canPush ? 'Read, push' : k.canPush ? 'Push' : 'Read'}</td>
                     <td>
                       {revealed?.id === k.id ? (
                         <span className="token">
@@ -187,7 +195,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <ConnectAgent
           rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
           selectedId={chosen?.id ?? minted?.id ?? null}
-          keys={keys.filter(k => k.scope === 'read').map(k => ({ id: k.id, label: k.label }))}
+          keys={keys.filter(k => k.canRead).map(k => ({ id: k.id, label: k.label }))}
           error={instructionsError}
         />
 

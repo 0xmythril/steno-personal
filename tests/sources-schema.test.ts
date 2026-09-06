@@ -36,7 +36,8 @@ describe('sources in the schema', () => {
   it('a new key is a read key unless told otherwise', async () => {
     const [row] = await db.insert(accessKeys)
       .values({ label: 'k', keyHash: 'h', keyCiphertext: 'c', prefix: 'p' }).returning()
-    expect(row.scope).toBe('read')
+    expect(row.canRead).toBe(true)
+    expect(row.canPush).toBe(false)
   })
 })
 
