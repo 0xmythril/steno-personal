@@ -104,6 +104,10 @@ export const connections = sqliteTable('connections', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the `conflicts` count the last importBatch reported for
+  // this source — a disagreeing pusher is visible at a glance, not only by
+  // reading a batch response the owner never saw.
+  lastImportConflicts: integer('last_import_conflicts').notNull().default(0),
 }, t => [
   uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL AND mode = 'live'`),
   uniqueIndex('connections_push_source').on(t.channel, t.externalAccountId).where(sql`revoked_at IS NULL AND mode = 'push'`),

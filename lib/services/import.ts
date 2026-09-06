@@ -151,6 +151,6 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
   for (const d of batch.deletes) {
     deleted += await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
   }
-  await db.update(connections).set({ lastSyncAt: new Date() }).where(eq(connections.id, sourceId))
+  await db.update(connections).set({ lastSyncAt: new Date(), lastImportConflicts: conflicts }).where(eq(connections.id, sourceId))
   return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
 }

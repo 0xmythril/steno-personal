@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { accessKeys, channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
@@ -223,6 +223,47 @@ export async function agentConnections(): Promise<AgentConnection[]> {
     }
     const pushedBy = r.mode === 'push' ? await pushedByLabels(r.id, r.pushKeyId) : []
     out.push({ id: r.id, channel: r.channel, displayName, status: r.status, mode: r.mode, pushedBy })
+  }
+  return out
+}
+
+// What the portal's Sources card shows for one pushed source: not an account
+// the worker reads, but a slug some pusher chose and the keys that have fed
+// it. `createdBy` is the label of the key that first named this source
+// (upsertSource's "created by" record) — never null unless that key has
+// since been hard-deleted, which never happens (keys are only revoked).
+// `pushedBy` reuses pushedByLabels, so a source and its whoami entry always
+// agree on who touched it. `messageCount` is undeleted messages only — a
+// deleted stays deleted, and a count that included tombstones would say more
+// than the reader can actually open.
+export type SourceView = {
+  id: string; channel: string; label: string | null; createdBy: string | null
+  pushedBy: string[]; messageCount: number; lastPushAt: Date | null; lastImportConflicts: number
+}
+
+export async function listSources(): Promise<SourceView[]> {
+  const rows = await db.select({
+    id: connections.id, channel: connections.channel, label: connections.displayName,
+    pushKeyId: connections.pushKeyId, lastPushAt: connections.lastSyncAt,
+    lastImportConflicts: connections.lastImportConflicts,
+  }).from(connections)
+    .where(and(eq(connections.mode, 'push'), isNull(connections.revokedAt)))
+    .orderBy(desc(connections.createdAt), desc(connections.id))
+
+  const out: SourceView[] = []
+  for (const r of rows) {
+    const [creator] = r.pushKeyId
+      ? await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, r.pushKeyId))
+      : []
+    const pushedBy = await pushedByLabels(r.id, r.pushKeyId)
+    const [{ messageCount }] = await db.select({ messageCount: sql<number>`count(*)` })
+      .from(messages)
+      .innerJoin(chats, eq(chats.id, messages.chatId))
+      .where(and(eq(chats.connectionId, r.id), isNull(messages.deletedAt)))
+    out.push({
+      id: r.id, channel: r.channel, label: r.label, createdBy: creator?.label ?? null,
+      pushedBy, messageCount, lastPushAt: r.lastPushAt, lastImportConflicts: r.lastImportConflicts,
+    })
   }
   return out
 }
