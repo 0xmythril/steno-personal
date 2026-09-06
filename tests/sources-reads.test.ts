@@ -122,4 +122,46 @@ describe('provenance reads and the source filter', () => {
     const afterConflict = await listSources()
     expect(afterConflict.find(s => s.id === sharedSourceId)!.lastImportConflicts).toBe(1)
   })
+
+  it('a deleted push drops its key from pushedBy unless that key created the source', async () => {
+    const cron = await pushKey('cron')
+    const agent = await pushKey('agent')
+
+    // agent creates the source; cron pushes into it too.
+    const created = await importBatch(agent, parsed(batch({
+      source: { type: 'slack', id: 'shared', label: 'Shared' },
+      messages: [message({ externalMessageId: 'agent-1', text: 'from agent' })],
+    })))
+    const sourceId = created.source.id
+    await importBatch(cron, parsed(batch({
+      source: { type: 'slack', id: 'shared', label: 'Shared' },
+      messages: [message({ externalMessageId: 'cron-1', text: 'from cron' })],
+    })))
+    const before = (await listSources()).find(s => s.id === sourceId)!
+    expect(before.pushedBy).toEqual(['agent', 'cron'])
+
+    // Deleting cron's only message here removes its push-only credit: it
+    // never created this source, so nothing else names it.
+    await importBatch(cron, parsed(batch({
+      source: { type: 'slack', id: 'shared', label: 'Shared' },
+      messages: [],
+      deletes: [{ externalChatId: 'C01', externalMessageId: 'cron-1' }],
+    })))
+    const afterDelete = (await listSources()).find(s => s.id === sourceId)!
+    expect(afterDelete.pushedBy).toEqual(['agent'])
+
+    // cron created a second source alone; deleting its only message there
+    // still credits cron, because the creator's credit is unconditional.
+    const own = await importBatch(cron, parsed(batch({
+      source: { type: 'slack', id: 'own', label: 'Own' },
+      messages: [message({ externalChatId: 'C02', externalMessageId: 'cron-2' })],
+    })))
+    await importBatch(cron, parsed(batch({
+      source: { type: 'slack', id: 'own', label: 'Own' },
+      messages: [],
+      deletes: [{ externalChatId: 'C02', externalMessageId: 'cron-2' }],
+    })))
+    const ownAfterDelete = (await listSources()).find(s => s.id === own.source.id)!
+    expect(ownAfterDelete.pushedBy).toEqual(['cron'])
+  })
 })

@@ -245,10 +245,12 @@ export async function pushersForChats(chatIds: string[]): Promise<Map<string, st
 export async function pushersForMessages(messageIds: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   if (messageIds.length === 0) return out
+  // Every caller here already pages live rows only, but the guarantee lives
+  // in the query, not in caller discipline — a deleted message names no one.
   const rows = await db.select({ id: messages.id, label: accessKeys.label })
     .from(messages)
     .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
-    .where(inArray(messages.id, messageIds))
+    .where(and(inArray(messages.id, messageIds), isNull(messages.deletedAt)))
   for (const r of rows) out.set(r.id, r.label)
   return out
 }

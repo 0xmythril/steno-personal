@@ -168,16 +168,22 @@ export type AgentConnection = {
   mode: 'live' | 'push'; pushedBy: string[]
 }
 
-// The distinct labels of every key that has pushed a message into this
+// The distinct labels of every key that has pushed a LIVE message into this
 // source, plus the label of the key that created it (upsertSource's
 // "created by" record) if that key never itself pushed a message — a source
-// created by one key and fed entirely by another still credits both.
+// created by one key and fed entirely by another still credits both. The
+// creator's credit is unconditional and survives every message it pushed
+// being deleted (it is a "created by" record, not a tally of live rows); a
+// pushing key with no other claim earns its place only while at least one of
+// its messages is still live — deleting the last one it pushed drops it,
+// exactly as ChatSummary.pushers (lib/services/queries.ts) already does, so
+// whoami and the Sources list can never disagree about who is credited.
 async function pushedByLabels(connectionId: string, creatorKeyId: string | null): Promise<string[]> {
   const rows = await db.selectDistinct({ label: accessKeys.label })
     .from(messages)
     .innerJoin(chats, eq(chats.id, messages.chatId))
     .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
-    .where(eq(chats.connectionId, connectionId))
+    .where(and(eq(chats.connectionId, connectionId), isNull(messages.deletedAt)))
   const labels = new Set(rows.map(r => r.label))
   if (creatorKeyId) {
     const [creator] = await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, creatorKeyId))
