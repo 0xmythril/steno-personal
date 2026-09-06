@@ -7,8 +7,8 @@ import { mintAccessKey } from '@/lib/services/access-keys'
 import { importBatch, parseBatch, FORMAT, MAX_BATCH_ITEMS, MAX_TEXT_BYTES, type Batch } from '@/lib/services/import'
 import { searchMessages } from '@/lib/services/queries'
 
-async function pushKey(): Promise<string> {
-  const r = await mintAccessKey('cron', 'push')
+async function pushKey(label = 'cron'): Promise<string> {
+  const r = await mintAccessKey(label, { read: false, push: true })
   if (!r.ok) throw new Error(r.reason)
   return r.id
 }
@@ -74,6 +74,15 @@ describe('parseBatch', () => {
     expect(broken.ok).toBe(false)
     if (!broken.ok) expect(broken.problems).toHaveLength(20)
   })
+
+  it('refuses a source type that names a live channel: that slug means a paired account, not a pushed export', () => {
+    const r = parseBatch(batch({ source: { type: 'whatsapp', id: 'export-2026', label: 'WhatsApp export' } }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.problems[0].reason).toBe('live_channel_not_pushable')
+    // A pushed export of a live channel uses another slug instead.
+    const ok = parseBatch(batch({ source: { type: 'whatsapp-export', id: 'export-2026', label: 'WhatsApp export' } }))
+    expect(ok.ok).toBe(true)
+  })
 })
 
 describe('importBatch', () => {
@@ -138,12 +147,46 @@ describe('importBatch', () => {
     expect(still.deletedAt).toBeInstanceOf(Date)
   })
 
-  it('accepts a pushed source whose type is a live channel', async () => {
+  it('records which key pushed each message', async () => {
     const keyId = await pushKey()
-    const res = await importBatch(keyId, parsed(batch({ source: { type: 'whatsapp', id: 'export-2026', label: 'WhatsApp export' } })))
-    expect(res.inserted).toBe(2)
-    const [source] = await db.select().from(connections)
-    expect(source).toMatchObject({ channel: 'whatsapp', mode: 'push' })
+    await importBatch(keyId, parsed(batch()))
+    const rows = await db.select().from(messages)
+    expect(rows.every(r => r.pushKeyId === keyId)).toBe(true)
+  })
+
+  it('two keys may push to one source, each message carrying its own key', async () => {
+    const a = await pushKey('agent-a')
+    const b = await pushKey('agent-b')
+    const first = await importBatch(a, parsed(batch()))
+    const second = await importBatch(b, parsed(batch({
+      source: { type: 'slack', id: 'acme', label: 'Slack (Acme)' },
+      messages: [message({ externalMessageId: 'from-b', text: 'from b' })],
+    })))
+    expect(second.source.id).toBe(first.source.id)
+    expect(second.inserted).toBe(1)
+    const rows = await db.select().from(messages)
+    expect(rows.find(r => r.externalMessageId === '1725500000.000100')?.pushKeyId).toBe(a)
+    expect(rows.find(r => r.externalMessageId === 'from-b')?.pushKeyId).toBe(b)
+  })
+
+  it('a second key pushing different text for a known message, with no editedAt, counts a conflict and leaves the stored text alone', async () => {
+    const a = await pushKey('agent-a')
+    const b = await pushKey('agent-b')
+    await importBatch(a, parsed(batch()))
+    const res = await importBatch(b, parsed(batch({ messages: [message({ text: 'a different account of the same message' })] })))
+    expect(res).toMatchObject({ inserted: 0, duplicates: 1, edited: 0, conflicts: 1 })
+    expect(res.conflicting).toEqual([{ externalChatId: 'C01', externalMessageId: '1725500000.000100' }])
+    const [row] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(row.text).toBe('the vendor agreed to net 30')
+    expect(row.pushKeyId).toBe(a)
+  })
+
+  it('a resend with the same text is not a conflict', async () => {
+    const keyId = await pushKey()
+    await importBatch(keyId, parsed(batch()))
+    const res = await importBatch(keyId, parsed(batch()))
+    expect(res).toMatchObject({ inserted: 0, duplicates: 2, conflicts: 0 })
+    expect(res.conflicting).toEqual([])
   })
 
   it('keeps two sources apart', async () => {

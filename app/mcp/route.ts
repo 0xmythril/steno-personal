@@ -283,6 +283,7 @@ const handler = createMcpHandler(server => {
       description:
         'The channel accounts connected to this instance: id (the connectionId list_chats puts on each chat), channel, ' +
         'display name and status. Never a phone number. ' +
+        'mode says whether the source is read live from a paired account or pushed in through the import door, and pushedBy names the keys that delivered it. ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('whoami', async () => {

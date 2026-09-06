@@ -39,6 +39,6 @@ export const POST = withErrorBoundary(async (req: Request): Promise<Response> =>
 
   const result = await importBatch(key.id, parsed.batch)
   track('source_pushed', { surface: 'api' })
-  log.info({ inserted: result.inserted, duplicates: result.duplicates, edited: result.edited, deleted: result.deleted }, 'import accepted')
+  log.info({ inserted: result.inserted, duplicates: result.duplicates, edited: result.edited, deleted: result.deleted, conflicts: result.conflicts }, 'import accepted')
   return json(200, result)
 })

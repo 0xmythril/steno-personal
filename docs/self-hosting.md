@@ -281,15 +281,21 @@ curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" 
   a cron job can post the last hour every ten minutes. Set `editedAt` on a
   resent message to update its text. A `deletes` entry removes a message from
   every read for good.
+  Any push key may push to any source, and every message remembers which key
+  delivered it. If two keys push the same message with different text, the
+  first version stays and the response counts the disagreement under
+  `conflicts`, naming up to twenty. A pushed source may not call itself
+  `telegram` or `whatsapp`; those names mean a paired account. Use
+  `whatsapp-export` or similar.
 - `replyToExternalId` names the message this one answers, in the same chat.
   `type` is `text` unless you say otherwise; `raw` is any object you want kept
   with the message (64 KiB).
 - Limits: 1 000 messages and 1 000 deletes per batch, 8 MiB per request,
   64 KiB of text per message. Attachments are not accepted yet; steno never
   fetches a URL on your behalf.
-- The response counts `inserted`, `duplicates`, `edited` and `deleted`, and
-  returns the source's id. `400` lists what was wrong; nothing is written
-  from a batch that fails validation.
+- The response counts `inserted`, `duplicates`, `edited`, `deleted` and
+  `conflicts`, and returns the source's id. `400` lists what was wrong;
+  nothing is written from a batch that fails validation.
 
 A cron line that pushes whatever an agent left in `~/slack/latest.json`, using
 the same `~/.steno-push.curlrc` — a key in the crontab itself is just as

@@ -35,7 +35,9 @@ anything.
   person with the ids of their direct chats; pass `include_chats` for every
   chat they appear in. See [people.md](people.md).
 - `whoami` names the channel accounts connected to this instance — id, channel,
-  display name and status. Never a phone number.
+  display name and status. `mode` says whether it is read live from a paired
+  account or pushed in through the import door, and `pushedBy` names the keys
+  that delivered it. Never a phone number.
 
 ## What an agent can see
 

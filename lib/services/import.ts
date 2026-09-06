@@ -3,7 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
 import { applyDelete, applyEdit, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
-import { SOURCE_TYPE_RE } from '@/lib/services/sources'
+import { SOURCE_TYPE_RE, isLiveChannel } from '@/lib/services/sources'
 
 // The push door's format and its service. One batch names one source and
 // carries messages and deletes in the ingest DTO's own field names, so a
@@ -59,16 +59,23 @@ const messageSchema = z.object({
 
 const deleteSchema = z.object({ externalChatId: id, externalMessageId: id })
 
+// 'telegram' and 'whatsapp' mean a paired live account (worker-owned); a
+// pushed export of one names itself something else, e.g. 'whatsapp-export'.
+const pushableType = slug.refine(t => !isLiveChannel(t), { message: 'live_channel_not_pushable' })
+
 export const batchSchema = z.object({
   format: z.literal(FORMAT),
-  source: z.object({ type: slug, id: slug, label: z.string().trim().min(1).max(MAX_LABEL_LENGTH) }),
+  source: z.object({ type: pushableType, id: slug, label: z.string().trim().min(1).max(MAX_LABEL_LENGTH) }),
   messages: z.array(messageSchema).max(MAX_BATCH_ITEMS).default([]),
   deletes: z.array(deleteSchema).max(MAX_BATCH_ITEMS).default([]),
 })
 
 export type Batch = z.infer<typeof batchSchema>
 export type ImportProblem = { index: number | null; path: string; reason: string }
-export type ImportResult = { source: { id: string }; inserted: number; duplicates: number; edited: number; deleted: number }
+export type ImportResult = {
+  source: { id: string }; inserted: number; duplicates: number; edited: number; deleted: number
+  conflicts: number; conflicting: Array<{ externalChatId: string; externalMessageId: string }>
+}
 
 export function parseBatch(input: unknown): { ok: true; batch: Batch } | { ok: false; problems: ImportProblem[] } {
   const r = batchSchema.safeParse(input)
@@ -120,20 +127,27 @@ function toIncoming(m: Batch['messages'][number]): IncomingMessage {
 
 export async function importBatch(keyId: string, batch: Batch): Promise<ImportResult> {
   const sourceId = await upsertSource(keyId, batch.source)
-  let inserted = 0, duplicates = 0, edited = 0, deleted = 0
+  let inserted = 0, duplicates = 0, edited = 0, deleted = 0, conflicts = 0
+  const conflicting: Array<{ externalChatId: string; externalMessageId: string }> = []
   for (const m of batch.messages) {
     const dto = toIncoming(m)
-    const res = await recordMessage(sourceId, batch.source.type, dto)
+    const res = await recordMessage(sourceId, batch.source.type, dto, { pushKeyId: keyId })
     if (res.inserted) { inserted++; continue }
     duplicates++
-    // A known message resent with editedAt is an edit; without it, a replay.
+    // A known message resent with editedAt is an edit; without it, a replay —
+    // unless the replay disagrees with what is stored, in which case first
+    // writer wins: the disagreement is counted and named, never overwritten.
     // A fresh insert already carries the edited text, so it is not counted
     // twice. No actor: the source vouches for its own edits.
-    if (m.editedAt) { await applyEdit(sourceId, batch.source.type, dto); edited++ }
+    if (m.editedAt) { await applyEdit(sourceId, batch.source.type, dto); edited++; continue }
+    if (res.existingText !== m.text) {
+      conflicts++
+      if (conflicting.length < MAX_PROBLEMS) conflicting.push({ externalChatId: m.externalChatId, externalMessageId: m.externalMessageId })
+    }
   }
   for (const d of batch.deletes) {
     deleted += await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
   }
   await db.update(connections).set({ lastSyncAt: new Date() }).where(eq(connections.id, sourceId))
-  return { source: { id: sourceId }, inserted, duplicates, edited, deleted }
+  return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
 }

@@ -74,19 +74,24 @@ async function upsertChat(connectionId: string, channel: string, m: IncomingMess
   return row.id
 }
 
-export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage): Promise<{ chatId: string; messageId: string; inserted: boolean }> {
+// existingText is populated only when inserted is false — the stored text of
+// the row already at (chatId, externalMessageId) — so a caller that needs to
+// tell a same-text replay from a disagreement (import's conflict count) has
+// it without a second table reach of its own; recordMessage already selects
+// the row to report messageId here.
+export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage, opts: { pushKeyId?: string } = {}): Promise<{ chatId: string; messageId: string; inserted: boolean; existingText: string | null }> {
   const chatId = await upsertChat(connectionId, channel, m)
   const inserted = await db.insert(messages).values({
     chatId, externalMessageId: m.externalMessageId,
     senderExternalId: m.senderExternalId, senderName: m.senderName, fromOwner: m.fromOwner,
     sentAt: m.sentAt, type: m.type, text: m.text, hasMedia: m.media !== null,
-    replyToExternalId: m.replyToExternalId ?? null, raw: m.raw,
+    replyToExternalId: m.replyToExternalId ?? null, pushKeyId: opts.pushKeyId ?? null, raw: m.raw,
   }).onConflictDoNothing({ target: [messages.chatId, messages.externalMessageId] })
     .returning({ id: messages.id })
-  if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true }
-  const [existing] = await db.select({ id: messages.id }).from(messages)
+  if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true, existingText: null }
+  const [existing] = await db.select({ id: messages.id, text: messages.text }).from(messages)
     .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId)))
-  return { chatId, messageId: existing.id, inserted: false }
+  return { chatId, messageId: existing.id, inserted: false, existingText: existing.text }
 }
 
 export async function applyEdit(connectionId: string, channel: string, m: IncomingMessage): Promise<void> {

@@ -3,7 +3,7 @@ import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
+import { accessKeys, channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { mediaFilePath } from '@/lib/services/media'
 import { errorShape, log } from '@/lib/log'
@@ -159,13 +159,37 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
 // account id is looked up here and never returned.
 // `id` is this instance's own connection uuid, the one every chat carries as
 // connectionId — never the account identifier (spec invariant: no channel id
-// on an agent surface).
-export type AgentConnection = { id: string; channel: string; displayName: string | null; status: ConnectionStatus['status'] }
+// on an agent surface). mode and pushedBy say how the source got here:
+// 'live' is read from a paired account and pushedBy is always empty; 'push'
+// is delivered through the import door and pushedBy names the keys that did
+// — never a key value or prefix, only the label the owner gave it.
+export type AgentConnection = {
+  id: string; channel: string; displayName: string | null; status: ConnectionStatus['status']
+  mode: 'live' | 'push'; pushedBy: string[]
+}
+
+// The distinct labels of every key that has pushed a message into this
+// source, plus the label of the key that created it (upsertSource's
+// "created by" record) if that key never itself pushed a message — a source
+// created by one key and fed entirely by another still credits both.
+async function pushedByLabels(connectionId: string, creatorKeyId: string | null): Promise<string[]> {
+  const rows = await db.selectDistinct({ label: accessKeys.label })
+    .from(messages)
+    .innerJoin(chats, eq(chats.id, messages.chatId))
+    .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
+    .where(eq(chats.connectionId, connectionId))
+  const labels = new Set(rows.map(r => r.label))
+  if (creatorKeyId) {
+    const [creator] = await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, creatorKeyId))
+    if (creator) labels.add(creator.label)
+  }
+  return [...labels].sort()
+}
 
 export async function agentConnections(): Promise<AgentConnection[]> {
   const rows = await db.select({
-    id: connections.id, channel: connections.channel, status: connections.status,
-    displayName: connections.displayName, externalAccountId: connections.externalAccountId,
+    id: connections.id, channel: connections.channel, status: connections.status, mode: connections.mode,
+    displayName: connections.displayName, externalAccountId: connections.externalAccountId, pushKeyId: connections.pushKeyId,
   }).from(connections)
     .where(eq(connections.purpose, 'archive'))
     .orderBy(desc(connections.createdAt), desc(connections.id))
@@ -197,7 +221,8 @@ export async function agentConnections(): Promise<AgentConnection[]> {
         .limit(1)
       displayName = own?.displayName ?? null
     }
-    out.push({ id: r.id, channel: r.channel, displayName, status: r.status })
+    const pushedBy = r.mode === 'push' ? await pushedByLabels(r.id, r.pushKeyId) : []
+    out.push({ id: r.id, channel: r.channel, displayName, status: r.status, mode: r.mode, pushedBy })
   }
   return out
 }

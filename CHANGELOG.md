@@ -34,7 +34,9 @@ All notable changes to this project are documented here. The format follows
   and WhatsApp, searchable in the portal, over `/api` and in every MCP tool's
   results (the MCP `channel` filter still names only the live channels for
   now). Resending is safe; deletes stay deleted. Attachments are not accepted
-  yet. See "Pushing conversations in" in `docs/self-hosting.md`.
+  yet. Every pushed message remembers the key that delivered it, two keys may
+  feed one source, and a disagreement between them is counted, never
+  overwritten. See "Pushing conversations in" in `docs/self-hosting.md`.
 - **Keys say what they may do.** Settings mints a key with Read (the portal
   and the MCP tools, as before), Push (the import door), or both. A push-only
   key left in a cron job can never read your archive; a read-only agent key

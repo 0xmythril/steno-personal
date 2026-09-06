@@ -24,7 +24,7 @@ describe('MCP bearer auth', () => {
   })
 
   it('401s a push key: the MCP endpoint is a read door', async () => {
-    const push = await mintAccessKey('cron', 'push')
+    const push = await mintAccessKey('cron', { read: false, push: true })
     if (!push.ok) throw new Error(push.reason)
     const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     expect((await POST(mcpRequest(push.rawKey, body))).status).toBe(401)
@@ -67,7 +67,7 @@ describe('whoami', () => {
       .toEqual([['telegram', 'active'], ['whatsapp', 'revoked']])
     // id is this instance's own connection uuid — the one list_chats puts
     // on each chat as connectionId — never the account identifier.
-    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,status')).toBe(true)
+    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,mode,pushedBy,status')).toBe(true)
     expect(JSON.stringify(out)).not.toContain('acct-')
   })
 
@@ -105,6 +105,35 @@ describe('whoami display name', () => {
     await seedMessage(chat, { fromOwner: true, senderExternalId: ME, senderName: 'Retracted', sentAt: new Date(4000), deletedAt: new Date() })
     const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as { connections: Array<{ displayName: string | null }> }
     expect(out.connections.map(c => c.displayName)).toEqual(['Casey'])
+  })
+})
+
+describe('whoami mode and pushedBy', () => {
+  beforeEach(resetDb)
+
+  it('a pushed source reports mode push and the labels of the keys that delivered it; a live row reports mode live and no keys', async () => {
+    const live = await seedConnection({ channel: 'telegram' })
+    const { FORMAT, importBatch, parseBatch } = await import('@/lib/services/import')
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    if (!push.ok) throw new Error(push.reason)
+    const batch = parseBatch({
+      format: FORMAT,
+      source: { type: 'slack', id: 'acme', label: 'Slack (Acme)' },
+      messages: [{
+        externalChatId: 'C01', chatKind: 'group', externalMessageId: '1', senderExternalId: 'U01',
+        senderName: 'Ada', fromOwner: false, sentAt: '2026-09-05T10:00:00Z', type: 'text', text: 'hi',
+      }],
+    })
+    if (!batch.ok) throw new Error(JSON.stringify(batch.problems))
+    await importBatch(push.id, batch.batch)
+
+    const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as {
+      connections: Array<{ id: string; mode: 'live' | 'push'; pushedBy: string[] }>
+    }
+    const liveRow = out.connections.find(c => c.id === live)
+    const pushRow = out.connections.find(c => c.id !== live)
+    expect(liveRow).toMatchObject({ mode: 'live', pushedBy: [] })
+    expect(pushRow).toMatchObject({ mode: 'push', pushedBy: ['cron'] })
   })
 })
 
