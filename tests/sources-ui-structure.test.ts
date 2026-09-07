@@ -76,10 +76,34 @@ describe('transcript page', () => {
     expect(head).toMatch(/conflicts?/)
   })
 
-  it('marks each run with who pushed it, only when more than one pusher delivered to this chat', () => {
+  it('names the pushers from the messages alone — never gated on the source row, which a revocation removes', () => {
+    // Pushers come from push_key_id on the messages themselves and outlive a
+    // revoked source; the last-push time and conflict count live only on the
+    // source row. If the chip is ever re-coupled to `source`, this fails.
     const src = read(path)
-    expect(src).toMatch(/pushers\.length > 1/)
-    expect(src).toMatch(/<span className="pushed-via">via /)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    const pushedByStart = head.indexOf('{page.chat.pushers.length > 0')
+    expect(pushedByStart, 'the pushers-length guard exists').toBeGreaterThan(-1)
+    const sourceStart = head.indexOf('{source &&', pushedByStart)
+    expect(sourceStart, 'the source guard exists').toBeGreaterThan(-1)
+    const pushedByBlock = head.slice(pushedByStart, sourceStart)
+    expect(pushedByBlock, 'the Pushed by block exists').toContain('Pushed by')
+    expect(pushedByBlock).not.toMatch(/\bsource\b/)
+
+    const spanEnd = head.indexOf('</span>', sourceStart)
+    const lastPushBlock = head.slice(sourceStart, spanEnd)
+    expect(lastPushBlock, 'the last-push block exists').toContain('last push')
+    expect(lastPushBlock).toContain('conflict')
+  })
+
+  it('marks each run with who pushed it, only when more than one pusher delivered to this chat', () => {
+    // Sliced to the time span itself, not the whole file: an assertion that
+    // only looks at independent whole-file regexes would still pass if the
+    // guard and the span were decoupled from one another.
+    const src = read(path)
+    const runTimeRegion = src.slice(src.indexOf('msg-time'), src.indexOf('msg-col'))
+    expect(runTimeRegion).toMatch(/pushers\.length > 1/)
+    expect(runTimeRegion).toMatch(/<span className="pushed-via">via /)
   })
 
   it('still offers no way to send anything', () => {

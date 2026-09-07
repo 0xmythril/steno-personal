@@ -69,8 +69,14 @@ export default async function ChatPage({ params, searchParams }: {
               {page.chat.person
                 ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
                 : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
-              {page.chat.pushers.length > 0 && source && (
-                <> &middot; <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
+              {/* Pushers come from the messages, so they outlive a revoked source: the
+                  chip never depends on `source`. Only the last-push time and the
+                  conflict count live on the source row, so only those are gated on it. */}
+              {page.chat.pushers.length > 0 && (
+                <> &middot; <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span></>
+              )}
+              {source && (
+                <> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
               )}
             </span>
           </div>
