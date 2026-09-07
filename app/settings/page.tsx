@@ -7,11 +7,12 @@ import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
 import { ConfirmDialog } from '@/app/confirm-dialog'
 import { RegisterPasskey } from '@/app/register-passkey'
+import { EditableLabel } from './editable-label'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
 import { TelemetrySection } from './telemetry'
 import {
-  mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, renameKeyAction, revokeKeyAction,
+  mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction,
   revokeAllKeysAction, revokeAndPurgeKeyAction, revokePasskeyAction, revokeAllPasskeysAction,
 } from './actions'
 
@@ -99,24 +100,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <table>
               <thead><tr><th>Label</th><th>Can</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
               <tbody>
-                {keys.map(k => (
+                {keys.map(k => {
+                  const rowRenameError = renameKeyId === k.id ? renameError : null
+                  return (
                   <tr key={k.id}>
                     <td className="name">
-                      <form action={renameKeyAction} className="inline">
-                        <input type="hidden" name="keyId" value={k.id} />
-                        <label className="field">
-                          <span>Label</span>
-                          <input name="label" defaultValue={k.label} maxLength={MAX_LABEL_LENGTH} required />
-                          {renameError && renameKeyId === k.id && (
-                            <p className="danger" role="alert">
-                              {renameError === 'label_too_long' ? `Label is too long (max ${MAX_LABEL_LENGTH}).`
-                                : renameError === 'label_empty' ? 'Label cannot be empty.'
-                                : 'That key no longer exists.'}
-                            </p>
-                          )}
-                        </label>
-                        <button type="submit" className="small">Rename</button>
-                      </form>
+                      <EditableLabel
+                        key={`${k.id}:${k.label}:${rowRenameError ?? ''}`}
+                        keyId={k.id}
+                        label={k.label}
+                        maxLength={MAX_LABEL_LENGTH}
+                        error={rowRenameError}
+                      />
                       {k.id === session.keyId && <> <span className="chip">this session</span></>}
                     </td>
                     <td className="muted">{k.canRead && k.canPush ? 'Read, push' : k.canPush ? 'Push' : 'Read'}</td>
@@ -178,7 +173,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                       )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div></div>

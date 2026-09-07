@@ -112,6 +112,15 @@ All notable changes to this project are documented here. The format follows
   own messages when the socket gave none.
 - **Merge suggestions** on the People page now say which row is on Telegram
   and which on WhatsApp, which one is kept, and how many chats each carries.
+- **A key's label is a pencil, not an open box.** The Settings key table used
+  to render every row's label as an always-open text input with a "Label"
+  caption and a Rename button — five stacked boxes in a dense table. The
+  label now reads as plain text with an icon-only pencil button beside it
+  (`aria-label="Rename <label>"`, a visible focus ring, reachable by tap and
+  keyboard); pressing it opens the same rename form in place, `Escape` or
+  Cancel returns to text without posting. `DESIGN.md`'s icon set grows from
+  one glyph to two (passkey, pencil) and is documented as a small, capped,
+  deliberately named set rather than "no icon set is specified."
 
 ## [0.1.0] — 2026-09-04
 

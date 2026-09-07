@@ -96,6 +96,15 @@ button.danger:hover:not([disabled]), .btn.danger:hover { background: var(--bad-s
 button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
 td button, td .btn, .attachment .btn { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
+/* The pencil beside a label: transparent until it is pressed or focused, so a
+   table of labels does not read as a table of boxes. It is a real button —
+   tap and keyboard both open it — so nothing here is a hover reveal; the
+   --edge border only appears on focus, which is what tells a keyboard user
+   it is there without giving it a permanent outline the way a static one
+   would. Sized to the row rather than to the 16px glyph inside it. */
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); }
+.icon-btn:focus-visible { border-color: var(--edge); }
+.editable-label { display: inline-flex; align-items: center; gap: 6px; }
 a.btn:hover { text-decoration: none; }
 form.inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 /* A native select sizes to its widest option. Without this an identity picker

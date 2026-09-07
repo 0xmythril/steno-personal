@@ -59,16 +59,46 @@ describe('settings keys page', () => {
     const body = next === -1 ? actions.slice(start) : actions.slice(start, next)
     expect(body).toMatch(/requireSession\(\)/)
     expect(body).toMatch(/renameAccessKey\(/)
-    const page = readFileSync('app/settings/page.tsx', 'utf8')
-    expect(page).toMatch(/action=\{renameKeyAction\}/)
+    // The rename form itself lives behind the pencil, in EditableLabel, not
+    // inline in the page — see the pencil-affordance test below.
+    const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
+    expect(editableLabel).toMatch(/action=\{renameKeyAction\}/)
   })
   it('the rename input is bounded by MAX_LABEL_LENGTH', () => {
+    // EditableLabel is a client component; it cannot import MAX_LABEL_LENGTH
+    // directly, because lib/services/access-keys.ts pulls in the SQLite
+    // client at module scope and that fails the browser build. The constant
+    // instead flows in as the `maxLength` prop from page.tsx.
     const page = readFileSync('app/settings/page.tsx', 'utf8')
-    const start = page.indexOf('action={renameKeyAction}')
+    const start = page.indexOf('<EditableLabel')
     expect(start).toBeGreaterThan(-1)
-    const formEnd = page.indexOf('</form>', start)
-    const form = page.slice(start, formEnd)
+    const tagEnd = page.indexOf('/>', start)
+    expect(page.slice(start, tagEnd)).toMatch(/maxLength=\{MAX_LABEL_LENGTH\}/)
+
+    const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
+    expect(editableLabel).not.toMatch(/from '@\/lib\/services\/access-keys'/)
+    const formStart = editableLabel.indexOf('action={renameKeyAction}')
+    expect(formStart).toBeGreaterThan(-1)
+    const formEnd = editableLabel.indexOf('</form>', formStart)
+    const form = editableLabel.slice(formStart, formEnd)
     expect(form).toMatch(/name="label"/)
-    expect(form).toMatch(/maxLength=\{MAX_LABEL_LENGTH\}/)
+    expect(form).toMatch(/maxLength=\{maxLength\}/)
+  })
+  // A pencil replaced the always-open rename box (owner review, 2026-09-07):
+  // five stacked "Label" inputs in a dense table read as five open boxes
+  // before this. The label cell now renders EditableLabel, which is the only
+  // place the rename form itself is allowed to live.
+  it('the Label cell renders EditableLabel, not an inline rename form', () => {
+    const page = readFileSync('app/settings/page.tsx', 'utf8')
+    expect(page).toMatch(/<EditableLabel/)
+    // The old always-open form posted a bare `name="label" defaultValue={k.label}`
+    // straight in the page; that pattern must now live only in the component.
+    expect(page).not.toMatch(/name="label" defaultValue=\{k\.label\}/)
+  })
+  it('the pencil is a real button with an accessible name, not a hover reveal', () => {
+    const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
+    expect(editableLabel).toMatch(/<button type="button" className="icon-btn"/)
+    expect(editableLabel).toMatch(/aria-label=\{`Rename \$\{label\}`\}/)
+    expect(editableLabel).not.toMatch(/:hover/)
   })
 })
