@@ -6,6 +6,7 @@
   --paper:#F3F7F4; --card:#FFFFFF; --well:#E9F0EB; --ink:#14201B; --body:#2A3A33; --muted:#5E6F67;
   --hairline:#D7E1DB; --edge:#7C8C84; --rule:#B9D3C7; --mint:#A7E1D3; --mint-soft:#DDF3EC; --pine:#1E7A63; --pine-ink:#135A49;
   --pencil:#E6F5FA; --btn-bg:#14201B; --btn-fg:#FFFFFF; --ok:#1E7A63; --warn:#9C610D; --bad:#B42318; --bad-soft:#FBE4E1;
+  --scrim:rgba(20,32,27,.45);
   --shadow:0 1px 2px rgba(20,32,27,.06),0 8px 24px rgba(20,32,27,.06);
   --serif:var(--font-serif),Georgia,serif;
   --sans:var(--font-sans),-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
@@ -15,12 +16,14 @@
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
   --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
+  --scrim:rgba(0,0,0,.6);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 } }
 :root[data-theme="dark"] {
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
   --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
+  --scrim:rgba(0,0,0,.6);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 }
 
@@ -199,9 +202,16 @@ details.snippet pre { border: 0; border-radius: 6px; }
    cell it opens from. */
 button.confirm-open { border-color: var(--bad); color: var(--bad); }
 button.confirm-open:hover:not([disabled]) { background: var(--bad-soft); border-color: var(--bad); }
-dialog.confirm { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; max-width: 440px; width: calc(100% - 32px); background: var(--card); box-shadow: var(--shadow); }
-dialog.confirm::backdrop { background: var(--ink); opacity: 0.45; }
-dialog.confirm h3 { margin-bottom: 4px; }
+/* showModal() only promotes the dialog to the top layer for painting — the
+   node stays a DOM descendant of wherever it was mounted. Three triggers
+   (revoke a key, remove a passkey, delete a source) sit in `td.end`, whose
+   `text-align: right` and `white-space: nowrap` both inherit into anything
+   mounted there, including a <dialog>. Reset both here for the same reason
+   an earlier fix reset button metrics below and missed these two: nothing
+   in the dialog should inherit from the row or cell it opens from. */
+dialog.confirm { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; max-width: 520px; width: calc(100% - 32px); background: var(--card); box-shadow: var(--shadow); text-align: left; white-space: normal; }
+dialog.confirm::backdrop { background: var(--scrim); }
+dialog.confirm h3 { margin: 0 0 4px; font-size: 16px; color: var(--ink); text-align: left; }
 /* showModal() only promotes the dialog to the top layer for painting — the
    node stays a DOM descendant of wherever it was mounted. At a table-cell
    trigger, `td button` (0,0,0,2) outranks the base `button` rule (0,0,0,1)
@@ -210,9 +220,18 @@ dialog.confirm h3 { margin-bottom: 4px; }
    restores the base 36px metrics so the dialog never inherits the row or
    cell it opens from. */
 dialog.confirm button, dialog.confirm .btn { height: 36px; padding: 0 14px; font-size: 14px; border-radius: 8px; }
-dialog.confirm .confirm-body { padding: 12px 14px; margin: 10px 0 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); }
-dialog.confirm .confirm-body p { font-size: 13px; color: var(--ink); margin: 0; }
-dialog.confirm .actions { margin-top: 14px; justify-content: flex-end; }
+/* The body is plain prose, not a boxed danger callout: inline, that box
+   marks a danger zone inside an ordinary card, but in a dialog the whole
+   surface is already the warning, so a second box only cramps it. */
+dialog.confirm .confirm-body { margin: 8px 0 16px; font-size: 13px; color: var(--body); max-width: 60ch; }
+dialog.confirm .confirm-body p { margin: 0; }
+dialog.confirm .actions { margin-top: 14px; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+/* The push-key row passes two complete forms (Revoke, and Revoke & delete
+   what it pushed) instead of one, wrapped in the ordinary .stack column
+   layout. Inside the actions row they read as one line with Cancel, so the
+   column is overridden back to a row here only — .stack itself stays a
+   column everywhere else it's used. */
+dialog.confirm .actions .stack { flex-direction: row; flex-wrap: wrap; gap: 8px; }
 
 /* Tables */
 .tbl { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--card); }

@@ -116,6 +116,21 @@ describe('theme mechanics', () => {
   it('no pills', () => {
     expect(css).not.toMatch(/border-radius:\s*(999|9999)px/)
   })
+
+  // The bug this guards: dialog.confirm::backdrop used to paint var(--ink),
+  // which is near-black in light mode but near-white in dark, so the scrim
+  // inverted with the palette instead of following it. --scrim is defined
+  // per palette (an alpha over the page, not a flat colour) so the backdrop
+  // always darkens rather than sometimes veiling in near-white.
+  it('the confirm dialog scrim is its own token, not --ink', () => {
+    for (const sel of [LIGHT, DARK_MEDIA, DARK_FORCED]) {
+      expect(block(sel), sel).toMatch(/--scrim:\s*rgba\(/)
+    }
+    const backdrop = css.match(/dialog\.confirm::backdrop\s*\{([^}]*)\}/)
+    expect(backdrop, 'globals.css has a dialog.confirm::backdrop rule').not.toBeNull()
+    expect(backdrop![1]).toMatch(/background:\s*var\(--scrim\)/)
+    expect(backdrop![1]).not.toMatch(/var\(--ink\)/)
+  })
 })
 
 // The bug this guards: a bare <button>, a .token key readout and inline <code>

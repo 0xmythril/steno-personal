@@ -42,9 +42,13 @@ export function ConfirmDialog({ trigger, title, body, confirm, children }: {
       <dialog className="confirm" ref={ref} aria-labelledby={titleId} onClick={onBackdropClick}>
         <h3 id={titleId}>{title}</h3>
         <div className="confirm-body">{body}</div>
-        {confirm ? withSubmit(children, confirm) : children}
+        {/* Cancel and the acting form(s) are siblings inside one flex row: any
+            direct child of a flex container becomes a flex item regardless of
+            its own display, so a plain <form> (block by default) lines up
+            beside Cancel instead of falling to a row of its own. */}
         <div className="actions">
           <button type="button" onClick={close}>Cancel</button>
+          {confirm ? withSubmit(children, confirm) : children}
         </div>
       </dialog>
     </>

@@ -52,6 +52,7 @@ Mint and pencil tint are taken from the mark and never change. Everything else i
 | `warn` | `#9C610D` | Status: stale, pending, needs attention. 5.1:1 on white; the shared system's `#A8690F` fell just short |
 | `bad` | `#B42318` | Status: logged out, error, and the WhatsApp risk copy |
 | `bad-soft` | `#FBE4E1` | Fill behind a bad banner |
+| `scrim` | `rgba(20,32,27,.45)` | The backdrop behind a confirm dialog. An alpha over the page rather than a flat colour, so it darkens on both palettes instead of inverting with them |
 
 ### Dark ("the pad at night")
 
@@ -76,6 +77,7 @@ Not an inversion. The canvas keeps its green cast, mint becomes the primary butt
 | `btn-bg` / `btn-fg` | `#A7E1D3` / `#0E1512` |
 | `ok` / `warn` / `bad` | `#7FD3BC` / `#E2B25A` / `#F08A7E` |
 | `bad-soft` | `#331B18` |
+| `scrim` | `rgba(0,0,0,.6)` |
 
 ### Rules
 
@@ -191,7 +193,9 @@ The one icon in the interface. A person and a key, drawn in `currentColor` strok
 
 ### Confirm
 
-Anything that cannot be undone opens its consequence before it can be pressed. `ConfirmDialog` (`app/confirm-dialog.tsx`) is the one component every such action shares: an *outlined* `.confirm-open` button is the trigger that only opens the question, and a native `<dialog>` — opened with `showModal()` — holds the consequence in a `bad-soft` body above a *filled* `danger` button that acts. Outline opens, fill acts — that pairing is the whole grammar, and it lives in one place so it cannot drift between screens.
+Anything that cannot be undone opens its consequence before it can be pressed. `ConfirmDialog` (`app/confirm-dialog.tsx`) is the one component every such action shares: an *outlined* `.confirm-open` button is the trigger that only opens the question, and a native `<dialog>` — opened with `showModal()` — lays out a title on its own line, the consequence as plain prose below it, and one row of actions, wrapping if needed, ending in a *filled* `danger` button that acts. Outline opens, fill acts — that pairing is the whole grammar, and it lives in one place so it cannot drift between screens.
+
+The body is plain prose, not a boxed callout: inline, a `bad-soft` box marks a danger zone inside an ordinary card, but inside a dialog the whole surface is already the warning, so a second box only cramped it. The backdrop is the `scrim` token, not `ink` — `ink` is near-black in light mode and near-white in dark, so painting it behind the dialog inverted from a shadow into a pale veil; `scrim` is defined per palette so it always darkens the page it sits over.
 
 The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke a key (or revoke and delete what it pushed), revoke all keys, remove a passkey, remove all passkeys, delete a source, merge a person into another.
 
