@@ -88,6 +88,49 @@ describe('transcript page', () => {
     expect(head).toMatch(/conflicts?/)
   })
 
+  it('pluralises the message count instead of always saying "messages"', () => {
+    // A one-message chat used to read "1 messages"; the chats page already
+    // pluralises this way, this page now matches it.
+    const src = read(path)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head).toContain("page.chat.messageCount === 1 ? 'message' : 'messages'")
+  })
+
+  it('renders the conflict count as a compact marker, not trailing prose, and only when there is one', () => {
+    const src = read(path)
+    expect(src, 'imports AlertIcon').toMatch(/import\s*\{\s*AlertIcon\s*\}\s*from\s*'@\/app\/icons'/)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    // Gated on a nonzero count: a chat with no conflicts shows no marker.
+    expect(head).toContain('source.lastImportConflicts > 0')
+    expect(head).toContain('className="conflict-marker"')
+    // The full sentence lives in the aria-label; the visible text is just the count.
+    expect(head).toContain("aria-label={`${source.lastImportConflicts} ${source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push`}")
+    expect(head).toContain('<AlertIcon />')
+    // Not a link yet — the History section it will point at does not exist.
+    expect(head).not.toMatch(/<a\b/)
+  })
+
+  it('left-aligns the pad-head meta instead of ragging it against the right edge', () => {
+    const css = read('app/globals.css')
+    const headRule = css.slice(css.indexOf('.pad-head {'), css.indexOf('.pad-head h1'))
+    expect(headRule, 'the .pad-head rule exists').not.toBe('')
+    expect(headRule).not.toMatch(/flex-end/)
+    const metaAt = css.indexOf('.pad-head-meta {')
+    expect(metaAt, 'the .pad-head-meta rule exists').toBeGreaterThan(-1)
+    const metaRule = css.slice(metaAt, css.indexOf('}', metaAt) + 1)
+    expect(metaRule).not.toMatch(/flex-end/)
+  })
+
+  it('the conflict marker carries no border and no pointer cursor: it is not pressable yet', () => {
+    const css = read('app/globals.css')
+    const at = css.indexOf('.conflict-marker {')
+    expect(at, 'the .conflict-marker rule exists').toBeGreaterThan(-1)
+    const rule = css.slice(at, css.indexOf('}', at) + 1)
+    expect(rule).not.toMatch(/border/)
+    expect(rule).not.toMatch(/cursor:\s*pointer/)
+    expect(rule).toMatch(/color:\s*var\(--warn\)/)
+  })
+
   it('names the pushers from the messages alone — never gated on the source row, which a revocation removes', () => {
     // Pushers come from push_key_id on the messages themselves and outlive a
     // revoked source; the last-push time and conflict count live only on the

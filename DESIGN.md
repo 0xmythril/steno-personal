@@ -185,11 +185,13 @@ Favicon: the same paths on a rounded square with literal hex values, palette inv
 
 ### Icon set
 
-The app has a small, named, deliberately capped icon set — two glyphs, no more. Each is drawn in `currentColor` strokes so it follows the surrounding text colour in both palettes, each is `aria-hidden` because the control around it carries the accessible name, and each is drawn for the one size it is actually used at rather than scaled down from a generic set. Adding a third glyph is a design decision, weighed the same as adding a colour token under Colors above, not a convenience for the next button that would rather show a picture than a word.
+The app has a small, named, deliberately capped icon set — three glyphs, no more. Each is drawn in `currentColor` strokes so it follows the surrounding text colour in both palettes, each is `aria-hidden` because the control around it carries the accessible name, and each is drawn for the one size it is actually used at rather than scaled down from a generic set. Adding a fourth glyph is a design decision, weighed the same as adding a colour token under Colors above, not a convenience for the next button that would rather show a picture than a word.
 
 **Passkey.** A person and a key, drawn at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px.
 
 **Pencil.** Drawn at 16px, on the icon-only button that turns a key's label from text into its rename form in Settings. Source: `app/icons.tsx`. It is a real button — `aria-label={`Rename ${label}`}`, a visible focus ring, reachable by tap and by keyboard — never a hover reveal, because the label table is used from a phone.
+
+**Alert.** Drawn at 14px, beside the conflict count in a transcript's provenance line (`.conflict-marker`, `--warn` text, no border, no pointer cursor). Source: `app/icons.tsx`. It is not a button — the marker isn't a link yet, since the per-chat History section it will point at doesn't exist — so the glyph, the `--warn` colour and a full-sentence `aria-label` on the marker all say the same thing together rather than any one of them carrying it alone. A chat with no conflicts renders no marker.
 
 ### Note chip
 
@@ -277,7 +279,7 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 
 ## Known Gaps
 
-- The icon set (Components → Icon set) stays at two glyphs, passkey and pencil, on purpose. Prefer text labels everywhere else. The brand mark in the nav and footer is a separate case (Components → Mark); a third icon-set glyph needs the same kind of argument the first two got, not a convenience.
+- The icon set (Components → Icon set) stays at three glyphs, passkey, pencil and alert, on purpose. Prefer text labels everywhere else. The brand mark in the nav and footer is a separate case (Components → Mark); a fourth icon-set glyph needs the same kind of argument the first three got, not a convenience.
 - Motion is limited to 150ms colour transitions.
 - Form validation beyond the `bad` colour is not designed. A field error goes inside its `.field`, under the input; `.row > .danger` breaks to its own full-width line as a backstop, because `align-items: flex-end` would otherwise sit it on the submit button's baseline.
 - Print styles are not designed.

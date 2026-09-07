@@ -9,6 +9,7 @@ import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
 import { formatTime, formatRelativeTime } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
 import { track } from '@/lib/services/telemetry'
+import { AlertIcon } from '@/app/icons'
 
 const PAGE_SIZE = 50
 
@@ -64,7 +65,7 @@ export default async function ChatPage({ params, searchParams }: {
             <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
             <div className="pad-head-meta">
               <span className="muted mono">
-                Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} messages
+                Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} {page.chat.messageCount === 1 ? 'message' : 'messages'}
                 {/* The address book is edited on /people; this page only ever
                     links to it, because nothing here may grow a form. */}
                 {page.chat.person
@@ -81,7 +82,24 @@ export default async function ChatPage({ params, searchParams }: {
                     <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span>
                   )}
                   {source && (
-                    <> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
+                    <> &middot; last push {formatRelativeTime(source.lastPushAt)}</>
+                  )}
+                  {/* Not a link yet: it will point at this chat's History section
+                      once that section exists. Until then it must not look
+                      pressable, so no border and no pointer cursor (.conflict-marker
+                      in globals.css) and no wrapping anchor here. A chat with no
+                      conflicts shows no marker at all — there is nothing to flag. */}
+                  {source && source.lastImportConflicts > 0 && (
+                    <>
+                      {' '}&middot;{' '}
+                      <span
+                        className="conflict-marker"
+                        aria-label={`${source.lastImportConflicts} ${source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push`}
+                      >
+                        <AlertIcon />
+                        {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'}
+                      </span>
+                    </>
                   )}
                 </span>
               )}

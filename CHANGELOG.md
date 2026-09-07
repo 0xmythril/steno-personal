@@ -121,6 +121,15 @@ All notable changes to this project are documented here. The format follows
   Cancel returns to text without posting. `DESIGN.md`'s icon set grows from
   one glyph to two (passkey, pencil) and is documented as a small, capped,
   deliberately named set rather than "no icon set is specified."
+- **A transcript header that reads left.** A one-message chat no longer says
+  "1 messages"; the counts line and the provenance line both left-align
+  under the title instead of ragging against the right edge; and the
+  trailing "N conflicts in the last push" prose is now a compact `--warn`
+  marker (an alert glyph plus the count) with a full-sentence `aria-label`.
+  It isn't a link yet — the per-chat History it will point at doesn't exist
+  — so it carries no border and no pointer cursor, and a chat with no
+  conflicts shows no marker. `DESIGN.md`'s icon set grows to three glyphs
+  (passkey, pencil, alert).
 
 ## [0.1.0] — 2026-09-04
 

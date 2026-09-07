@@ -279,10 +279,14 @@ td.end { text-align: right; white-space: nowrap; }
 
 /* Transcript */
 .pad { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
-.pad-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
+.pad-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
 .pad-head h1 { font-size: 24px; }
-.pad-head-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pad-head-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .pad-head-meta .provenance { font-size: 12px; }
+/* Not a link yet — it will point at a per-chat History section once that
+   exists — so it carries none of a control's affordances: no border, no
+   pointer cursor, no hover state. */
+.conflict-marker { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); }
 .pager { display: flex; gap: 14px; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); margin: 0; }
 .pager.foot { border-bottom: 0; border-top: 1px solid var(--hairline); }
 ul.transcript { list-style: none; padding: 0 0 6px; margin: 0; }
