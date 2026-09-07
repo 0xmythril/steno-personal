@@ -69,7 +69,11 @@ All notable changes to this project are documented here. The format follows
   only its two ids to `deletes`, never its text. The transcript header
   carries an Export link to it now; the per-message "· pusher" annotation on
   the sender line is gone with it — the header already says who pushed last,
-  and anyone who needs it per message downloads the file instead.
+  and anyone who needs it per message downloads the file instead. `raw` is
+  included only for a message delivered through the push door — a live
+  message's `raw` is a third-party protocol payload we never audited for
+  identifiers — and a chat title longer than a batch entry allows is
+  truncated on export so the file always keeps its own round-trip promise.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.

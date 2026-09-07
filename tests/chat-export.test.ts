@@ -140,6 +140,38 @@ describe('exportChat', () => {
     void a
   })
 
+  it('a live WhatsApp-shaped message exports with no raw field, and its JID never appears in the payload', async () => {
+    const conn = await seedConnection({ channel: 'whatsapp', externalAccountId: '447700900999' })
+    const chatId = await seedChat(conn, { channel: 'whatsapp', title: 'Ada', externalChatId: '447700900123@s.whatsapp.net' })
+    const jid = '447700900456:12@s.whatsapp.net'
+    await seedMessage(chatId, {
+      text: 'see you then', fromOwner: true, senderExternalId: '',
+      raw: { key: { remoteJid: '447700900123@s.whatsapp.net', fromMe: true, id: 'ABC123', participant: jid } },
+    })
+
+    const out = await exportChat(chatId) as ChatExport
+    expect(out.messages).toHaveLength(1)
+    expect(out.messages[0]).not.toHaveProperty('raw')
+    expect(JSON.stringify(out)).not.toContain(jid)
+  })
+
+  it('a pushed message keeps its raw intact, and it still round-trips through parseBatch once provenance is stripped', async () => {
+    const key = await pushKey('agent-a')
+    const pusherRaw = { origin: 'cron-job', attempt: 3 }
+    const res = await importBatch(key.id, parsed(batch({ messages: [message({ raw: pusherRaw })] })))
+    const [row] = await db.select({ id: chats.id }).from(chats).where(eq(chats.connectionId, res.source.id))
+
+    const out = await exportChat(row.id) as ChatExport
+    const m = out.messages[0]
+    expect(m).toHaveProperty('raw')
+    // The pusher's own data, verbatim — never re-shaped, never dropped.
+    expect(m.raw).toEqual(pusherRaw)
+
+    const stripped = out.messages.map(({ provenance: _p, ...rest }) => rest)
+    const reparsed = parseBatch({ format: FORMAT, source: { type: 'slack', id: 'acme-3', label: 'x' }, messages: stripped, deletes: out.deletes })
+    expect(reparsed.ok).toBe(true)
+  })
+
   it('no key value, hash, or prefix appears anywhere in the exported JSON', async () => {
     const { chatId, keyId, rawKey } = await pushChatId()
     const [row] = await db.select().from(accessKeys).where(eq(accessKeys.id, keyId))
