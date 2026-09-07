@@ -1,3 +1,4 @@
+import { splitDifference } from '../../difference'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { getDispute } from '@/lib/services/disputes'
@@ -9,11 +10,9 @@ import { resolveAction } from '../../actions'
 function ChangedText({ text, other }: { text: string | null; other: string | null }) {
   if (text === null) return <em>No text</em>
   if (text === '') return <em>Empty text</em>
-  const base = other ?? ''
-  let start = 0, end = 0
-  while (start < Math.min(text.length, base.length) && text[start] === base[start]) start++
-  while (end < Math.min(text.length, base.length) - start && text[text.length - end - 1] === base[base.length - end - 1]) end++
-  return <>{text.slice(0, start)}<mark>{text.slice(start, text.length - end)}</mark>{end ? text.slice(-end) : ''}</>
+  const parts = splitDifference(text, other ?? '')
+  return <>{parts.before}<mark>{parts.changed}</mark>{parts.after}</>
+
 }
 export default async function DisputePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Params> }) {
   const session = await requireSession(), { id } = await params, sp = await searchParams
