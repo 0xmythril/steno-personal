@@ -199,6 +199,11 @@ details.confirm > summary:hover { background: var(--bad-soft); }
 details.confirm[open] { flex-basis: 100%; }
 details.confirm .confirm-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); max-width: 60ch; }
 details.confirm .confirm-body p { font-size: 13px; color: var(--ink); }
+/* td.end sets white-space: nowrap and text-align: right for its own single
+   line of numbers; a confirm sentence sitting inside that cell inherits both
+   and cannot wrap. Undo them here so the sentence reads left-to-right and
+   wraps like prose. */
+details.confirm .confirm-body { white-space: normal; text-align: left; }
 
 /* Tables */
 .tbl { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--card); }
