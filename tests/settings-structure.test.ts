@@ -97,8 +97,47 @@ describe('settings keys page', () => {
   })
   it('the pencil is a real button with an accessible name, not a hover reveal', () => {
     const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
-    expect(editableLabel).toMatch(/<button type="button" className="icon-btn"/)
+    expect(editableLabel).toMatch(/<button ref=\{pencilRef\} type="button" className="icon-btn"/)
     expect(editableLabel).toMatch(/aria-label=\{`Rename \$\{label\}`\}/)
     expect(editableLabel).not.toMatch(/:hover/)
+    // The component itself carries no hover rule, but a `tr:hover .icon-btn`
+    // or `.icon-btn:hover` added to the stylesheet would slip past the check
+    // above and reintroduce a hover-only affordance. Every selector line that
+    // names .icon-btn must be free of :hover too.
+    const css = readFileSync('app/globals.css', 'utf8')
+    const iconBtnSelectors = css.split('\n')
+      .filter(line => line.includes('.icon-btn') && line.includes('{'))
+      .map(line => line.slice(0, line.indexOf('{')))
+    expect(iconBtnSelectors.length).toBeGreaterThan(0)
+    for (const selector of iconBtnSelectors) expect(selector).not.toMatch(/:hover/)
+  })
+  // Review round 2 (2026-09-07): the focused element unmounts on both Cancel
+  // and Escape, so without this a keyboard user landed on <body> and their
+  // next Tab restarted at the top of the document.
+  it('cancelling the edit — by the Cancel button or by Escape — returns focus to the pencil', () => {
+    const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
+    expect(editableLabel).toMatch(/useRef<HTMLButtonElement>/)
+    expect(editableLabel).toMatch(/ref=\{pencilRef\}/)
+    // Exactly one focus call: both Escape and Cancel route through the same
+    // `cancel` function rather than duplicating the focus-return logic.
+    const focusCalls = editableLabel.match(/pencilRef\.current\?\.focus\(\)/g) ?? []
+    expect(focusCalls.length).toBe(1)
+    expect(editableLabel).toMatch(/if \(e\.key === 'Escape'\) \{ e\.preventDefault\(\); cancel\(\) \}/)
+    expect(editableLabel).toMatch(/onClick=\{cancel\}/)
+  })
+  // A no-op save (open the pencil, submit the same text back) changes
+  // neither the label nor the error, so the row's key is stable and the
+  // component never remounts to close itself. onSubmit must close the
+  // editing state directly, without calling preventDefault — the submit
+  // still has to reach renameKeyAction.
+  it('submitting the rename form closes the editing state without swallowing the submit', () => {
+    const editableLabel = readFileSync('app/settings/editable-label.tsx', 'utf8')
+    expect(editableLabel).toMatch(/onSubmit=\{onSubmit\}/)
+    const start = editableLabel.indexOf('const onSubmit = ()')
+    expect(start).toBeGreaterThan(-1)
+    const end = editableLabel.indexOf('\n  }', start)
+    const body = editableLabel.slice(start, end)
+    expect(body).toMatch(/setEditing\(false\)/)
+    expect(body).not.toMatch(/preventDefault/)
   })
 })

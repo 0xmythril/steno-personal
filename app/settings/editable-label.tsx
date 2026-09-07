@@ -1,5 +1,5 @@
 'use client'
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { PencilIcon } from '@/app/icons'
 import { renameKeyAction } from './actions'
 
@@ -21,6 +21,14 @@ import { renameKeyAction } from './actions'
 // the SQLite client makes it a server-only module, and a 'use client' file
 // that imports it pulls better-sqlite3 into the browser bundle and fails the
 // build.
+//
+// Focus follows the switch, in both directions. Opening moves focus onto the
+// input (`autoFocus` — the input is a freshly mounted node every time editing
+// turns on, so the attribute fires). Closing — Cancel, Escape, or a Save that
+// has just been submitted — unmounts whatever was focused inside the form, so
+// `pencilRef` and `returnFocusRef` carry focus back to the pencil that opened
+// it; without this a keyboard user lands on <body> and their next Tab
+// restarts at the top of the document.
 export function EditableLabel({
   keyId,
   label,
@@ -33,25 +41,47 @@ export function EditableLabel({
   error?: string | null
 }) {
   const [editing, setEditing] = useState(Boolean(error))
+  const pencilRef = useRef<HTMLButtonElement>(null)
+  const returnFocusRef = useRef(false)
+
+  useEffect(() => {
+    if (!editing && returnFocusRef.current) {
+      returnFocusRef.current = false
+      pencilRef.current?.focus()
+    }
+  }, [editing])
+
+  const cancel = () => {
+    returnFocusRef.current = true
+    setEditing(false)
+  }
 
   if (!editing) {
     return (
       <span className="editable-label">
         {label}
-        <button type="button" className="icon-btn" aria-label={`Rename ${label}`} onClick={() => setEditing(true)}>
+        <button ref={pencilRef} type="button" className="icon-btn" aria-label={`Rename ${label}`} onClick={() => setEditing(true)}>
           <PencilIcon />
         </button>
       </span>
     )
   }
 
-  const cancel = () => setEditing(false)
   const onKeyDown = (e: KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'Escape') { e.preventDefault(); cancel() }
   }
+  // A no-op save (the owner opens the pencil and submits the same text back)
+  // changes neither the label nor the error, so the row's key in page.tsx is
+  // stable and this component never remounts to reset `editing` on its own.
+  // Close here instead — this only updates local state, so the submit still
+  // reaches renameKeyAction; nothing here calls preventDefault.
+  const onSubmit = () => {
+    returnFocusRef.current = true
+    setEditing(false)
+  }
 
   return (
-    <form action={renameKeyAction} className="inline" onKeyDown={onKeyDown}>
+    <form action={renameKeyAction} className="inline" onKeyDown={onKeyDown} onSubmit={onSubmit}>
       <input type="hidden" name="keyId" value={keyId} />
       <label className="field">
         <span>Label</span>
