@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { requireSession, endSession, isHttps } from '@/lib/auth'
 import {
   mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys, revokeAccessKeyAndPurge,
+  renameAccessKey,
 } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
@@ -78,6 +79,17 @@ export async function clearInstructionsKeyAction() {
   const jar = await cookies()
   jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   redirect('/settings')
+}
+
+// A label is a note to the owner; renaming carries no authority and never
+// touches a flash cookie or the raw key.
+export async function renameKeyAction(formData: FormData) {
+  await requireSession()
+  const keyId = String(formData.get('keyId') ?? '')
+  const label = String(formData.get('label') ?? '')
+  const result = await renameAccessKey(keyId, label)
+  if (!result.ok) redirect(`/settings?renameError=${result.reason}&renameKeyId=${encodeURIComponent(keyId)}`)
+  revalidatePath('/settings')
 }
 
 export async function revokeKeyAction(formData: FormData) {

@@ -119,6 +119,18 @@ export async function revealAccessKey(id: string): Promise<string | null> {
   return row ? decryptSecret(row.keyCiphertext) : null
 }
 
+// A label is a note to the owner, not a credential: renaming a key changes
+// only what this page calls it, never what it can do. Only an unrevoked key
+// can be renamed, and the label is the only column this touches.
+export async function renameAccessKey(id: string, label: string): Promise<{ ok: true } | { ok: false; reason: 'label_empty' | 'label_too_long' | 'not_found' }> {
+  const checked = checkLabel(label)
+  if (!checked.ok) return checked
+  const res = await db.update(accessKeys).set({ label: checked.label })
+    .where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id })
+  if (res.length === 0) return { ok: false, reason: 'not_found' }
+  return { ok: true }
+}
+
 export async function revokeAccessKey(id: string): Promise<boolean> {
   const res = await db.update(accessKeys).set({ revokedAt: new Date() })
     .where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id })

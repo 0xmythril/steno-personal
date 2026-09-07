@@ -10,8 +10,8 @@ import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
 import { TelemetrySection } from './telemetry'
 import {
-  mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction,
-  revokeAndPurgeKeyAction, revokePasskeyAction, revokeAllPasskeysAction,
+  mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, renameKeyAction, revokeKeyAction,
+  revokeAllKeysAction, revokeAndPurgeKeyAction, revokePasskeyAction, revokeAllPasskeysAction,
 } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -34,6 +34,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const mintError = typeof sp.mintError === 'string' ? sp.mintError : null
   const revealError = typeof sp.revealError === 'string' ? sp.revealError : null
   const instructionsError = typeof sp.instructionsError === 'string' ? sp.instructionsError : null
+  const renameError = typeof sp.renameError === 'string' ? sp.renameError : null
+  const renameKeyId = typeof sp.renameKeyId === 'string' ? sp.renameKeyId : null
 
   const jar = await cookies()
   let minted = parseFlash(jar.get(MINTED_KEY_COOKIE)?.value)
@@ -98,7 +100,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <tbody>
                 {keys.map(k => (
                   <tr key={k.id}>
-                    <td className="name">{k.label}{k.id === session.keyId && <> <span className="chip">this session</span></>}</td>
+                    <td className="name">
+                      <form action={renameKeyAction} className="inline">
+                        <input type="hidden" name="keyId" value={k.id} />
+                        <label className="field">
+                          <span>Label</span>
+                          <input name="label" defaultValue={k.label} maxLength={MAX_LABEL_LENGTH} required />
+                          {renameError && renameKeyId === k.id && (
+                            <p className="danger" role="alert">
+                              {renameError === 'label_too_long' ? `Label is too long (max ${MAX_LABEL_LENGTH}).`
+                                : renameError === 'label_empty' ? 'Label cannot be empty.'
+                                : 'That key no longer exists.'}
+                            </p>
+                          )}
+                        </label>
+                        <button type="submit" className="small">Rename</button>
+                      </form>
+                      {k.id === session.keyId && <> <span className="chip">this session</span></>}
+                    </td>
                     <td className="muted">{k.canRead && k.canPush ? 'Read, push' : k.canPush ? 'Push' : 'Read'}</td>
                     <td>
                       {revealed?.id === k.id ? (

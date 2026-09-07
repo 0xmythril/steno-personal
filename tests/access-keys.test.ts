@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import {
   mintAccessKey, verifyAccessKey, listActiveAccessKeys, revealAccessKey,
-  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, mintFirstAccessKey, KEY_PREFIX,
+  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, mintFirstAccessKey, renameAccessKey, KEY_PREFIX,
 } from '@/lib/services/access-keys'
 
 describe('access keys', () => {
@@ -91,6 +91,46 @@ describe('access keys', () => {
     await mintAccessKey('a')
     const blob = JSON.stringify(await listActiveAccessKeys())
     expect(blob).not.toMatch(/keyHash|keyCiphertext|key_hash|key_ciphertext/)
+  })
+})
+
+// A label is a note to the owner, not a credential: renaming changes what
+// the row is called and nothing about what the key can do.
+describe('renameAccessKey', () => {
+  beforeEach(resetDb)
+
+  it('renames an active key, changing only the label', async () => {
+    const r = await mintAccessKey('old label', { read: true, push: true })
+    if (!r.ok) throw new Error(r.reason)
+    const before = (await listActiveAccessKeys())[0]
+    expect(await renameAccessKey(r.id, 'new label')).toEqual({ ok: true })
+    const after = (await listActiveAccessKeys())[0]
+    expect(after.label).toBe('new label')
+    expect(after.prefix).toBe(before.prefix)
+    expect(after.createdAt).toEqual(before.createdAt)
+    expect(after.canRead).toBe(before.canRead)
+    expect(after.canPush).toBe(before.canPush)
+    // The hash is untouched: the same raw key still verifies, now under the new label.
+    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'new label', canRead: true, canPush: true })
+  })
+
+  it('refuses an empty or over-long label, the same reasons minting uses', async () => {
+    const r = await mintAccessKey('a')
+    if (!r.ok) throw new Error(r.reason)
+    expect(await renameAccessKey(r.id, '   ')).toEqual({ ok: false, reason: 'label_empty' })
+    expect(await renameAccessKey(r.id, 'x'.repeat(101))).toEqual({ ok: false, reason: 'label_too_long' })
+    expect((await listActiveAccessKeys())[0].label).toBe('a')
+  })
+
+  it('answers not_found for a revoked key, and leaves its label alone', async () => {
+    const r = await mintAccessKey('a')
+    if (!r.ok) throw new Error(r.reason)
+    await revokeAccessKey(r.id)
+    expect(await renameAccessKey(r.id, 'new')).toEqual({ ok: false, reason: 'not_found' })
+  })
+
+  it('answers not_found for an id that never existed', async () => {
+    expect(await renameAccessKey('not-a-real-id', 'new')).toEqual({ ok: false, reason: 'not_found' })
   })
 })
 

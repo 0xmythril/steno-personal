@@ -43,6 +43,9 @@ All notable changes to this project are documented here. The format follows
   can never write to it; a key with both is for an agent that searches and
   also stores its own conversations, and the page says what that costs if it
   leaks. Every existing key is read-only.
+- **A key can be renamed.** Its row in Settings is a small form, not static
+  text: change the label and save it without touching what the key can do or
+  minting a new one.
 - **Pushed sources are visible and judgeable.** The chats list filters by
   source and marks a pushed chat with a note chip naming who pushed it; its
   transcript names the pusher, when the source was last pushed and how many
