@@ -32,17 +32,32 @@ All notable changes to this project are documented here. The format follows
   Anything an agent or a script can read (a Slack workspace, an exported chat,
   an agent's own transcript) can now live in your own archive next to Telegram
   and WhatsApp, searchable in the portal, over `/api` and in every MCP tool's
-  results (the MCP `channel` filter still names only the live channels for
-  now). Resending is safe; deletes stay deleted. Attachments are not accepted
-  yet. Every pushed message remembers the key that delivered it, two keys may
-  feed one source, and a disagreement between them is counted, never
-  overwritten. See "Pushing conversations in" in `docs/self-hosting.md`.
+  results (the MCP `channel` filter accepts any of them too). Resending is
+  safe; deletes stay deleted. Attachments are not accepted yet. Every pushed
+  message remembers the key that delivered it, two keys may feed one source,
+  and a disagreement between them is counted, never overwritten. See
+  "Pushing conversations in" in `docs/self-hosting.md`.
 - **Keys say what they may do.** Settings mints a key with Read (the portal
   and the MCP tools, as before), Push (the import door), or both. A push-only
   key left in a cron job can never read your archive; a read-only agent key
   can never write to it; a key with both is for an agent that searches and
   also stores its own conversations, and the page says what that costs if it
   leaks. Every existing key is read-only.
+- **Pushed sources are visible and judgeable.** The chats list filters by
+  source and marks a pushed chat with a note chip naming who pushed it; its
+  transcript names the pusher, when the source was last pushed and how many
+  conflicts that push reported. The Connections page lists every pushed
+  source under **Sources** — label, channel, creator, every key that has
+  pushed to it, message count, last push and conflicts — with a way to
+  delete one and erase everything it carries. Revoking a key in Settings can
+  now take what it pushed with it, not just the key.
+- **Agents get the same provenance, plus a door to push through.**
+  `list_chats`, `recent_messages` and `search_messages` take `source_id` to
+  stay inside one source, and their `channel` filter now accepts any source
+  type, not only `telegram` and `whatsapp`; every chat carries `pushers` and
+  every message carries `pushedBy`, and `whoami`'s `mode` says whether a
+  source is live or pushed. A key minted with Push can deliver a batch as an
+  MCP tool too: `push_messages`, alone on its own endpoint, `/mcp/push`.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.

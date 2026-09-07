@@ -306,9 +306,23 @@ readable (by anyone who can run `crontab -l` for that user) as one on argv:
 ```
 
 Everything pushed is read back exactly like the live channels: in the portal,
-over `/api` and in every MCP tool's results. `/api/chats?channel=<type>`
-filters by the source type you chose; the MCP tools' own `channel` filter
-learns pushed types in the next release.
+over `/api` and in every MCP tool's results, including their own `channel`
+filter (any source type now, not only the two live channels) and a
+`source_id` filter — the source's id, the same one `whoami` reports — to
+stay inside one source.
+
+Running from an agent rather than a cron job? `push_messages` takes the same
+batch, minus `format`, as an MCP tool on its own endpoint, `/mcp/push`; a key
+minted with Push authenticates there the same way, as a bearer token. See
+[docs/mcp.md](mcp.md).
+
+The Connections page lists every pushed source under **Sources**: its label,
+who created it, every key that has pushed to it, how many messages it holds,
+when it was last pushed and how many conflicts that push reported. Deleting
+one there erases everything it carries; the keys that pushed it keep
+working. In Settings, revoking a key stops it without touching what it
+already pushed — **Revoke and delete what it pushed** removes both, key and
+messages, in the same step.
 
 ## Backups
 
