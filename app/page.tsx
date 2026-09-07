@@ -50,6 +50,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
               ? <span key={ch} className="chip">{CHANNEL_LABELS[ch]}</span>
               : <Link key={ch} className="chip filter" href={`/?channel=${ch}`}>{CHANNEL_LABELS[ch]}</Link>
           ))}
+          {sources.length > 0 && <span className="chip-sep" aria-hidden="true" />}
           {sources.map(s => (
             source?.id === s.id
               ? <span key={s.id} className="chip">{s.label ?? sourceLabel(s.channel)}</span>

@@ -46,6 +46,18 @@ describe('chats page', () => {
     const src = read('app/page.tsx')
     expect(src).not.toMatch(/#[0-9a-f]{3,6}\b/i)
   })
+
+  it('divides live channels from pushed sources with a hidden separator, only when a source exists', () => {
+    const src = read('app/page.tsx')
+    // Anchor on the gap between the channel map and the source map: a
+    // separator placed anywhere else in the file would pass a looser check.
+    const channelsAt = src.indexOf('CHAT_CHANNELS.map(')
+    const sourcesAt = src.indexOf('sources.map(')
+    expect(channelsAt, 'the channel block exists').toBeGreaterThan(-1)
+    expect(sourcesAt, 'the sources block exists').toBeGreaterThan(-1)
+    const gap = src.slice(channelsAt, sourcesAt)
+    expect(gap).toMatch(/\{sources\.length > 0 && <span className="chip-sep" aria-hidden="true" \/>\}/)
+  })
 })
 
 describe('transcript page', () => {
