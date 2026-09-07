@@ -42,6 +42,11 @@ export type ChatSummary = {
   // rows and textless unknown rows are walked past; null only when the chat
   // has nothing else.
   snippet: string | null
+  // Live, undeleted messages in this chat with conflictedAt set — a push
+  // that disagreed with a message actually stored here, not a count copied
+  // from the source's last batch (which may have concerned a different
+  // chat of the same source entirely).
+  conflictCount: number
   // The distinct labels of every key that has delivered a live message into
   // this chat, sorted. Empty for a chat read live off a paired account — a
   // chat is only ever pushed as a whole (its connection is either mode
@@ -89,6 +94,10 @@ export type MessageView = {
   // "the name I saw last week" come from.
   channelName: string | null
   type: IncomingMessage['type']; text: string | null; editedAt: Date | null
+  // Set when a push disagreed with the text already stored here; cleared the
+  // moment an explicit edit settles it. Never set on a deleted message —
+  // deleted stays deleted.
+  conflictedAt: Date | null
   person: PersonRef | null
   media: MediaView | null
   replyTo: ReplyRef | null
@@ -129,6 +138,13 @@ export const clampLimit = (limit: number | undefined, fallback: number): number 
 // the build with SQLITE_BUSY; tests/build-time-imports.test.ts guards this.
 const liveMessageCount = sql<number>`(${new QueryBuilder().select({ count: sql<number>`count(*)` }).from(messages)
   .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt)))})`
+
+// Same shape as liveMessageCount, narrowed to the rows a push actually
+// disputed: live and conflictedAt set. A chat's own count, not the source's
+// last-batch tally, so a chat never inherits a disagreement that happened
+// somewhere else in the same source.
+const liveConflictCount = sql<number>`(${new QueryBuilder().select({ count: sql<number>`count(*)` }).from(messages)
+  .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt), sql`${messages.conflictedAt} is not null`))})`
 
 // Same rendering rule from the other side. When a select has one table in its
 // FROM, drizzle drops the table prefix from the columns of a selection field —
@@ -208,7 +224,7 @@ const chatSelection = {
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
   createdAt: chats.createdAt, connectionId: chats.connectionId,
   personId: dmPersonId, personName: dmPersonName,
-  snippet: latestSnippet, activityAt: nested(activityAt),
+  snippet: latestSnippet, conflictCount: liveConflictCount, activityAt: nested(activityAt),
 }
 
 // Exactly what chatSelection returns: the person arrives as two columns and
@@ -342,6 +358,7 @@ const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
   channelName: channelLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
+  conflictedAt: messages.conflictedAt,
   personId: senderPersonId, personName: senderPersonName,
   hasMedia: messages.hasMedia,
   replyToId: quoted.id,

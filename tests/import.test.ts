@@ -159,6 +159,54 @@ describe('importBatch', () => {
     const [row] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
     expect(row.deletedAt).toBeInstanceOf(Date)
     expect(row.text).toBe('the vendor agreed to net 30')
+    // A tombstone is never a conflict and is never marked, even when the
+    // resend disagrees with the text buried under it.
+    expect(row.conflictedAt).toBeNull()
+  })
+
+  it('a conflicting push sets conflicted_at on exactly the disputed message and leaves the others null', async () => {
+    const a = await pushKey('agent-a')
+    const b = await pushKey('agent-b')
+    await importBatch(a, parsed(batch()))
+    const res = await importBatch(b, parsed(batch({ messages: [
+      message({ text: 'a different account of the same message' }),
+      message({ externalMessageId: '1725500000.000200', text: 'second' }),
+    ] })))
+    expect(res).toMatchObject({ inserted: 0, duplicates: 2, conflicts: 1 })
+    const rows = await db.select().from(messages)
+    const disputed = rows.find(r => r.externalMessageId === '1725500000.000100')!
+    const agreed = rows.find(r => r.externalMessageId === '1725500000.000200')!
+    expect(disputed.conflictedAt).toBeInstanceOf(Date)
+    expect(disputed.text).toBe('the vendor agreed to net 30')
+    expect(agreed.conflictedAt).toBeNull()
+  })
+
+  it('a resend with editedAt that updates the text clears conflicted_at, because an explicit edit settles the disagreement', async () => {
+    const a = await pushKey('agent-a')
+    const b = await pushKey('agent-b')
+    await importBatch(a, parsed(batch()))
+    await importBatch(b, parsed(batch({ messages: [message({ text: 'a different account of the same message' })] })))
+    const [beforeEdit] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(beforeEdit.conflictedAt).toBeInstanceOf(Date)
+
+    await importBatch(a, parsed(batch({ messages: [
+      message({ text: 'net 45 after all', editedAt: '2026-09-05T11:00:00Z' }),
+    ] })))
+    const [afterEdit] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(afterEdit.text).toBe('net 45 after all')
+    expect(afterEdit.editedAt).toBeInstanceOf(Date)
+    expect(afterEdit.conflictedAt).toBeNull()
+  })
+
+  it('last_push_key_id is the key of the most recent batch', async () => {
+    const a = await pushKey('agent-a')
+    const b = await pushKey('agent-b')
+    await importBatch(a, parsed(batch()))
+    let [source] = await db.select().from(connections)
+    expect(source.lastPushKeyId).toBe(a)
+    await importBatch(b, parsed(batch({ messages: [message({ externalMessageId: 'from-b', text: 'from b' })] })))
+    ;[source] = await db.select().from(connections)
+    expect(source.lastPushKeyId).toBe(b)
   })
 
   it('records which key pushed each message', async () => {

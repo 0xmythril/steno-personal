@@ -245,13 +245,17 @@ export async function agentConnections(): Promise<AgentConnection[]> {
 export type SourceView = {
   id: string; channel: string; label: string | null; createdBy: string | null
   pushedBy: string[]; messageCount: number; lastPushAt: Date | null; lastImportConflicts: number
+  // The label of the key that delivered the most recent accepted batch, null
+  // before this source has ever been pushed to. Says who pushed last without
+  // implying every pusher did — pushedBy is the fuller answer for that.
+  lastPushBy: string | null
 }
 
 export async function listSources(): Promise<SourceView[]> {
   const rows = await db.select({
     id: connections.id, channel: connections.channel, label: connections.displayName,
     pushKeyId: connections.pushKeyId, lastPushAt: connections.lastSyncAt,
-    lastImportConflicts: connections.lastImportConflicts,
+    lastImportConflicts: connections.lastImportConflicts, lastPushKeyId: connections.lastPushKeyId,
   }).from(connections)
     .where(and(eq(connections.mode, 'push'), isNull(connections.revokedAt)))
     .orderBy(desc(connections.createdAt), desc(connections.id))
@@ -261,6 +265,9 @@ export async function listSources(): Promise<SourceView[]> {
     const [creator] = r.pushKeyId
       ? await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, r.pushKeyId))
       : []
+    const [lastPusher] = r.lastPushKeyId
+      ? await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, r.lastPushKeyId))
+      : []
     const pushedBy = await pushedByLabels(r.id, r.pushKeyId)
     const [{ messageCount }] = await db.select({ messageCount: sql<number>`count(*)` })
       .from(messages)
@@ -269,6 +276,7 @@ export async function listSources(): Promise<SourceView[]> {
     out.push({
       id: r.id, channel: r.channel, label: r.label, createdBy: creator?.label ?? null,
       pushedBy, messageCount, lastPushAt: r.lastPushAt, lastImportConflicts: r.lastImportConflicts,
+      lastPushBy: lastPusher?.label ?? null,
     })
   }
   return out

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
-import { applyDelete, applyEdit, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
+import { applyDelete, applyEdit, markConflict, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
 import { SOURCE_TYPE_RE, isLiveChannel } from '@/lib/services/sources'
 
 // The push door's format and its service. One batch names one source and
@@ -146,11 +146,19 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
     if (res.existingText !== m.text) {
       conflicts++
       if (conflicting.length < MAX_PROBLEMS) conflicting.push({ externalChatId: m.externalChatId, externalMessageId: m.externalMessageId })
+      // The disagreement is marked on the message it concerns, not just
+      // counted on the source — a chat should only ever show a conflict
+      // that actually happened in it. The losing text itself is never
+      // stored: first writer wins, and the mark is that a second account
+      // existed, not what it said.
+      await markConflict(res.messageId)
     }
   }
   for (const d of batch.deletes) {
     deleted += await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
   }
-  await db.update(connections).set({ lastSyncAt: new Date(), lastImportConflicts: conflicts }).where(eq(connections.id, sourceId))
+  await db.update(connections)
+    .set({ lastSyncAt: new Date(), lastImportConflicts: conflicts, lastPushKeyId: keyId })
+    .where(eq(connections.id, sourceId))
   return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
 }

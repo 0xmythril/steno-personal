@@ -121,6 +121,23 @@ describe('provenance reads and the source filter', () => {
     })))
     const afterConflict = await listSources()
     expect(afterConflict.find(s => s.id === sharedSourceId)!.lastImportConflicts).toBe(1)
+
+    // MessageView.conflictedAt carries the timestamp on the disputed message
+    // only; ChatSummary.conflictCount counts only that chat's live conflicted
+    // messages; SourceView.lastPushBy is the label of the key that pushed the
+    // most recent batch — agent, here, since it pushed the conflicting one.
+    const afterTranscript = await getMessages(sharedChat.id)
+    const byId = new Map(afterTranscript!.messages.map(m => [m.externalMessageId, m]))
+    expect(byId.get('m1')!.conflictedAt).toBeInstanceOf(Date)
+    expect(byId.get('m2')!.conflictedAt).toBeNull()
+
+    const chatsAfter = await listChats()
+    expect(chatsAfter.find(c => c.id === sharedChat.id)!.conflictCount).toBe(1)
+    expect(chatsAfter.find(c => c.id === otherChat.id)!.conflictCount).toBe(0)
+    expect(chatsAfter.find(c => c.id === tgChat.id)!.conflictCount).toBe(0)
+
+    expect(afterConflict.find(s => s.id === sharedSourceId)!.lastPushBy).toBe('agent')
+    expect(afterConflict.find(s => s.id === otherSourceId)!.lastPushBy).toBe('cron')
   })
 
   it('a deleted push drops its key from pushedBy unless that key created the source', async () => {

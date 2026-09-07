@@ -106,8 +106,14 @@ export const connections = sqliteTable('connections', {
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
   // Pushed rows only: the `conflicts` count the last importBatch reported for
   // this source — a disagreeing pusher is visible at a glance, not only by
-  // reading a batch response the owner never saw.
+  // reading a batch response the owner never saw. It still describes the
+  // last batch, not any one message; messages.conflictedAt is the mark that
+  // says which message a disagreement was actually about.
   lastImportConflicts: integer('last_import_conflicts').notNull().default(0),
+  // Pushed rows only: the key that delivered the most recent accepted batch
+  // — so the source can say who pushed last without implying every pusher
+  // did. Updated alongside last_sync_at on every batch, never cleared.
+  lastPushKeyId: text('last_push_key_id').references(() => accessKeys.id),
 }, t => [
   uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL AND mode = 'live'`),
   uniqueIndex('connections_push_source').on(t.channel, t.externalAccountId).where(sql`revoked_at IS NULL AND mode = 'push'`),
@@ -145,6 +151,15 @@ export const messages = sqliteTable('messages', {
   replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  // Set when a push disagreed with the text already stored here (first
+  // writer wins, so the disagreement is marked and the losing text is never
+  // stored). Cleared the moment an explicit edit settles it — an edit
+  // replaces conflictedAt with editedAt in the same update, because an edit
+  // is the owner's account of what changed, and the earlier disagreement is
+  // moot once there is a new, authored answer. Never set on a tombstoned
+  // row: deleted stays deleted, and a delete is checked before a conflict
+  // is ever considered.
+  conflictedAt: integer('conflicted_at', { mode: 'timestamp_ms' }),
   // Pushed rows only: the key that delivered this message. Null for a message
   // the worker read live. Sources are shared — any push key may push to any
   // source — so provenance lives here, per message, not on the source.

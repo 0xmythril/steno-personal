@@ -95,10 +95,21 @@ export async function recordMessage(connectionId: string, channel: string, m: In
   return { chatId, messageId: existing.id, inserted: false, existingText: existing.text, existingDeleted: existing.deletedAt !== null }
 }
 
+// Marks the row a push disagreed with, by the id recordMessage already
+// returned for it. importBatch is the only caller, and it only reaches this
+// after checking existingDeleted itself and finding the row live — a
+// tombstoned row is never passed here, so deleted stays deleted.
+export async function markConflict(messageId: string): Promise<void> {
+  await db.update(messages).set({ conflictedAt: new Date() }).where(eq(messages.id, messageId))
+}
+
 export async function applyEdit(connectionId: string, channel: string, m: IncomingMessage): Promise<void> {
   const chatId = await upsertChat(connectionId, channel, m)
+  // An edit is the owner's own account of what changed, so it settles any
+  // outstanding disagreement in the same statement that applies it: an
+  // earlier conflict is moot the moment there is a new, authored answer.
   const updated = await db.update(messages)
-    .set({ text: m.text, editedAt: new Date() })
+    .set({ text: m.text, editedAt: new Date(), conflictedAt: null })
     .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId), authoredBy(m.actor)))
     .returning({ id: messages.id })
   if (updated.length > 0) return
