@@ -30,10 +30,16 @@ describe('chats page', () => {
     expect(src).toMatch(/<span className="chip note">/)
   })
 
-  it('the current filter chip is a plain chip, the rest are filter chips', () => {
+  it('source chips follow the filter rule: the current one plain, the rest filter, never off', () => {
     const src = read('app/page.tsx')
-    expect(src).toMatch(/className="chip"/)
-    expect(src).toMatch(/className="chip filter"/)
+    // Anchor on the block itself: an assertion that only looks at the whole
+    // file would pass on the channel row alone, feature deleted or not.
+    const block = src.slice(src.indexOf('sources.map('))
+    expect(block, 'the sources block exists').toContain('sources.map(')
+    const chips = [...block.matchAll(/className="(chip[^"]*)"/g)].map(m => m[1])
+    expect(chips).toContain('chip')
+    expect(chips).toContain('chip filter')
+    expect(chips.some(c => c.includes('off'))).toBe(false)
   })
 
   it('carries no colour literal', () => {
