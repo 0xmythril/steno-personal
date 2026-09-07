@@ -218,7 +218,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <ConnectAgent
           rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
           selectedId={chosen?.id ?? minted?.id ?? null}
-          keys={keys.filter(k => k.canRead || k.canPush).map(k => ({ id: k.id, label: k.label, canPush: k.canPush }))}
+          keys={keys.filter(k => k.canRead || k.canPush).map(k => ({ id: k.id, label: k.label, canRead: k.canRead, canPush: k.canPush }))}
           error={instructionsError}
         />
 
