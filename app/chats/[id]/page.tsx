@@ -62,19 +62,7 @@ export default async function ChatPage({ params, searchParams }: {
         <p className="muted"><Link href="/">&larr; All chats</Link></p>
         <div className="pad">
           <div className="pad-head">
-            <div className="pad-head-row">
-              <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
-              {/* A link, not a button in a form: the transcript may grow no
-                  form control, and `download` is enough to make the browser
-                  save the response instead of navigating to it. */}
-              <a
-                href={`/api/chats/${page.chat.id}/export`}
-                download
-                aria-label={`Export ${page.chat.title ?? 'Untitled chat'}`}
-              >
-                Export
-              </a>
-            </div>
+            <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
             <div className="pad-head-meta">
               <span className="muted mono">
                 {KIND_LABELS[page.chat.kind]} &middot; {page.chat.messageCount.toLocaleString('en')} {page.chat.messageCount === 1 ? 'message' : 'messages'}
@@ -105,10 +93,25 @@ export default async function ChatPage({ params, searchParams }: {
                   )}
                 </span>
               )}
-              {/* What the download carries, since the button alone only says
-                  "Export": every message, plus who pushed it and when, kept
-                  for debugging rather than reading. */}
-              <span className="muted mono">Export includes every message with who pushed it and when, for debugging.</span>
+              {/* The export joins the same left-reading column as the rest of
+                  the header, not a control set apart on the right edge — the
+                  owner deliberately made this header read left, top to
+                  bottom, down one edge. A link, not a button in a form: the
+                  transcript may grow no form control, and `download` is
+                  enough to make the browser save the response instead of
+                  navigating to it. Folded into one line with the sentence
+                  explaining what it carries, so this reads as one thought
+                  rather than a control plus a caption. */}
+              <span className="muted mono">
+                <a
+                  href={`/api/chats/${page.chat.id}/export`}
+                  download
+                  aria-label={`Export ${page.chat.title ?? 'Untitled chat'}`}
+                >
+                  Export this chat
+                </a>
+                {' '}&mdash; every message, who pushed it and when, for debugging.
+              </span>
             </div>
           </div>
 

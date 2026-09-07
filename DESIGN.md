@@ -132,7 +132,10 @@ App shell: a paper-coloured top nav (mark, wordmark, product label, links, key l
 │ ● Steno · PERSONAL  Chats  People  Connections  Settings  key laptop │
 ├──────────────────────────────────────────────────────────────────┤
 │ ← All chats                                                      │
-│ HK Founders Dinner                        [Read-only · Telegram] │
+│ HK Founders Dinner                                                │
+│ Direct · 128 messages                                             │
+│ last push 2h ago by laptop                                        │
+│ Export this chat — every message, who pushed it and when          │
 │ ↑ Older messages · Latest messages ↓                             │
 │ TUESDAY 2 SEPTEMBER                                              │
 │  19:42 │ Priya                                                   │

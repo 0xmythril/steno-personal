@@ -281,11 +281,6 @@ td.end { text-align: right; white-space: nowrap; }
 .pad { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
 .pad-head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
 .pad-head h1 { font-size: 24px; }
-/* Stretched to the pad's full width so the export link sits at the far edge
-   from the title, not crowded against it. A plain <a> — the same quiet link
-   the pager and the provenance line already use — never a button variant. */
-.pad-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; align-self: stretch; }
-.pad-head-row a { font-size: 13px; white-space: nowrap; }
 .pad-head-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .pad-head-meta .provenance { font-size: 12px; }
 /* Sits in a message's own body, beside .edited as its sibling — not a link

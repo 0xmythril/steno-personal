@@ -146,7 +146,7 @@ describe('transcript page', () => {
     expect(body.toLowerCase()).toContain('history')
   })
 
-  it('left-aligns the pad-head meta instead of ragging it against the right edge', () => {
+  it('left-aligns the pad-head meta instead of ragging it against the right edge, and keeps the export link off that right-aligned axis', () => {
     const css = read('app/globals.css')
     const headRule = css.slice(css.indexOf('.pad-head {'), css.indexOf('.pad-head h1'))
     expect(headRule, 'the .pad-head rule exists').not.toBe('')
@@ -155,6 +155,14 @@ describe('transcript page', () => {
     expect(metaAt, 'the .pad-head-meta rule exists').toBeGreaterThan(-1)
     const metaRule = css.slice(metaAt, css.indexOf('}', metaAt) + 1)
     expect(metaRule).not.toMatch(/flex-end/)
+    // The export control once sat in its own `.pad-head-row`, `justify-content:
+    // space-between` — pinned to the header's right edge, the exact axis the
+    // owner had the header stop reading on. That rule, and any
+    // `space-between` anywhere in the pad-head region, must not come back.
+    const region = css.slice(css.indexOf('.pad-head {'), css.indexOf('.conflict-marker {'))
+    expect(region).not.toMatch(/pad-head-row/)
+    expect(region).not.toMatch(/space-between/)
+    expect(css).not.toMatch(/pad-head-row/)
   })
 
   it('the conflict marker carries no border and no pointer cursor: it is not pressable yet', () => {
@@ -216,14 +224,25 @@ describe('transcript page', () => {
     expect(whoRegion).not.toMatch(/pushedBy/)
   })
 
-  it('offers an export anchor in the header, downloading rather than navigating', () => {
+  it('folds the export anchor into the left-reading pad-head-meta stack, not a control set apart on the right edge', () => {
     // An anchor with `download`, not a button in a form: the transcript page
     // must keep growing no form control (tests/transcript-page-structure.test.ts).
+    // Anchored inside .pad-head-meta specifically, not merely somewhere under
+    // .pad-head: a sibling row beside the <h1> (the right-aligned placement
+    // the owner rejected) would sit in the header but outside this slice.
     const src = read(path)
-    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
-    expect(head).toMatch(/<a\s[^>]*href=\{`\/api\/chats\/\$\{page\.chat\.id\}\/export`\}[^>]*>/s)
-    expect(head).toMatch(/\bdownload\b/)
-    expect(head).toMatch(/aria-label=\{`Export \$\{page\.chat\.title[^}]*\}`\}/)
+    expect(src, 'no .pad-head-row wrapper reappears').not.toMatch(/pad-head-row/)
+    const metaAt = src.indexOf('pad-head-meta')
+    expect(metaAt, 'the pad-head-meta block exists').toBeGreaterThan(-1)
+    const meta = src.slice(metaAt, src.indexOf('{pager}'))
+    expect(meta).toMatch(/<a\s[^>]*href=\{`\/api\/chats\/\$\{page\.chat\.id\}\/export`\}[^>]*>/s)
+    expect(meta).toMatch(/\bdownload\b/)
+    expect(meta).toMatch(/aria-label=\{`Export \$\{page\.chat\.title[^}]*\}`\}/)
+    // The h1 sits before pad-head-meta opens, so the anchor cannot be the one
+    // that used to live in a row beside it.
+    const h1At = src.indexOf('<h1 id="top"')
+    expect(h1At).toBeGreaterThan(-1)
+    expect(h1At).toBeLessThan(metaAt)
   })
 
   it('still offers no way to send anything', () => {
