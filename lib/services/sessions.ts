@@ -40,7 +40,11 @@ export async function resolveSession(id: string, now: Date = new Date()): Promis
       eq(sessions.id, id),
       gt(sessions.expiresAt, now),
       or(
-        and(isNotNull(sessions.keyId), isNull(accessKeys.revokedAt)),
+        // A session is only ever created after a 'read' verification
+        // (lib/auth.ts, app/api/login/route.ts); this capability check is
+        // the defence that survives a future startSession call site that
+        // binds a push-only key by mistake.
+        and(isNotNull(sessions.keyId), isNull(accessKeys.revokedAt), eq(accessKeys.canRead, true)),
         and(isNotNull(sessions.passkeyId), isNull(passkeys.revokedAt)),
       ),
     ))

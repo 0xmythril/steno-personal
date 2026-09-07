@@ -52,6 +52,7 @@ Mint and pencil tint are taken from the mark and never change. Everything else i
 | `warn` | `#9C610D` | Status: stale, pending, needs attention. 5.1:1 on white; the shared system's `#A8690F` fell just short |
 | `bad` | `#B42318` | Status: logged out, error, and the WhatsApp risk copy |
 | `bad-soft` | `#FBE4E1` | Fill behind a bad banner |
+| `scrim` | `rgba(20,32,27,.45)` | The backdrop behind a confirm dialog. An alpha over the page rather than a flat colour, so it darkens on both palettes instead of inverting with them |
 
 ### Dark ("the pad at night")
 
@@ -76,6 +77,7 @@ Not an inversion. The canvas keeps its green cast, mint becomes the primary butt
 | `btn-bg` / `btn-fg` | `#A7E1D3` / `#0E1512` |
 | `ok` / `warn` / `bad` | `#7FD3BC` / `#E2B25A` / `#F08A7E` |
 | `bad-soft` | `#331B18` |
+| `scrim` | `rgba(0,0,0,.6)` |
 
 ### Rules
 
@@ -130,7 +132,9 @@ App shell: a paper-coloured top nav (mark, wordmark, product label, links, key l
 │ ● Steno · PERSONAL  Chats  People  Connections  Settings  key laptop │
 ├──────────────────────────────────────────────────────────────────┤
 │ ← All chats                                                      │
-│ HK Founders Dinner                        [Read-only · Telegram] │
+│ HK Founders Dinner                                    ⬇ Export   │
+│ Direct · 128 messages                                             │
+│ last push 2h ago by laptop                                        │
 │ ↑ Older messages · Latest messages ↓                             │
 │ TUESDAY 2 SEPTEMBER                                              │
 │  19:42 │ Priya                                                   │
@@ -181,9 +185,17 @@ Favicon: the same paths on a rounded square with literal hex values, palette inv
 - Inside a table row buttons are 26px tall.
 - Labels say what happens: "Create key", "Connect WhatsApp", "Delete this account and everything it archived". Never "Submit" or "OK".
 
-### Passkey icon
+### Icon set
 
-The one icon in the interface. A person and a key, drawn in `currentColor` strokes at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px. It does not license a general icon set; see Known Gaps.
+The app has a small, named, deliberately capped icon set — four glyphs, no more. Each is drawn in `currentColor` strokes so it follows the surrounding text colour in both palettes, each is `aria-hidden` because the control around it carries the accessible name, and each is drawn for the one size it is actually used at rather than scaled down from a generic set. Adding a glyph is a design decision, weighed the same as adding a colour token under Colors above, not a convenience for the next button that would rather show a picture than a word.
+
+**Passkey.** A person and a key, drawn at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px.
+
+**Pencil.** Drawn at 16px, on the icon-only button that turns a key's label from text into its rename form in Settings. Source: `app/icons.tsx`. It is a real button — `aria-label={`Rename ${label}`}`, a visible focus ring, reachable by tap and by keyboard — never a hover reveal, because the label table is used from a phone.
+
+**Alert.** Drawn at 14px, at the end of a message's own body, beside the word "conflict" (`.conflict-marker`, `--warn` text, no border, no pointer cursor) — a sibling of the `.edited` marker beside it, on the same mono scale. Source: `app/icons.tsx`. It is not a button — the marker isn't a link yet, since the per-message History entry it will point at doesn't exist — so the glyph, the `--warn` colour and a full-sentence `aria-label` on the marker all say the same thing together rather than any one of them carrying it alone. A message with no conflict renders no marker.
+
+**Download.** Drawn at 16px, beside the word "Export" in the transcript header's top row (`.pad-head-top`), a sibling of the `<h1>` and vertically level with it. Source: `app/icons.tsx`. It is a real link — `download`, an href, and `aria-label="Export this chat as a file with every message and who pushed it"` — always visible text beside the glyph, never a hover reveal or an icon-only button standing in for the word. The explanatory sentence that used to sit under the control lives in the accessible name now, not on the page: a file named `steno-<chat>-<date>.json` explains itself once it lands.
 
 ### Note chip
 
@@ -191,9 +203,13 @@ The one icon in the interface. A person and a key, drawn in `currentColor` strok
 
 ### Confirm
 
-Anything that cannot be undone opens its consequence before it can be pressed. A `<details class="confirm">`, so it needs no JavaScript and no dialog: the summary is an *outlined* danger control that only opens, and the button inside the `bad-soft` body is the *filled* one that acts. Outline opens, fill acts — that pairing is the whole grammar.
+Anything that cannot be undone opens its consequence before it can be pressed. `ConfirmDialog` (`app/confirm-dialog.tsx`) is the one component every such action shares: an *outlined* `.confirm-open` button is the trigger that only opens the question, and a native `<dialog>` — opened with `showModal()` — lays out a title on its own line, the consequence as plain prose below it, and one row of actions, wrapping if needed, ending in a *filled* `danger` button that acts. Outline opens, fill acts — that pairing is the whole grammar, and it lives in one place so it cannot drift between screens.
 
-The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke all keys, remove all passkeys.
+The body is plain prose, not a boxed callout: inline, a `bad-soft` box marks a danger zone inside an ordinary card, but inside a dialog the whole surface is already the warning, so a second box only cramped it. The backdrop is the `scrim` token, not `ink` — `ink` is near-black in light mode and near-white in dark, so painting it behind the dialog inverted from a shadow into a pale veil; `scrim` is defined per palette so it always darkens the page it sits over.
+
+The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke a key (or revoke and delete what it pushed), revoke all keys, remove a passkey, remove all passkeys, delete a source, merge a person into another.
+
+This is a client component — the one place `showModal()`, `close()` and the Escape/backdrop dismissal live — and that was accepted deliberately: a `<details>` could carry the same grammar with no JavaScript at all, but it cannot lay out inside a table cell, and several of these triggers (revoke a key, delete a source) sit in the last column of a row. A dialog is not in document flow, so it never fights the row it opens from. No focus-trap library and no portal: `showModal()` already traps focus and answers Escape, and the dialog paints in the browser's own top layer.
 
 ### Chips
 
@@ -259,7 +275,7 @@ Don't
 
 ## Iteration Guide
 
-`tests/design-system-adoption.test.ts` sweeps every view for the promises this file makes: tables wrapped so they scroll inside their own container, controls labelled with `.field` rather than a bare `<label>`, siblings spaced with `gap` rather than an inline margin, the eyebrow used as a section label rather than a badge, and every irreversible action behind a `details.confirm`. It names no file, so a new screen is held to the same bar as the ones already here.
+`tests/design-system-adoption.test.ts` sweeps every view for the promises this file makes: tables wrapped so they scroll inside their own container, controls labelled with `.field` rather than a bare `<label>`, siblings spaced with `gap` rather than an inline margin, the eyebrow used as a section label rather than a badge, and every irreversible action opened by a `ConfirmDialog`. It names no file, so a new screen is held to the same bar as the ones already here.
 
 When adding a screen, start from the shell (nav, page, footer) and reuse the components above. If a new component is needed, derive it from a card or a row rather than inventing a new surface. Any new colour must be a tint of an existing token and must be added to `tests/design-tokens.test.ts`. Any new typeface is out of scope. When in doubt, remove one thing.
 
@@ -267,7 +283,7 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 
 ## Known Gaps
 
-- No icon set is specified. Prefer text labels. The exceptions are the two footer marks and the passkey glyph, each justified where it is drawn; a third exception needs the same kind of argument.
+- The icon set (Components → Icon set) stays at four glyphs, passkey, pencil, alert and download, on purpose. Prefer text labels everywhere else. The brand mark in the nav and footer is a separate case (Components → Mark); a fifth icon-set glyph needs the same kind of argument the first four got, not a convenience.
 - Motion is limited to 150ms colour transitions.
 - Form validation beyond the `bad` colour is not designed. A field error goes inside its `.field`, under the input; `.row > .danger` breaks to its own full-width line as a backstop, because `align-items: flex-end` would otherwise sit it on the submit button's baseline.
 - Print styles are not designed.

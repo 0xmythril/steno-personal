@@ -80,7 +80,7 @@ export async function endSession(): Promise<void> {
 export async function authenticateRequest(req: Request): Promise<{ via: 'cookie' | 'bearer'; keyId: string | null } | null> {
   const header = req.headers.get('authorization')
   if (header?.startsWith('Bearer ')) {
-    const key = await verifyAccessKey(header.slice('Bearer '.length).trim())
+    const key = await verifyAccessKey(header.slice('Bearer '.length).trim(), 'read')
     return key ? { via: 'bearer', keyId: key.id } : null
   }
   const session = await currentSession()

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { resetDb } from './helpers/db'
 import {
   mintAccessKey, verifyAccessKey, listActiveAccessKeys, revealAccessKey,
-  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, mintFirstAccessKey, KEY_PREFIX,
+  revokeAccessKey, revokeAllAccessKeys, countActiveAccessKeys, hasAnyAccessKey, mintFirstAccessKey, renameAccessKey, KEY_PREFIX,
 } from '@/lib/services/access-keys'
 
 describe('access keys', () => {
@@ -15,7 +15,7 @@ describe('access keys', () => {
     expect(r.rawKey.length).toBeGreaterThan(40)
     const before = (await listActiveAccessKeys())[0]
     expect(before.lastUsedAt).toBeNull()
-    expect(await verifyAccessKey(r.rawKey)).toEqual({ id: r.id, label: 'laptop' })
+    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'laptop', canRead: true, canPush: false })
     const after = (await listActiveAccessKeys())[0]
     expect(after.lastUsedAt).toBeInstanceOf(Date)
     expect(after.prefix).toBe(r.rawKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 8))
@@ -24,12 +24,33 @@ describe('access keys', () => {
   it('rejects unknown, revoked, and empty keys', async () => {
     const r = await mintAccessKey('a')
     if (!r.ok) throw new Error(r.reason)
-    expect(await verifyAccessKey('sp_nope')).toBeNull()
-    expect(await verifyAccessKey('')).toBeNull()
+    expect(await verifyAccessKey('sp_nope', 'read')).toBeNull()
+    expect(await verifyAccessKey('', 'read')).toBeNull()
     expect(await revokeAccessKey(r.id)).toBe(true)
     expect(await revokeAccessKey(r.id)).toBe(false) // already revoked
-    expect(await verifyAccessKey(r.rawKey)).toBeNull()
+    expect(await verifyAccessKey(r.rawKey, 'read')).toBeNull()
     expect(await listActiveAccessKeys()).toEqual([])
+  })
+
+  it('a push key verifies only as a push key, and a read key only as a read key', async () => {
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    const read = await mintAccessKey('agent')
+    if (!push.ok || !read.ok) throw new Error('mint failed')
+    expect(await verifyAccessKey(push.rawKey, 'push')).toEqual({ id: push.id, label: 'cron', canRead: false, canPush: true })
+    expect(await verifyAccessKey(push.rawKey, 'read')).toBeNull()
+    expect(await verifyAccessKey(read.rawKey, 'push')).toBeNull()
+    // A refused verification is not a use.
+    const rows = await listActiveAccessKeys()
+    expect(rows.find(k => k.id === read.id)?.lastUsedAt).toBeNull()
+    expect(rows.map(k => [k.label, k.canRead, k.canPush]).sort()).toEqual([['agent', true, false], ['cron', false, true]])
+  })
+
+  it('a key minted with both capabilities verifies as both, and a key with neither is refused', async () => {
+    const both = await mintAccessKey('agent+cron', { read: true, push: true })
+    if (!both.ok) throw new Error('mint failed')
+    expect(await verifyAccessKey(both.rawKey, 'read')).toEqual({ id: both.id, label: 'agent+cron', canRead: true, canPush: true })
+    expect(await verifyAccessKey(both.rawKey, 'push')).toEqual({ id: both.id, label: 'agent+cron', canRead: true, canPush: true })
+    expect(await mintAccessKey('neither', { read: false, push: false })).toEqual({ ok: false, reason: 'no_capability' })
   })
 
   it('reveals only active keys', async () => {
@@ -70,6 +91,46 @@ describe('access keys', () => {
     await mintAccessKey('a')
     const blob = JSON.stringify(await listActiveAccessKeys())
     expect(blob).not.toMatch(/keyHash|keyCiphertext|key_hash|key_ciphertext/)
+  })
+})
+
+// A label is a note to the owner, not a credential: renaming changes what
+// the row is called and nothing about what the key can do.
+describe('renameAccessKey', () => {
+  beforeEach(resetDb)
+
+  it('renames an active key, changing only the label', async () => {
+    const r = await mintAccessKey('old label', { read: true, push: true })
+    if (!r.ok) throw new Error(r.reason)
+    const before = (await listActiveAccessKeys())[0]
+    expect(await renameAccessKey(r.id, 'new label')).toEqual({ ok: true })
+    const after = (await listActiveAccessKeys())[0]
+    expect(after.label).toBe('new label')
+    expect(after.prefix).toBe(before.prefix)
+    expect(after.createdAt).toEqual(before.createdAt)
+    expect(after.canRead).toBe(before.canRead)
+    expect(after.canPush).toBe(before.canPush)
+    // The hash is untouched: the same raw key still verifies, now under the new label.
+    expect(await verifyAccessKey(r.rawKey, 'read')).toEqual({ id: r.id, label: 'new label', canRead: true, canPush: true })
+  })
+
+  it('refuses an empty or over-long label, the same reasons minting uses', async () => {
+    const r = await mintAccessKey('a')
+    if (!r.ok) throw new Error(r.reason)
+    expect(await renameAccessKey(r.id, '   ')).toEqual({ ok: false, reason: 'label_empty' })
+    expect(await renameAccessKey(r.id, 'x'.repeat(101))).toEqual({ ok: false, reason: 'label_too_long' })
+    expect((await listActiveAccessKeys())[0].label).toBe('a')
+  })
+
+  it('answers not_found for a revoked key, and leaves its label alone', async () => {
+    const r = await mintAccessKey('a')
+    if (!r.ok) throw new Error(r.reason)
+    await revokeAccessKey(r.id)
+    expect(await renameAccessKey(r.id, 'new')).toEqual({ ok: false, reason: 'not_found' })
+  })
+
+  it('answers not_found for an id that never existed', async () => {
+    expect(await renameAccessKey('not-a-real-id', 'new')).toEqual({ ok: false, reason: 'not_found' })
   })
 })
 

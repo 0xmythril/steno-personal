@@ -116,6 +116,21 @@ describe('theme mechanics', () => {
   it('no pills', () => {
     expect(css).not.toMatch(/border-radius:\s*(999|9999)px/)
   })
+
+  // The bug this guards: dialog.confirm::backdrop used to paint var(--ink),
+  // which is near-black in light mode but near-white in dark, so the scrim
+  // inverted with the palette instead of following it. --scrim is defined
+  // per palette (an alpha over the page, not a flat colour) so the backdrop
+  // always darkens rather than sometimes veiling in near-white.
+  it('the confirm dialog scrim is its own token, not --ink', () => {
+    for (const sel of [LIGHT, DARK_MEDIA, DARK_FORCED]) {
+      expect(block(sel), sel).toMatch(/--scrim:\s*rgba\(/)
+    }
+    const backdrop = css.match(/dialog\.confirm::backdrop\s*\{([^}]*)\}/)
+    expect(backdrop, 'globals.css has a dialog.confirm::backdrop rule').not.toBeNull()
+    expect(backdrop![1]).toMatch(/background:\s*var\(--scrim\)/)
+    expect(backdrop![1]).not.toMatch(/var\(--ink\)/)
+  })
 })
 
 // The bug this guards: a bare <button>, a .token key readout and inline <code>
@@ -155,6 +170,21 @@ describe('an outline means you can press it', () => {
     const at = css.indexOf('scroll-behavior')
     expect(at).toBeGreaterThan(-1)
     expect(css.lastIndexOf('prefers-reduced-motion: no-preference', at)).toBeGreaterThan(-1)
+  })
+
+  // showModal() only promotes a <dialog> to the top layer for painting; the
+  // node stays a DOM descendant of wherever it was mounted. Three
+  // ConfirmDialog triggers sit in a td (source delete, key revoke, passkey
+  // remove), and `td button` (0,0,0,2) would otherwise outrank the base
+  // `button` rule (0,0,0,1) and shrink the dialog's own buttons to 26px —
+  // exactly the row it is meant never to fight. This asserts the reset
+  // exists and matches the base button height, so a future edit cannot
+  // silently reintroduce the shrink.
+  it('a dialog button keeps the base size, not the 26px td shrink', () => {
+    const baseHeight = rule('button, .btn').match(/height:\s*([^;]+);/)?.[1]?.trim()
+    expect(baseHeight, 'the base button rule sets a height').toBeTruthy()
+    const dialogBody = rule('dialog.confirm button, dialog.confirm .btn')
+    expect(dialogBody.match(/height:\s*([^;]+);/)?.[1]?.trim()).toBe(baseHeight)
   })
 })
 

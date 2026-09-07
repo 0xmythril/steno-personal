@@ -1,0 +1,1 @@
+ALTER TABLE `connections` ADD `last_import_conflicts` integer DEFAULT 0 NOT NULL;

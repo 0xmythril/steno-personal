@@ -202,6 +202,8 @@ connection.
 | `/api/people` | cookie **or** bearer | The address book through `publicPeople()` — the same mapping `list_people` uses, so neither serves a phone number or a channel identifier. |
 | `/media/[id]` | cookie **or** bearer | Streams one attachment, whole file into memory (bounded by `MAX_MEDIA_BYTES`), no `Range` support. |
 | `/mcp` | bearer | The MCP endpoint. POST only — `mcp-handler` answers `GET`/`DELETE` with `405` itself, and streamable HTTP does not need them here. |
+| `/api/import` | bearer, push key only | The push door's HTTP form: `POST` a batch, get back insert/duplicate/edit/delete/conflict counts. No cookie, no read key. |
+| `/mcp/push` | bearer, push key only | The push door for an agent: one tool, `push_messages`, the same batch shape as `/api/import`. The only MCP tool that is not read-only. |
 
 `lib/auth.ts#authenticateRequest` is the one place that resolves either
 credential, for the routes that accept both. Server actions call

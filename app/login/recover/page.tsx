@@ -3,7 +3,7 @@ import { currentRecoveryAttempt, requireRecoveryOpen } from '@/lib/auth'
 import { getRecoveryAttempt, knownAccountChannels, type RecoveryStatus } from '@/lib/services/recovery'
 import { PASSWORD_REJECTED } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
-import { CHANNEL_LABELS } from '@/lib/format'
+import { CHANNEL_LABELS, sourceLabel } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { WhatsAppRisk } from '@/app/connections/whatsapp-consent'
@@ -50,7 +50,7 @@ function StartCards({ channels }: { channels: Channel[] }) {
 }
 
 function Attempt({ attempt }: { attempt: RecoveryStatus }) {
-  const label = CHANNEL_LABELS[attempt.channel]
+  const label = sourceLabel(attempt.channel)
   if (attempt.status === 'pending') {
     return (
       <section className="card">

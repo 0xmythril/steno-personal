@@ -31,7 +31,11 @@ any of the three, and pretending otherwise would be dishonest.
 
 **Exposure.** The whole archive, until the key is revoked. Every chat, every
 message, every attachment. A key is both the portal login and the MCP bearer
-token, so a leak is a full read.
+token, so a leak is a full read. If the key also carries push, a leak is a
+write too: the attacker can call `push_messages` or `POST /api/import` and
+plant content that the owner's own agent later reads back as archive fact —
+adversary 4 (prompt injection through chat content) reached without the
+attacker ever having sent a message in any of the owner's actual chats.
 
 **Controls.** Keys are 32 random bytes, base64url, prefixed `sp_`. They are
 shown once at mint time through a short-lived httpOnly cookie, never in a URL
@@ -41,7 +45,14 @@ reaches a log is one the host operator asks for with `STENO_MINT_KEY`. Keys
 are labelled and revoked individually or all at once, and revoking one
 immediately deletes the browser sessions created with it. Each key's last-used
 time is on the Settings page, so a key being used from somewhere unexpected is
-visible if you look. Browser sessions expire after 30 idle days.
+visible if you look. Browser sessions expire after 30 idle days. Read and push
+are separate capabilities minted per key, so a key made for a cron job or an
+export script need not be able to read anything at all, and a read key cannot
+push. Every message a push key delivers records that key's id, so what a given
+key planted is never a guess. Settings' "Revoke and delete what it pushed"
+does not just close the door: it deletes the live messages that key pushed and
+removes any source it fed alone — it does not, and cannot, undo whatever the
+owner's agent already did with planted content before the key was caught.
 
 **Passkeys.** A passkey is a key pair held by the browser's authenticator; the
 server keeps only the public key, which is not a secret, so the `passkeys`

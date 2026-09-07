@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { currentSetupAttempt, isFreshInstance } from '@/lib/auth'
 import { listConnections, otherSetupClaimExists, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
-import { CHANNEL_LABELS } from '@/lib/format'
+import { CHANNEL_LABELS, sourceLabel } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
 import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { Consent } from '@/app/connections/consent'
@@ -112,7 +112,7 @@ export default async function SetupPage() {
           <h1>Connected</h1>
           <section className="card">
             <div className="card-head">
-              <h2>{CHANNEL_LABELS[active.channel]}{active.displayName ? `: ${active.displayName}` : ''}</h2>
+              <h2>{sourceLabel(active.channel)}{active.displayName ? `: ${active.displayName}` : ''}</h2>
               <span className="chip ok">Live</span>
             </div>
             <p>

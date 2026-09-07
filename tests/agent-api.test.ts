@@ -24,7 +24,7 @@ async function agentKey(): Promise<string> {
 const at = (iso: string) => new Date(iso)
 
 // A chat whose activity is fixed, so ordering and cursors are deterministic.
-async function chatAt(conn: { id: string; channel: 'telegram' | 'whatsapp' }, title: string, iso: string, opts: {
+async function chatAt(conn: { id: string; channel: string }, title: string, iso: string, opts: {
   kind?: 'dm' | 'group' | 'channel'; text?: string | null
 } = {}) {
   const chat = await makeChat(conn, { title, kind: opts.kind ?? 'dm', lastMessageAt: at(iso) })
@@ -420,7 +420,12 @@ describe('the MCP surface', () => {
     expect(next.chats.map(c => c.title)).toEqual(['Air Asia'])
 
     expect(JSON.parse(await callTool(key, 'list_chats', { kind: 'group' })).chats.map((c: { title: string }) => c.title)).toEqual(['Book club'])
-    expect(await callTool(key, 'list_chats', { channel: 'signal' })).toMatch(/channel/)
+    // channel is now any lowercase slug (a pushed source can name itself
+    // anything), not the fixed telegram/whatsapp pair: an unrecognised but
+    // well-formed one is a valid filter that simply matches nothing.
+    expect(JSON.parse(await callTool(key, 'list_chats', { channel: 'signal' })).chats).toEqual([])
+    // Malformed still isn't: SOURCE_TYPE_RE rejects it before any query runs.
+    expect(await callTool(key, 'list_chats', { channel: 'BAD' })).toMatch(/channel/)
   })
 
   it('recent_messages answers with the newest lines across chats', async () => {

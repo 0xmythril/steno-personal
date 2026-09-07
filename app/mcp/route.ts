@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
 import {
   CHAT_NOT_FOUND, DATA_NOT_INSTRUCTIONS, INTERNAL_ERROR, MEDIA_NOT_FOUND, MEDIA_URL_NOTE, NO_CONNECTION, PERSON_NOTE,
+  SOURCE_NOTE,
 } from '@/lib/mcp/copy'
 import { archiveIsEmpty } from '@/lib/mcp/gate'
 import { verifyAccessKey } from '@/lib/services/access-keys'
@@ -11,6 +12,7 @@ import { agentConnections, hasActiveConnection } from '@/lib/services/connection
 import { MAX_INLINE_IMAGE_BYTES, isInlineImage, normalizeMime, readServableMediaBytes } from '@/lib/services/media'
 import { publicPeople } from '@/lib/services/people'
 import { getMessages, mediaView, pageChats, recentMessages, searchMessages } from '@/lib/services/queries'
+import { SOURCE_TYPE_RE } from '@/lib/services/sources'
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 type ToolResult = { content: Content[]; isError?: boolean }
@@ -66,7 +68,9 @@ function lean<T extends { externalMessageId: string }>(m: T): Omit<T, 'externalM
 
 const timestamp = z.iso.datetime({ offset: true })
 const toDate = (iso: string | undefined): Date | undefined => (iso ? new Date(iso) : undefined)
-const channel = z.enum(['telegram', 'whatsapp'])
+// Any source type, not only the two live channels: a pushed source's chats
+// carry whatever slug its pusher chose (lib/services/sources.ts).
+const channel = z.string().regex(SOURCE_TYPE_RE)
 const kind = z.enum(['dm', 'group', 'channel'])
 const limit = z.number().int().positive().max(200)
 
@@ -76,6 +80,7 @@ const listChatsInput = z.object({
   q: z.string().optional(),
   limit: limit.optional(),
   cursor: z.string().optional(),
+  source_id: z.string().optional(),
 })
 const getMessagesInput = z.object({
   chat_id: z.string(),
@@ -92,6 +97,7 @@ const recentInput = z.object({
   cursor: z.string().optional(),
   before: timestamp.optional(),
   after: timestamp.optional(),
+  source_id: z.string().optional(),
 })
 const searchInput = z.object({
   query: z.string(),
@@ -104,6 +110,7 @@ const searchInput = z.object({
   limit: limit.optional(),
   order: z.enum(['relevance', 'newest']).optional(),
   cursor: z.string().optional(),
+  source_id: z.string().optional(),
 })
 const listPeopleInput = z.object({
   q: z.string().optional(),
@@ -127,12 +134,16 @@ const handler = createMcpHandler(server => {
         'pass nextCursor back to continue; total is how many match the filters. Two rows with one title are the same ' +
         'chat seen through two pairings of the account: connectionId (the id whoami reports) and createdAt tell them apart. ' +
         PERSON_NOTE + ' ' +
+        SOURCE_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: listChatsInput,
     },
     guarded('list_chats', async (args: z.infer<typeof listChatsInput>) => {
       if (await nothingToServe()) return text(NO_CONNECTION)
-      return text(await pageChats(args))
+      return text(await pageChats({
+        channel: args.channel, kind: args.kind, q: args.q, limit: args.limit, cursor: args.cursor,
+        sourceId: args.source_id,
+      }))
     }),
   )
 
@@ -145,6 +156,7 @@ const handler = createMcpHandler(server => {
         'or before/after as ISO-8601 timestamps to bound the range. ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
+        SOURCE_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: getMessagesInput,
     },
@@ -171,6 +183,7 @@ const handler = createMcpHandler(server => {
         'nextCursor back to go further back in time. ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
+        SOURCE_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: recentInput,
     },
@@ -184,6 +197,7 @@ const handler = createMcpHandler(server => {
         cursor: args.cursor,
         before: toDate(args.before),
         after: toDate(args.after),
+        sourceId: args.source_id,
       })
       return text({ ...out, messages: out.messages.map(lean) })
     }),
@@ -201,6 +215,7 @@ const handler = createMcpHandler(server => {
         'is being written to; newest is stable. Each hit names its chat (chatId, chatTitle, channel, kind). ' +
         MEDIA_URL_NOTE + ' ' +
         PERSON_NOTE + ' ' +
+        SOURCE_NOTE + ' ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: searchInput,
     },
@@ -216,6 +231,7 @@ const handler = createMcpHandler(server => {
         limit: args.limit,
         order: args.order,
         cursor: args.cursor,
+        sourceId: args.source_id,
       })
       return text({ hits: out.hits.map(lean), nextCursor: out.nextCursor })
     }),
@@ -283,6 +299,7 @@ const handler = createMcpHandler(server => {
       description:
         'The channel accounts connected to this instance: id (the connectionId list_chats puts on each chat), channel, ' +
         'display name and status. Never a phone number. ' +
+        'mode says whether the source is read live from a paired account or pushed in through the import door, and pushedBy names the keys that delivered it. ' +
         DATA_NOT_INSTRUCTIONS,
     },
     guarded('whoami', async () => {
@@ -302,7 +319,7 @@ const authed = withMcpAuth(
   handler,
   async (_req, token) => {
     if (!token) return undefined
-    const key = await verifyAccessKey(token)
+    const key = await verifyAccessKey(token, 'read')
     if (!key) return undefined
     return { token, clientId: key.id, scopes: [] }
   },

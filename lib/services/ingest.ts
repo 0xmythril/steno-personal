@@ -1,7 +1,6 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { chats, messages } from '@/lib/db/schema'
-import type { Channel } from '@/lib/channels/port'
 
 // Pure-database ingest. NO channel library code lives here — every port hands
 // over already-normalised DTOs, which is what makes the whole write path
@@ -58,7 +57,8 @@ const MIN_COMMON_CHAT_ID = -999999999999
 // last_message_at moves forward only, so out-of-order backfill cannot rewind
 // it. SQLite's two-argument max() returns NULL if either side is NULL, hence
 // the coalesce on the existing value.
-async function upsertChat(connectionId: string, channel: Channel, m: IncomingMessage): Promise<string> {
+// channel is a source type (lib/services/sources.ts): a live port's channel, or the slug a pushed source chose.
+async function upsertChat(connectionId: string, channel: string, m: IncomingMessage): Promise<string> {
   const [row] = await db.insert(chats).values({
     connectionId, channel, externalChatId: m.externalChatId,
     kind: m.chatKind, title: m.chatTitle, lastMessageAt: m.sentAt,
@@ -74,25 +74,57 @@ async function upsertChat(connectionId: string, channel: Channel, m: IncomingMes
   return row.id
 }
 
-export async function recordMessage(connectionId: string, channel: Channel, m: IncomingMessage): Promise<{ chatId: string; messageId: string; inserted: boolean }> {
+// existingText and existingDeleted are populated only when inserted is false
+// — the stored text and tombstone state of the row already at (chatId,
+// externalMessageId) — so a caller that needs to tell a same-text replay
+// from a disagreement, or a resend of something already deleted, from either
+// (import's conflict count) has it without a second table reach of its own;
+// recordMessage already selects the row to report messageId here.
+export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage, opts: { pushKeyId?: string; editedAt?: Date | null } = {}): Promise<{ chatId: string; messageId: string; inserted: boolean; existingText: string | null; existingDeleted: boolean }> {
   const chatId = await upsertChat(connectionId, channel, m)
   const inserted = await db.insert(messages).values({
     chatId, externalMessageId: m.externalMessageId,
     senderExternalId: m.senderExternalId, senderName: m.senderName, fromOwner: m.fromOwner,
     sentAt: m.sentAt, type: m.type, text: m.text, hasMedia: m.media !== null,
-    replyToExternalId: m.replyToExternalId ?? null, raw: m.raw,
+    replyToExternalId: m.replyToExternalId ?? null, pushKeyId: opts.pushKeyId ?? null, raw: m.raw,
+    editedAt: opts.editedAt ?? null,
   }).onConflictDoNothing({ target: [messages.chatId, messages.externalMessageId] })
     .returning({ id: messages.id })
-  if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true }
-  const [existing] = await db.select({ id: messages.id }).from(messages)
+  if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true, existingText: null, existingDeleted: false }
+  const [existing] = await db.select({ id: messages.id, text: messages.text, deletedAt: messages.deletedAt }).from(messages)
     .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId)))
-  return { chatId, messageId: existing.id, inserted: false }
+  return { chatId, messageId: existing.id, inserted: false, existingText: existing.text, existingDeleted: existing.deletedAt !== null }
 }
 
-export async function applyEdit(connectionId: string, channel: Channel, m: IncomingMessage): Promise<void> {
-  const chatId = await upsertChat(connectionId, channel, m)
+// Marks the row a push disagreed with, by the id recordMessage already
+// returned for it. importBatch is the only caller, and it only reaches this
+// after checking existingDeleted itself and finding the row live — a
+// tombstoned row is never passed here, so deleted stays deleted.
+export async function markConflict(messageId: string): Promise<void> {
+  await db.update(messages).set({ conflictedAt: new Date() }).where(eq(messages.id, messageId))
+}
+
+// Push batches can arrive out of order or be retried after a newer edit.
+// Compare and write in one statement so concurrent imports also keep the
+// newest source timestamp. Equal versions and tombstones are unchanged.
+export async function applyPushedEdit(messageId: string, text: string | null, editedAt: Date): Promise<boolean> {
   const updated = await db.update(messages)
-    .set({ text: m.text, editedAt: new Date() })
+    .set({ text, editedAt, conflictedAt: null })
+    .where(and(
+      eq(messages.id, messageId), isNull(messages.deletedAt),
+      or(isNull(messages.editedAt), lt(messages.editedAt, editedAt)),
+    ))
+    .returning({ id: messages.id })
+  return updated.length > 0
+}
+
+export async function applyEdit(connectionId: string, channel: string, m: IncomingMessage): Promise<void> {
+  const chatId = await upsertChat(connectionId, channel, m)
+  // An edit is the owner's own account of what changed, so it settles any
+  // outstanding disagreement in the same statement that applies it: an
+  // earlier conflict is moot the moment there is a new, authored answer.
+  const updated = await db.update(messages)
+    .set({ text: m.text, editedAt: new Date(), conflictedAt: null })
     .where(and(eq(messages.chatId, chatId), eq(messages.externalMessageId, m.externalMessageId), authoredBy(m.actor)))
     .returning({ id: messages.id })
   if (updated.length > 0) return
@@ -120,7 +152,10 @@ export async function applyEdit(connectionId: string, channel: Channel, m: Incom
   await recordMessage(connectionId, channel, m)
 }
 
-export async function applyDelete(connectionId: string, ref: DeleteRef): Promise<void> {
+// Returns the number of rows actually tombstoned, so a caller (importBatch)
+// can tell a real delete from a no-op on an unknown chat or a message never
+// recorded. The session manager, ingest's other caller, ignores it.
+export async function applyDelete(connectionId: string, ref: DeleteRef): Promise<number> {
   const scope = await db.select({ id: chats.id, externalChatId: chats.externalChatId })
     .from(chats).where(eq(chats.connectionId, connectionId))
 
@@ -131,11 +166,15 @@ export async function applyDelete(connectionId: string, ref: DeleteRef): Promise
     // the user follows. The numeric guard keeps a non-numeric id (WhatsApp
     // JIDs, M2) out of the comparison entirely rather than coercing it.
     : scope.filter(c => /^-?\d+$/.test(c.externalChatId) && Number(c.externalChatId) >= MIN_COMMON_CHAT_ID)
-  if (targets.length === 0) return
+  if (targets.length === 0) return 0
 
   const deletedAt = new Date()
+  let count = 0
   for (const chat of targets) {
-    await db.update(messages).set({ deletedAt })
+    const updated = await db.update(messages).set({ deletedAt })
       .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId), authoredBy(ref.actor)))
+      .returning({ id: messages.id })
+    count += updated.length
   }
+  return count
 }

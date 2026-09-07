@@ -15,6 +15,12 @@ export const accessKeys = sqliteTable('access_keys', {
   // First 8 chars after the prefix, shown in lists so a reader can match a
   // key to an agent config without revealing it.
   prefix: text('prefix').notNull(),
+  // What the key may do. Either, or both: an agent that searches and also
+  // stores its own transcript holds one key with both. Settings says out
+  // loud that a key with both carries both risks (read = exfiltration,
+  // push = planted text).
+  canRead: integer('can_read', { mode: 'boolean' }).notNull().default(true),
+  canPush: integer('can_push', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
@@ -65,7 +71,18 @@ export const sessions = sqliteTable('sessions', {
 // stores a session, and never owns a chat; it ends revoked with an outcome.
 export const connections = sqliteTable('connections', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // A source type. Live rows hold exactly 'telegram' or 'whatsapp' — the
+  // ports the worker can open — and only createConnection writes them. Pushed
+  // rows hold any slug the pusher chose (lib/services/sources.ts isSourceType).
+  channel: text('channel').notNull(),
+  // 'live' is opened by the worker through a ChannelPort; 'push' is written
+  // from outside under a push key and never reaches the worker at all.
+  mode: text('mode', { enum: ['live', 'push'] }).notNull().default('live'),
+  // Pushed rows only: the push key that created the source — "created by"
+  // history, kept even though any push key may push to it afterward (see
+  // messages.pushKeyId for per-message provenance). Keys are never hard
+  // deleted (revocation is revoked_at), so no ON DELETE action is declared.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   purpose: text('purpose', { enum: ['archive', 'recovery'] }).notNull().default('archive'),
   status: text('status', { enum: ['pending', 'active', 'revoked', 'error'] }).notNull().default('pending'),
   externalAccountId: text('external_account_id'),
@@ -87,14 +104,26 @@ export const connections = sqliteTable('connections', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the `conflicts` count the last importBatch reported for
+  // this source — a disagreeing pusher is visible at a glance, not only by
+  // reading a batch response the owner never saw. It still describes the
+  // last batch, not any one message; messages.conflictedAt is the mark that
+  // says which message a disagreement was actually about.
+  lastImportConflicts: integer('last_import_conflicts').notNull().default(0),
+  // Pushed rows only: the key that delivered the most recent accepted batch
+  // — so the source can say who pushed last without implying every pusher
+  // did. Updated alongside last_sync_at on every batch, never cleared.
+  lastPushKeyId: text('last_push_key_id').references(() => accessKeys.id),
 }, t => [
-  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL`),
+  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL AND mode = 'live'`),
+  uniqueIndex('connections_push_source').on(t.channel, t.externalAccountId).where(sql`revoked_at IS NULL AND mode = 'push'`),
 ])
 
 export const chats = sqliteTable('chats', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // The source type of the connection this chat belongs to; see connections.
+  channel: text('channel').notNull(),
   externalChatId: text('external_chat_id').notNull(),
   kind: text('kind', { enum: ['dm', 'group', 'channel'] }).notNull(),
   title: text('title'),
@@ -122,6 +151,19 @@ export const messages = sqliteTable('messages', {
   replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  // Set when a push disagreed with the text already stored here (first
+  // writer wins, so the disagreement is marked and the losing text is never
+  // stored). Cleared the moment an explicit edit settles it — an edit
+  // replaces conflictedAt with editedAt in the same update, because an edit
+  // is the owner's account of what changed, and the earlier disagreement is
+  // moot once there is a new, authored answer. Never set on a tombstoned
+  // row: deleted stays deleted, and a delete is checked before a conflict
+  // is ever considered.
+  conflictedAt: integer('conflicted_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the key that delivered this message. Null for a message
+  // the worker read live. Sources are shared — any push key may push to any
+  // source — so provenance lives here, per message, not on the source.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   raw: text('raw', { mode: 'json' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [
@@ -130,6 +172,7 @@ export const messages = sqliteTable('messages', {
   // The sender-name lookup in lib/services/queries.ts walks one sender's
   // messages newest-first, once per row on a page.
   index('messages_sender_sent_idx').on(t.senderExternalId, t.sentAt),
+  index('messages_push_key_idx').on(t.pushKeyId),
 ])
 
 // Downloaded attachment bytes, one row per message that carries one. Queued
