@@ -1,3 +1,4 @@
+import { recordPortalRead } from '@/lib/services/history-reads'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
@@ -44,6 +45,8 @@ export default async function PersonPage({ params, searchParams }: {
   // "merge into me" is a slip rather than an instruction; hidden people are
   // not in listPeople at all, and merging into one would resurrect nothing.
   const others = everyone.filter(p => p.id !== person.id)
+
+  await recordPortalRead(session, 'portal_person', { person, chats: theirChats })
 
   return (
     <>

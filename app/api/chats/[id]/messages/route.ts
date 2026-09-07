@@ -1,8 +1,9 @@
+import { withHistoryRead } from '@/lib/services/history-reads'
 import { authenticateRequest } from '@/lib/auth'
 import { badRequest, notFound, parseDate, parseLimit, unauthorized, withErrorBoundary } from '@/lib/api'
 import { getMessages } from '@/lib/services/queries'
 
-export const GET = withErrorBoundary(async (
+export const GET = withHistoryRead('get_messages', withErrorBoundary(async (
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> => {
@@ -24,4 +25,4 @@ export const GET = withErrorBoundary(async (
     after: after.value,
   })
   return out ? Response.json(out) : notFound()
-})
+}))

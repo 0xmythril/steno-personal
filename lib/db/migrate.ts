@@ -1,3 +1,4 @@
+import { historyState } from './schema'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import path from 'node:path'
 import { db, type Db } from './client'
@@ -6,4 +7,5 @@ import { db, type Db } from './client'
 // Idempotent; run at every boot (scripts/boot.ts) and in the test setup.
 export function runMigrations(database: Db = db): void {
   migrate(database, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
+  database.insert(historyState).values({ id: 1 }).onConflictDoNothing().run()
 }

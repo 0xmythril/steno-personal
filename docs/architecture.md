@@ -220,3 +220,12 @@ credential, for the routes that accept both. Server actions call
 
 Channels with a first-party agent connector (Slack, Discord) are a non-goal,
 on purpose: their own platforms already give an agent read access.
+
+
+## History and disputes
+
+`lib/services/history.ts` stores typed local metadata in `events` with `event_sources` snapshots that survive source removal until retention. `message_disputes` holds only pending competing text, separate from normal archive queries and FTS. Message revisions and candidate-set tokens guard owner decisions; original delivery and current-text attribution are separate. Per-chat last-push fields are populated only by future batches.
+
+The importer uses synchronous transaction-aware ingest primitives: source/message mutations, candidate capture and the success event commit together. Pending storage admission is checked inside the same write transaction; failures roll back the batch. Live edits/deletes clear affected candidates and preserve sender checks and tombstones. Five-minute source buckets count live changes durably; actual backfill/contact attempts have separate outcomes. Worker startup reconciles unfinished runs under the existing single-worker deployment contract.
+
+Read recording sits at authenticated route/tool/page boundaries, not shared query helpers. It projects only counts and source references, with request-scoped key/passkey identity. History’s own reads are excluded. Key cleanup shares one original-deliverer purge implementation between Settings and History and rechecks the reviewed scope before deleting.

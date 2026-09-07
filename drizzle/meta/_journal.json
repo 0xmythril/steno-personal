@@ -99,6 +99,20 @@
       "when": 1788798207345,
       "tag": "0013_message_conflicts",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788807117561,
+      "tag": "0014_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1788807826269,
+      "tag": "0015_history_subjects",
+      "breakpoints": true
     }
   ]
 }

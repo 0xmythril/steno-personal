@@ -1,3 +1,4 @@
+import { DisputeCapacityError } from '@/lib/services/disputes'
 import { withErrorBoundary, unauthorized, badRequest } from '@/lib/api'
 import { log } from '@/lib/log'
 import { verifyAccessKey } from '@/lib/services/access-keys'
@@ -37,7 +38,11 @@ export const POST = withErrorBoundary(async (req: Request): Promise<Response> =>
   const parsed = parseBatch(input)
   if (!parsed.ok) return json(400, { error: 'invalid_batch', problems: parsed.problems })
 
-  const result = await importBatch(key.id, parsed.batch)
+  let result
+  try { result = await importBatch(key.id, parsed.batch) } catch (error) {
+    if (error instanceof DisputeCapacityError) return json(409, { error: 'dispute_capacity', message: 'Review pending disputes in History, then retry the batch. Nothing in this batch was saved.' })
+    throw error
+  }
   track('source_pushed', { surface: 'api' })
   log.info({ inserted: result.inserted, duplicates: result.duplicates, edited: result.edited, deleted: result.deleted, conflicts: result.conflicts }, 'import accepted')
   return json(200, result)

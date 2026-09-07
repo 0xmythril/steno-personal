@@ -1,3 +1,4 @@
+import { recordEvent } from './history'
 import { and, eq, isNull } from 'drizzle-orm'
 import { track } from '@/lib/services/telemetry'
 import { db } from '@/lib/db/client'
@@ -100,6 +101,7 @@ export async function completeLogin(id: string, sessionString: string, account: 
     isNull(connections.revokedAt),
   )).returning({ id: connections.id, channel: connections.channel })
   if (updated.length === 0) return 'gone'
+  recordEvent({ kind: 'connection', operation: 'source_connected', surface: 'worker', sourceIds: [id] })
   // Which channel, and nothing about whose account. A login only ever
   // completes on a live row, so the guard is for the type, not the data.
   const channel = updated[0].channel
@@ -110,11 +112,12 @@ export async function completeLogin(id: string, sessionString: string, account: 
 // A FAILED login is retryable, not revoked: error status plus a user-visible
 // reason, login columns cleared so a fresh attempt starts clean.
 export async function failLogin(id: string, message: string): Promise<void> {
-  await db.update(connections).set({
+  const changed = await db.update(connections).set({
     status: 'error', lastError: message,
     loginQrToken: null, loginQrAt: null, loginNeedsPassword: false,
     loginSecretCiphertext: null, loginSecretAt: null,
-  }).where(and(eq(connections.id, id), isNull(connections.revokedAt)))
+  }).where(and(eq(connections.id, id), isNull(connections.revokedAt))).returning({ id: connections.id })
+  if (changed.length) recordEvent({ kind: 'connection', operation: 'source_error', surface: 'worker', sourceIds: [id] })
 }
 
 export async function recordSync(id: string): Promise<void> {

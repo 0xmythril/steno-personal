@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **History for your archive.** Review pushes, authenticated reads, syncs and source/key changes; filter by source, key, kind and UTC date; export matching activity as CSV. Compare disputed messages and keep, accept or delete a version locally. Return to revoked keys later to remove their original contributions while keeping other keys’ messages.
+
+### Changed
+
+- Push batches now commit atomically with their history and conflicting versions. Older retried source edits still leave newer edits unchanged. Chats link to their source history and show the last known pusher for that chat.
+- Activity retains 90 days or 10,000 events. Pending disputes are separate, bounded by 10,000 candidates or 512 MiB of text; a batch exceeding capacity is refused without partial changes.
+
 ### Security
 - **The first-run claim is instance-wide.** Setup bound a pairing to the
   browser that started it, but only per channel: while the owner's Telegram

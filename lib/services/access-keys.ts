@@ -1,10 +1,11 @@
 import { db } from '@/lib/db/client'
 import { track } from '@/lib/services/telemetry'
-import { accessKeys, chats, messages } from '@/lib/db/schema'
+import { accessKeys, messages } from '@/lib/db/schema'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash, randomBytes } from 'node:crypto'
 import { decryptSecret, encryptSecret } from './crypto'
-import { deleteConnection } from '@/lib/services/connections'
+import { purgeRevokedKey } from './disputes'
+import { recordEvent, OWNER } from './history'
 
 export const KEY_PREFIX = 'sp_'
 export const MAX_LABEL_LENGTH = 100
@@ -48,7 +49,11 @@ export async function mintAccessKey(label: string, caps: KeyCapabilities = { rea
   if (!checked.ok) return checked
   if (!caps.read && !caps.push) return { ok: false, reason: 'no_capability' }
   const { rawKey, values } = newKeyRow(checked.label, caps)
-  const [row] = await db.insert(accessKeys).values(values).returning({ id: accessKeys.id })
+  const row = db.transaction(tx => {
+    const row = tx.insert(accessKeys).values(values).returning({ id: accessKeys.id }).get()
+    recordEvent({ kind: 'key', operation: 'key_created', subjectKeyId: row.id }, tx)
+    return row
+  })
   // That a key was made. Never its label, prefix or value.
   track('access_key_minted', {})
   return { ok: true, id: row.id, rawKey }
@@ -66,7 +71,9 @@ export async function mintFirstAccessKey(label: string): Promise<MintResult> {
   const row = db.transaction(tx => {
     const existing = tx.select({ id: accessKeys.id }).from(accessKeys).limit(1).all()
     if (existing.length > 0) return null
-    return tx.insert(accessKeys).values(values).returning({ id: accessKeys.id }).get()
+    const row = tx.insert(accessKeys).values(values).returning({ id: accessKeys.id }).get()
+    recordEvent({ kind: 'key', operation: 'key_created', subjectKeyId: row.id }, tx)
+    return row
   }, { behavior: 'immediate' })
   if (!row) return { ok: false, reason: 'not_first' }
   track('access_key_minted', {})
@@ -125,16 +132,20 @@ export async function revealAccessKey(id: string): Promise<string | null> {
 export async function renameAccessKey(id: string, label: string): Promise<{ ok: true } | { ok: false; reason: 'label_empty' | 'label_too_long' | 'not_found' }> {
   const checked = checkLabel(label)
   if (!checked.ok) return checked
-  const res = await db.update(accessKeys).set({ label: checked.label })
-    .where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id })
-  if (res.length === 0) return { ok: false, reason: 'not_found' }
-  return { ok: true }
+  return db.transaction(tx => {
+    const res = tx.update(accessKeys).set({ label: checked.label }).where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id }).all()
+    if (res.length === 0) return { ok: false as const, reason: 'not_found' as const }
+    recordEvent({ kind: 'key', operation: 'key_renamed', subjectKeyId: id }, tx)
+    return { ok: true as const }
+  })
 }
 
 export async function revokeAccessKey(id: string): Promise<boolean> {
-  const res = await db.update(accessKeys).set({ revokedAt: new Date() })
-    .where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id })
-  return res.length > 0
+  return db.transaction(tx => {
+    const res = tx.update(accessKeys).set({ revokedAt: new Date() }).where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id }).all()
+    if (res.length) recordEvent({ kind: 'key', operation: 'key_revoked', subjectKeyId: id }, tx)
+    return res.length > 0
+  })
 }
 
 // How many live (undeleted) messages this key has pushed. What the Settings
@@ -165,31 +176,14 @@ export async function messagesPushedByKey(keyId: string): Promise<number> {
 // sources, including ones another key registered but has not yet populated.
 export async function revokeAccessKeyAndPurge(id: string): Promise<{ revoked: boolean; messagesDeleted: number; sourcesDeleted: number }> {
   const revoked = await revokeAccessKey(id)
-
-  const affected = await db.selectDistinct({ connectionId: chats.connectionId }).from(messages)
-    .innerJoin(chats, eq(chats.id, messages.chatId))
-    .where(and(eq(messages.pushKeyId, id), isNull(messages.deletedAt)))
-
-  const deletedRows = await db.delete(messages)
-    .where(and(eq(messages.pushKeyId, id), isNull(messages.deletedAt)))
-    .returning({ id: messages.id })
-  const messagesDeleted = deletedRows.length
-
-  let sourcesDeleted = 0
-  for (const { connectionId } of affected) {
-    const [{ n }] = await db.select({ n: sql<number>`count(*)` })
-      .from(messages).innerJoin(chats, eq(chats.id, messages.chatId))
-      .where(eq(chats.connectionId, connectionId))
-    if (Number(n) === 0) {
-      await deleteConnection(connectionId)
-      sourcesDeleted++
-    }
-  }
-  return { revoked, messagesDeleted, sourcesDeleted }
+  const result = purgeRevokedKey(id, OWNER)
+  return { revoked, messagesDeleted: result.messagesDeleted, sourcesDeleted: result.sourcesDeleted }
 }
 
 export async function revokeAllAccessKeys(): Promise<number> {
-  const res = await db.update(accessKeys).set({ revokedAt: new Date() })
-    .where(isNull(accessKeys.revokedAt)).returning({ id: accessKeys.id })
-  return res.length
+  return db.transaction(tx => {
+    const res = tx.update(accessKeys).set({ revokedAt: new Date() }).where(isNull(accessKeys.revokedAt)).returning({ id: accessKeys.id }).all()
+    for (const row of res) recordEvent({ kind: 'key', operation: 'key_revoked', subjectKeyId: row.id }, tx)
+    return res.length
+  })
 }
