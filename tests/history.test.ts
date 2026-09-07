@@ -101,7 +101,7 @@ describe('transaction boundaries', () => {
 })
 
 it('refuses new candidate storage at capacity without committing earlier batch inserts', async () => {
-  const a = await key('a'); await importBatch(a, batch('stored'))
+  const a = await key('a'); const source = await importBatch(a, batch('stored'))
   const m = db.select().from(messages).get()!
   db.transaction(tx => {
     for (let i = 0; i < 10_000; i++) tx.insert(messageDisputes).values({ messageId: m.id, revision: 0, incomingKeyId: a, incomingText: `candidate ${i}`, fingerprint: `fixture-${i}` }).run()
@@ -110,4 +110,5 @@ it('refuses new candidate storage at capacity without committing earlier batch i
   await expect(importBatch(a, input)).rejects.toThrow('dispute_capacity')
   expect(db.select().from(messages).all()).toHaveLength(1)
   expect(db.select().from(messageDisputes).all()).toHaveLength(10_000)
+  expect(historyPage({ kind: 'push', source: source.source.id }).events.some(e => e.outcome === 'failed')).toBe(true)
 })

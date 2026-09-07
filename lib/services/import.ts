@@ -159,7 +159,10 @@ export async function importBatch(keyId: string, batch: Batch, surface: HistoryS
     return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
   }, { behavior: 'immediate' })
   } catch (error) {
-    try { recordEvent({ kind: 'push', operation: 'push', surface, actor: keyActor(keyId), outcome: 'failed', counts: { entries: batch.messages.length + batch.deletes.length } }) } catch { log.error({}, 'history push failure could not be recorded') }
+    try {
+      const source = db.select({ id: connections.id }).from(connections).where(and(eq(connections.mode, 'push'), eq(connections.channel, batch.source.type), eq(connections.externalAccountId, batch.source.id), isNull(connections.revokedAt))).get()
+      recordEvent({ kind: 'push', operation: 'push', surface, actor: keyActor(keyId), sourceIds: source ? [source.id] : [], outcome: 'failed', counts: { entries: batch.messages.length + batch.deletes.length } })
+    } catch { log.error({}, 'history push failure could not be recorded') }
     throw error
   }
   try { trimHistory() } catch { log.error({}, 'history retention failed') }
