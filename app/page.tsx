@@ -4,10 +4,8 @@ import { Nav } from '@/app/nav'
 import { listChats, CHAT_CHANNELS } from '@/lib/services/queries'
 import type { Channel } from '@/lib/channels/port'
 import { hasActiveConnection, listSources } from '@/lib/services/connections'
-import { formatRelativeTime, CHANNEL_LABELS, sourceLabel } from '@/lib/format'
+import { formatRelativeTime, CHANNEL_LABELS, sourceLabel, KIND_LABELS } from '@/lib/format'
 import { NO_CONNECTION } from '@/lib/mcp/copy'
-
-const KIND_LABELS = { dm: 'Direct', group: 'Group', channel: 'Channel' } as const
 
 const isChannel = (v: unknown): v is Channel => typeof v === 'string' && (CHAT_CHANNELS as readonly string[]).includes(v)
 

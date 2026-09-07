@@ -191,7 +191,7 @@ The app has a small, named, deliberately capped icon set — three glyphs, no mo
 
 **Pencil.** Drawn at 16px, on the icon-only button that turns a key's label from text into its rename form in Settings. Source: `app/icons.tsx`. It is a real button — `aria-label={`Rename ${label}`}`, a visible focus ring, reachable by tap and by keyboard — never a hover reveal, because the label table is used from a phone.
 
-**Alert.** Drawn at 14px, beside the conflict count in a transcript's provenance line (`.conflict-marker`, `--warn` text, no border, no pointer cursor). Source: `app/icons.tsx`. It is not a button — the marker isn't a link yet, since the per-chat History section it will point at doesn't exist — so the glyph, the `--warn` colour and a full-sentence `aria-label` on the marker all say the same thing together rather than any one of them carrying it alone. A chat with no conflicts renders no marker.
+**Alert.** Drawn at 14px, at the end of a message's own body, beside the word "conflict" (`.conflict-marker`, `--warn` text, no border, no pointer cursor) — a sibling of the `.edited` marker beside it, on the same mono scale. Source: `app/icons.tsx`. It is not a button — the marker isn't a link yet, since the per-message History entry it will point at doesn't exist — so the glyph, the `--warn` colour and a full-sentence `aria-label` on the marker all say the same thing together rather than any one of them carrying it alone. A message with no conflict renders no marker.
 
 ### Note chip
 

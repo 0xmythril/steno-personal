@@ -69,23 +69,43 @@ describe('transcript page', () => {
     expect(src).toMatch(/import\s*\{[^}]*\bformatRelativeTime\b[^}]*\}\s*from\s*'@\/lib\/format'/)
   })
 
-  it('marks a pushed chat with the note chip in the pad-head, naming who pushed it', () => {
+  it('says what the chat is with the shared KIND_LABELS, not "Read-only archive"', () => {
+    const src = read(path)
+    expect(src).toMatch(/import\s*\{[^}]*\bKIND_LABELS\b[^}]*\}\s*from\s*'@\/lib\/format'/)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head, 'the pad-head block exists').toContain('pad-head')
+    expect(head).toContain('KIND_LABELS[page.chat.kind]')
+    expect(head).not.toMatch(/Read-only archive/)
+  })
+
+  it('the chats page and the transcript page share one KIND_LABELS from lib/format', () => {
+    const format = read('lib/format.ts')
+    expect(format).toMatch(/export const KIND_LABELS = \{ dm: 'Direct', group: 'Group', channel: 'Channel' \} as const/)
+    const chatsSrc = read('app/page.tsx')
+    expect(chatsSrc).toMatch(/import\s*\{[^}]*\bKIND_LABELS\b[^}]*\}\s*from\s*'@\/lib\/format'/)
+    expect(chatsSrc).not.toMatch(/const KIND_LABELS = /)
+  })
+
+  it('drops the "Pushed by" chip for one plain provenance sentence naming who pushed last', () => {
     const src = read(path)
     // Anchor on the pad-head block itself, not the whole file: an assertion
     // that only looks at the whole file would pass on unrelated text alone,
     // feature deleted or not.
     const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
-    expect(head, 'the pad-head block exists').toContain('pad-head')
-    expect(head).toMatch(/pushers\.length > 0/)
-    expect(head).toMatch(/<span className="chip note">/)
-    expect(head).toMatch(/Pushed by/)
+    expect(head).not.toMatch(/chip note/)
+    expect(head).not.toMatch(/Pushed by /)
+    expect(head).toMatch(/last push/)
+    expect(head).toMatch(/source\.lastPushBy/)
   })
 
-  it('shows the last push time and conflict count from the source, in the pad-head', () => {
+  it('names the other pushers when more than one key fed the chat, and falls back to "pushed by" with no time when the source is gone', () => {
     const src = read(path)
     const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
-    expect(head).toMatch(/last push/)
-    expect(head).toMatch(/conflicts?/)
+    expect(head).toMatch(/pushers\.length > 1/)
+    expect(head).toMatch(/also pushed by/)
+    // The no-source fallback reads straight off the messages, so a revoked
+    // source still lets the chat say who pushed it.
+    expect(head).toContain("pushed by {page.chat.pushers.join(', ')}")
   })
 
   it('pluralises the message count instead of always saying "messages"', () => {
@@ -96,18 +116,34 @@ describe('transcript page', () => {
     expect(head).toContain("page.chat.messageCount === 1 ? 'message' : 'messages'")
   })
 
-  it('renders the conflict count as a compact marker, not trailing prose, and only when there is one', () => {
+  it('keeps the conflict marker out of the header — it now marks the message it disputes', () => {
+    const src = read(path)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head).not.toMatch(/conflict/i)
+    expect(head).not.toMatch(/AlertIcon/)
+  })
+
+  it('marks each message whose conflictedAt is set with AlertIcon and the word "conflict", as edited\'s sibling', () => {
     const src = read(path)
     expect(src, 'imports AlertIcon').toMatch(/import\s*\{\s*AlertIcon\s*\}\s*from\s*'@\/app\/icons'/)
-    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
-    // Gated on a nonzero count: a chat with no conflicts shows no marker.
-    expect(head).toContain('source.lastImportConflicts > 0')
-    expect(head).toContain('className="conflict-marker"')
-    // The full sentence lives in the aria-label; the visible text is just the count.
-    expect(head).toContain("aria-label={`${source.lastImportConflicts} ${source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push`}")
-    expect(head).toContain('<AlertIcon />')
-    // Not a link yet — the History section it will point at does not exist.
-    expect(head).not.toMatch(/<a\b/)
+    // Anchor on the message body's own region, between the edited marker and
+    // the media attachment, so this cannot pass on a marker left in the header.
+    const editedAt = src.indexOf('m.editedAt && <span className="edited">edited</span>')
+    expect(editedAt, 'the edited marker exists').toBeGreaterThan(-1)
+    const mediaAt = src.indexOf('m.media && <MediaAttachment', editedAt)
+    expect(mediaAt, 'the media attachment exists').toBeGreaterThan(-1)
+    const body = src.slice(editedAt, mediaAt)
+    expect(body).toContain('m.conflictedAt')
+    expect(body).toContain('className="conflict-marker"')
+    expect(body).toContain('<AlertIcon />')
+    expect(body).toMatch(/conflict/)
+    // The full sentence lives in the aria-label: a later push disagreed, and
+    // the stored version was kept.
+    expect(body).toMatch(/aria-label="[^"]*later push[^"]*"/i)
+    expect(body).toMatch(/stored version[^"]*kept/i)
+    // Not a link yet — a comment names History as its eventual destination.
+    expect(body).not.toMatch(/<a\b/)
+    expect(body.toLowerCase()).toContain('history')
   })
 
   it('left-aligns the pad-head meta instead of ragging it against the right edge', () => {
@@ -131,24 +167,33 @@ describe('transcript page', () => {
     expect(rule).toMatch(/color:\s*var\(--warn\)/)
   })
 
+  it('fixes the inline SVG baseline so the marker sits level with the surrounding text', () => {
+    const css = read('app/globals.css')
+    const at = css.indexOf('.conflict-marker {')
+    const rule = css.slice(at, css.indexOf('}', at) + 1)
+    // The default vertical-align (baseline) is synthesised from the SVG's own
+    // box, which has none — an explicit value sidesteps that entirely.
+    expect(rule).toMatch(/vertical-align:\s*\S/)
+  })
+
+  it('sizes the conflict marker on the same mono scale as .edited, its sibling in the message body', () => {
+    const css = read('app/globals.css')
+    expect(css).toMatch(/\.msg-body \.conflict-marker \{[^}]*font-family:\s*var\(--mono\)[^}]*\}/)
+  })
+
   it('names the pushers from the messages alone — never gated on the source row, which a revocation removes', () => {
     // Pushers come from push_key_id on the messages themselves and outlive a
-    // revoked source; the last-push time and conflict count live only on the
-    // source row. If the chip is ever re-coupled to `source`, this fails.
+    // revoked source; the last-push time and who pushed last live only on
+    // the source row. If the fallback is ever re-coupled to `source`, this fails.
     const src = read(path)
     const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
-    const pushedByStart = head.indexOf('{page.chat.pushers.length > 0')
-    expect(pushedByStart, 'the pushers-length guard exists').toBeGreaterThan(-1)
-    const sourceStart = head.indexOf('{source &&', pushedByStart)
-    expect(sourceStart, 'the source guard exists').toBeGreaterThan(-1)
-    const pushedByBlock = head.slice(pushedByStart, sourceStart)
-    expect(pushedByBlock, 'the Pushed by block exists').toContain('Pushed by')
-    expect(pushedByBlock).not.toMatch(/\bsource\b/)
-
-    const spanEnd = head.indexOf('</span>', sourceStart)
-    const lastPushBlock = head.slice(sourceStart, spanEnd)
-    expect(lastPushBlock, 'the last-push block exists').toContain('last push')
-    expect(lastPushBlock).toContain('conflict')
+    const provenanceAt = head.indexOf('provenance')
+    expect(provenanceAt, 'the provenance line exists').toBeGreaterThan(-1)
+    const fallbackAt = head.indexOf("pushed by {page.chat.pushers.join(', ')}", provenanceAt)
+    expect(fallbackAt, 'the pushed-by fallback exists').toBeGreaterThan(-1)
+    const sourceBlock = head.slice(provenanceAt, fallbackAt)
+    expect(sourceBlock, 'the last-push block exists').toContain('last push')
+    expect(sourceBlock).toContain('source.lastPushBy')
   })
 
   it('keeps the 64px time margin free of per-message provenance', () => {

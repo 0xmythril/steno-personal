@@ -283,10 +283,14 @@ td.end { text-align: right; white-space: nowrap; }
 .pad-head h1 { font-size: 24px; }
 .pad-head-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .pad-head-meta .provenance { font-size: 12px; }
-/* Not a link yet — it will point at a per-chat History section once that
-   exists — so it carries none of a control's affordances: no border, no
-   pointer cursor, no hover state. */
-.conflict-marker { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); }
+/* Sits in a message's own body, beside .edited as its sibling — not a link
+   yet, since it will point at that message's own History entry once that
+   exists, so it carries none of a control's affordances: no border, no
+   pointer cursor, no hover state. An inline SVG has no baseline of its own,
+   so the default vertical-align (baseline) synthesises one from the icon's
+   own box and the marker sits off the line; any other value sidesteps that
+   synthesis and puts the marker back on the surrounding text's baseline. */
+.conflict-marker { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); vertical-align: text-bottom; }
 .pager { display: flex; gap: 14px; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); margin: 0; }
 .pager.foot { border-bottom: 0; border-top: 1px solid var(--hairline); }
 ul.transcript { list-style: none; padding: 0 0 6px; margin: 0; }
@@ -299,6 +303,7 @@ li.msg-run > * { min-width: 0; }
 .msg-who.me { color: var(--pine-ink); }
 .msg-body { color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-body .edited { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
+.msg-body .conflict-marker { font-family: var(--mono); font-size: 11px; margin-left: 6px; }
 .msg-body .kind { font-size: 12.5px; color: var(--muted); }
 .attachment { display: flex; width: fit-content; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--well); font-size: 13px; color: var(--body); max-width: 100%; }
 .attachment img { max-width: min(100%, 22rem); height: auto; border-radius: 6px; display: block; }

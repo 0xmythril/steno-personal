@@ -6,7 +6,7 @@ import { Nav } from '@/app/nav'
 import { getMessages } from '@/lib/services/queries'
 import { listSources } from '@/lib/services/connections'
 import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
-import { formatTime, formatRelativeTime } from '@/lib/format'
+import { formatTime, formatRelativeTime, KIND_LABELS } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
 import { track } from '@/lib/services/telemetry'
 import { AlertIcon } from '@/app/icons'
@@ -65,41 +65,31 @@ export default async function ChatPage({ params, searchParams }: {
             <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
             <div className="pad-head-meta">
               <span className="muted mono">
-                Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} {page.chat.messageCount === 1 ? 'message' : 'messages'}
+                {KIND_LABELS[page.chat.kind]} &middot; {page.chat.messageCount.toLocaleString('en')} {page.chat.messageCount === 1 ? 'message' : 'messages'}
                 {/* The address book is edited on /people; this page only ever
                     links to it, because nothing here may grow a form. */}
                 {page.chat.person
                   ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
                   : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
               </span>
-              {/* Second line, quieter: who delivered it, and how it's going.
-                  Pushers come from the messages, so they outlive a revoked source: the
-                  chip never depends on `source`. Only the last-push time and the
-                  conflict count live on the source row, so only those are gated on it. */}
-              {(page.chat.pushers.length > 0 || source) && (
+              {/* Second line, quieter: one plain sentence of provenance, not a
+                  chip — a chip is a status or a brand mark and this is
+                  neither. Pushers come from the messages, so the no-source
+                  fallback outlives a revoked source; only the last-push time
+                  and who pushed last live on the source row, so only that
+                  half is gated on it. */}
+              {(source || page.chat.pushers.length > 0) && (
                 <span className="muted mono provenance">
-                  {page.chat.pushers.length > 0 && (
-                    <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span>
-                  )}
-                  {source && (
-                    <> &middot; last push {formatRelativeTime(source.lastPushAt)}</>
-                  )}
-                  {/* Not a link yet: it will point at this chat's History section
-                      once that section exists. Until then it must not look
-                      pressable, so no border and no pointer cursor (.conflict-marker
-                      in globals.css) and no wrapping anchor here. A chat with no
-                      conflicts shows no marker at all — there is nothing to flag. */}
-                  {source && source.lastImportConflicts > 0 && (
+                  {source ? (
                     <>
-                      {' '}&middot;{' '}
-                      <span
-                        className="conflict-marker"
-                        aria-label={`${source.lastImportConflicts} ${source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push`}
-                      >
-                        <AlertIcon />
-                        {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'}
-                      </span>
+                      last push {formatRelativeTime(source.lastPushAt)}
+                      {source.lastPushBy && <> by {source.lastPushBy}</>}
+                      {page.chat.pushers.length > 1 && (
+                        <> &middot; also pushed by {page.chat.pushers.filter(p => p !== source.lastPushBy).join(', ')}</>
+                      )}
                     </>
+                  ) : (
+                    <>pushed by {page.chat.pushers.join(', ')}</>
                   )}
                 </span>
               )}
@@ -146,6 +136,21 @@ export default async function ChatPage({ params, searchParams }: {
                                 ? <a key={i} href={seg.href} target="_blank" rel="noopener noreferrer nofollow">{seg.value}</a>
                                 : <Fragment key={i}>{seg.value}</Fragment>)}
                             {m.editedAt && <span className="edited">edited</span>}
+                            {/* Not a link yet — it will point at this message's own
+                                History entry once that exists — so it carries none
+                                of a control's affordances: no border, no pointer
+                                cursor, no hover state (.conflict-marker in
+                                globals.css). A message with no conflict renders no
+                                marker; a tombstoned message is never marked (deleted
+                                stays deleted). */}
+                            {m.conflictedAt && (
+                              <span
+                                className="conflict-marker"
+                                aria-label="A later push disagreed with this message; the stored version was kept."
+                              >
+                                <AlertIcon /> conflict
+                              </span>
+                            )}
                             {m.media && <MediaAttachment media={m.media} />}
                           </div>
                         ))}
