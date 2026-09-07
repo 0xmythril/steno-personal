@@ -125,7 +125,10 @@ describe('transcript page', () => {
 
   it('marks each message whose conflictedAt is set with AlertIcon and the word "conflict", as edited\'s sibling', () => {
     const src = read(path)
-    expect(src, 'imports AlertIcon').toMatch(/import\s*\{\s*AlertIcon\s*\}\s*from\s*'@\/app\/icons'/)
+    // The header's export control now imports DownloadIcon from the same
+    // module, so this matches AlertIcon as one of the named imports rather
+    // than requiring it to be the only one.
+    expect(src, 'imports AlertIcon').toMatch(/import\s*\{[^}]*\bAlertIcon\b[^}]*\}\s*from\s*'@\/app\/icons'/)
     // Anchor on the message body's own region, between the edited marker and
     // the media attachment, so this cannot pass on a marker left in the header.
     const editedAt = src.indexOf('m.editedAt && <span className="edited">edited</span>')
@@ -146,23 +149,27 @@ describe('transcript page', () => {
     expect(body.toLowerCase()).toContain('history')
   })
 
-  it('left-aligns the pad-head meta instead of ragging it against the right edge, and keeps the export link off that right-aligned axis', () => {
+  // The owner reversed the earlier placement ruling this test used to pin:
+  // that one kept the export control folded into the left-reading
+  // pad-head-meta column and banned `.pad-head-row` / `space-between`
+  // anywhere near the header, on the theory the header should read as one
+  // left-aligned column top to bottom. The owner now wants the export
+  // control top right, level with the title, so the top row is free to use
+  // `justify-content: space-between` to hold the two apart. What survives
+  // from the earlier ruling is the meta column underneath: it stays a
+  // left-reading stack of provenance sentences, not ragged against the right
+  // edge, so a regression back to right-aligned meta prose still fails here.
+  it('gives the new pad-head-top row space-between while pad-head-meta stays left-aligned beneath it', () => {
     const css = read('app/globals.css')
-    const headRule = css.slice(css.indexOf('.pad-head {'), css.indexOf('.pad-head h1'))
-    expect(headRule, 'the .pad-head rule exists').not.toBe('')
-    expect(headRule).not.toMatch(/flex-end/)
+    const topAt = css.indexOf('.pad-head-top {')
+    expect(topAt, 'the .pad-head-top rule exists').toBeGreaterThan(-1)
+    const topRule = css.slice(topAt, css.indexOf('}', topAt) + 1)
+    expect(topRule).toMatch(/space-between/)
     const metaAt = css.indexOf('.pad-head-meta {')
     expect(metaAt, 'the .pad-head-meta rule exists').toBeGreaterThan(-1)
     const metaRule = css.slice(metaAt, css.indexOf('}', metaAt) + 1)
     expect(metaRule).not.toMatch(/flex-end/)
-    // The export control once sat in its own `.pad-head-row`, `justify-content:
-    // space-between` — pinned to the header's right edge, the exact axis the
-    // owner had the header stop reading on. That rule, and any
-    // `space-between` anywhere in the pad-head region, must not come back.
-    const region = css.slice(css.indexOf('.pad-head {'), css.indexOf('.conflict-marker {'))
-    expect(region).not.toMatch(/pad-head-row/)
-    expect(region).not.toMatch(/space-between/)
-    expect(css).not.toMatch(/pad-head-row/)
+    expect(metaRule).not.toMatch(/space-between/)
   })
 
   it('the conflict marker carries no border and no pointer cursor: it is not pressable yet', () => {
@@ -224,25 +231,34 @@ describe('transcript page', () => {
     expect(whoRegion).not.toMatch(/pushedBy/)
   })
 
-  it('folds the export anchor into the left-reading pad-head-meta stack, not a control set apart on the right edge', () => {
+  // Rewritten alongside the CSS test above: the owner overrode the placement
+  // ruling this used to pin (export folded into pad-head-meta) and asked for
+  // an icon-and-word control top right, level with the title, with the
+  // explanatory sentence dropped from the page and folded into the
+  // accessible name instead. This now pins the new arrangement — top row,
+  // sibling of the <h1>, out of pad-head-meta — rather than just deleting the
+  // guard.
+  it('sits the export anchor in the header top row beside the <h1>, not folded into pad-head-meta', () => {
     // An anchor with `download`, not a button in a form: the transcript page
     // must keep growing no form control (tests/transcript-page-structure.test.ts).
-    // Anchored inside .pad-head-meta specifically, not merely somewhere under
-    // .pad-head: a sibling row beside the <h1> (the right-aligned placement
-    // the owner rejected) would sit in the header but outside this slice.
     const src = read(path)
-    expect(src, 'no .pad-head-row wrapper reappears').not.toMatch(/pad-head-row/)
+    const h1At = src.indexOf('<h1 id="top"')
+    expect(h1At, 'the <h1> exists').toBeGreaterThan(-1)
     const metaAt = src.indexOf('pad-head-meta')
     expect(metaAt, 'the pad-head-meta block exists').toBeGreaterThan(-1)
-    const meta = src.slice(metaAt, src.indexOf('{pager}'))
-    expect(meta).toMatch(/<a\s[^>]*href=\{`\/api\/chats\/\$\{page\.chat\.id\}\/export`\}[^>]*>/s)
-    expect(meta).toMatch(/\bdownload\b/)
-    expect(meta).toMatch(/aria-label=\{`Export \$\{page\.chat\.title[^}]*\}`\}/)
-    // The h1 sits before pad-head-meta opens, so the anchor cannot be the one
-    // that used to live in a row beside it.
-    const h1At = src.indexOf('<h1 id="top"')
-    expect(h1At).toBeGreaterThan(-1)
     expect(h1At).toBeLessThan(metaAt)
+    // The export anchor lives between the <h1> and the meta column opening —
+    // the header's top row — not inside the meta column itself.
+    const topRow = src.slice(h1At, metaAt)
+    expect(topRow).toMatch(/<a\s[^>]*href=\{`\/api\/chats\/\$\{page\.chat\.id\}\/export`\}[^>]*>/s)
+    expect(topRow).toMatch(/\bdownload\b/)
+    expect(topRow).toMatch(/aria-label="Export this chat as a file with every message and who pushed it"/)
+    // Minimalism: the explanatory sentence is gone from the visible page —
+    // its meaning lives in the aria-label above — and the meta column itself
+    // carries no export control at all.
+    const meta = src.slice(metaAt, src.indexOf('{pager}'))
+    expect(meta).not.toMatch(/\/export`/)
+    expect(meta).not.toMatch(/every message, who pushed it and when/)
   })
 
   it('still offers no way to send anything', () => {

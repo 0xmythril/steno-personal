@@ -67,9 +67,15 @@ All notable changes to this project are documented here. The format follows
   when it was edited) that import ignores. Strip `provenance` and the file
   pushes straight back into another instance. A deleted message contributes
   only its two ids to `deletes`, never its text. The transcript header
-  carries an Export link to it now; the per-message "· pusher" annotation on
-  the sender line is gone with it — the header already says who pushed last,
-  and anyone who needs it per message downloads the file instead. `raw` is
+  carries a download-glyph "Export" control top right, level with the title,
+  now — the per-message "· pusher" annotation on the sender line is gone
+  with it — the header already says who pushed last, and anyone who needs
+  it per message downloads the file instead. The explanatory sentence that
+  used to sit under the control is gone from the page; its meaning
+  (`Export this chat as a file with every message and who pushed it`) lives
+  in the link's accessible name instead, since a file named
+  `steno-<chat>-<date>.json` explains itself. `DESIGN.md`'s icon set grows
+  to four glyphs (passkey, pencil, alert, download). `raw` is
   included only for a message delivered through the push door — a live
   message's `raw` is a third-party protocol payload we never audited for
   identifiers — and a chat title longer than a batch entry allows is

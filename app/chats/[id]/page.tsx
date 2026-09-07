@@ -9,7 +9,7 @@ import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
 import { formatTime, formatRelativeTime, KIND_LABELS } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
 import { track } from '@/lib/services/telemetry'
-import { AlertIcon } from '@/app/icons'
+import { AlertIcon, DownloadIcon } from '@/app/icons'
 
 const PAGE_SIZE = 50
 
@@ -62,7 +62,25 @@ export default async function ChatPage({ params, searchParams }: {
         <p className="muted"><Link href="/">&larr; All chats</Link></p>
         <div className="pad">
           <div className="pad-head">
-            <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
+            <div className="pad-head-top">
+              <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
+              {/* Top right, level with the title — not a control set apart in
+                  its own right-aligned row of prose, and not folded into the
+                  left-reading meta column below it. A link, not a button in a
+                  form: the transcript may grow no form control, and
+                  `download` is enough to make the browser save the response
+                  instead of navigating to it. The explanatory sentence this
+                  used to carry lives in the accessible name now; the file it
+                  downloads, named steno-<chat>-<date>.json, explains itself. */}
+              <a
+                className="export-link"
+                href={`/api/chats/${page.chat.id}/export`}
+                download
+                aria-label="Export this chat as a file with every message and who pushed it"
+              >
+                <DownloadIcon /> Export
+              </a>
+            </div>
             <div className="pad-head-meta">
               <span className="muted mono">
                 {KIND_LABELS[page.chat.kind]} &middot; {page.chat.messageCount.toLocaleString('en')} {page.chat.messageCount === 1 ? 'message' : 'messages'}
@@ -93,25 +111,6 @@ export default async function ChatPage({ params, searchParams }: {
                   )}
                 </span>
               )}
-              {/* The export joins the same left-reading column as the rest of
-                  the header, not a control set apart on the right edge — the
-                  owner deliberately made this header read left, top to
-                  bottom, down one edge. A link, not a button in a form: the
-                  transcript may grow no form control, and `download` is
-                  enough to make the browser save the response instead of
-                  navigating to it. Folded into one line with the sentence
-                  explaining what it carries, so this reads as one thought
-                  rather than a control plus a caption. */}
-              <span className="muted mono">
-                <a
-                  href={`/api/chats/${page.chat.id}/export`}
-                  download
-                  aria-label={`Export ${page.chat.title ?? 'Untitled chat'}`}
-                >
-                  Export this chat
-                </a>
-                {' '}&mdash; every message, who pushed it and when, for debugging.
-              </span>
             </div>
           </div>
 
