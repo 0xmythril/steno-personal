@@ -4,7 +4,7 @@ import { Nav } from '@/app/nav'
 import { HostedCta } from '@/app/hosted-cta'
 import { TelegramUnavailable } from './telegram-unavailable'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
-import { listConnections, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
+import { listConnections, listSources, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS, formatRelativeTime, sourceLabel } from '@/lib/format'
 import type { Channel } from '@/lib/channels/port'
@@ -13,7 +13,7 @@ import { WhatsAppConsent } from './whatsapp-consent'
 import { ConnectPanel } from './connect-panel'
 import { ConnectButton } from './connect-button'
 import { HOSTED_URL } from '@/app/links'
-import { disconnectAction, deleteEverythingAction } from './actions'
+import { disconnectAction, deleteEverythingAction, deleteSourceAction } from './actions'
 
 
 // The panel's own error copy owns the password case; showing the raw sentinel
@@ -108,6 +108,7 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
 export default async function ConnectionsPage() {
   const session = await requireSession()
   const all = await listConnections()
+  const sources = await listSources()
   // Newest first, so the first ARCHIVE row per channel with no revoked_at is
   // the live one; revoked rows stay in the list below as history. A live
   // recovery row is someone proving ownership on /login/recover — it is not a
@@ -127,6 +128,54 @@ export default async function ConnectionsPage() {
           <ChannelCard channel="telegram" live={liveOf('telegram')} />
           <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
         </div>
+
+        {sources.length > 0 && (
+          <section className="card">
+            <h2>Sources</h2>
+            <p className="muted">
+              Conversations delivered by a key rather than read from a paired account. Deleting one erases what it
+              carries; the keys that pushed it are untouched and keep working for anything else.
+            </p>
+            <div className="tbl"><div className="scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Label</th><th>Type</th><th>Created by</th><th>Pushed by</th><th>Messages</th>
+                    <th>Last push</th><th>Conflicts</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sources.map(s => (
+                    <tr key={s.id}>
+                      <td className="name">{s.label ?? '—'}</td>
+                      <td className="muted">{sourceLabel(s.channel)}</td>
+                      <td className="muted">{s.createdBy ?? '—'}</td>
+                      <td className="muted">{s.pushedBy.length > 0 ? s.pushedBy.join(', ') : '—'}</td>
+                      <td className="mono">{s.messageCount}</td>
+                      <td className="mono muted">{formatRelativeTime(s.lastPushAt)}</td>
+                      <td className="mono">{s.lastImportConflicts}</td>
+                      <td className="end">
+                        <details className="confirm">
+                          <summary>Delete</summary>
+                          <div className="confirm-body">
+                            <p>
+                              Every chat and message pushed to {s.label ?? sourceLabel(s.channel)} is erased. Keys
+                              that pushed it keep working.
+                            </p>
+                            <form action={deleteSourceAction}>
+                              <input type="hidden" name="sourceId" value={s.id} />
+                              <button type="submit" className="small danger">Yes, erase this source</button>
+                            </form>
+                          </div>
+                        </details>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div></div>
+          </section>
+        )}
 
         {/* Step two, said where step one just happened. The agent panel
             stays under Settings beside the keys it is built on (DESIGN.md,

@@ -4,7 +4,9 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireSession, endSession, isHttps } from '@/lib/auth'
-import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
+import {
+  mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys, revokeAccessKeyAndPurge,
+} from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
 import { track } from '@/lib/services/telemetry'
@@ -87,6 +89,22 @@ export async function revokeKeyAction(formData: FormData) {
   jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
   jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   // Revoking the key this browser logged in with ends this session too.
+  if (keyId === session.keyId) { await endSession(); redirect('/login') }
+  revalidatePath('/settings')
+}
+
+// Revoke a push key and take what it delivered with it: every message it
+// pushed is hard-deleted, and any source it thereby leaves empty goes with
+// it. Same session-ending rule as revokeKeyAction — revoking this browser's
+// own key must not leave it logged into a session a key no longer backs.
+export async function revokeAndPurgeKeyAction(formData: FormData) {
+  const session = await requireSession()
+  const keyId = String(formData.get('keyId') ?? '')
+  await revokeAccessKeyAndPurge(keyId)
+  const jar = await cookies()
+  jar.delete({ name: REVEALED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   if (keyId === session.keyId) { await endSession(); redirect('/login') }
   revalidatePath('/settings')
 }

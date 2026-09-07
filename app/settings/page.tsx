@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { requireSession } from '@/lib/auth'
-import { listActiveAccessKeys, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/services/access-keys'
+import { listActiveAccessKeys, messagesPushedByKey, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/services/access-keys'
 import { listActivePasskeys } from '@/lib/services/passkeys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
@@ -11,7 +11,7 @@ import { EnrichmentSection } from './enrichment'
 import { TelemetrySection } from './telemetry'
 import {
   mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction, revokeAllKeysAction,
-  revokePasskeyAction, revokeAllPasskeysAction,
+  revokeAndPurgeKeyAction, revokePasskeyAction, revokeAllPasskeysAction,
 } from './actions'
 
 type Flash = { id: string; rawKey: string } | null
@@ -26,6 +26,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const session = await requireSession()
   const keys = await listActiveAccessKeys()
   const passkeyRows = await listActivePasskeys()
+  // Only push-capable keys need the count: it feeds the revoke-and-purge
+  // confirm's body, which only that row offers.
+  const pushedCounts = new Map<string, number>()
+  for (const k of keys) if (k.canPush) pushedCounts.set(k.id, await messagesPushedByKey(k.id))
   const sp = await searchParams
   const mintError = typeof sp.mintError === 'string' ? sp.mintError : null
   const revealError = typeof sp.revealError === 'string' ? sp.revealError : null
@@ -116,10 +120,29 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     <td className="mono muted">{fmt(k.createdAt)}</td>
                     <td className="mono muted">{fmt(k.lastUsedAt)}</td>
                     <td className="end">
-                      <form action={revokeKeyAction} className="inline">
-                        <input type="hidden" name="keyId" value={k.id} />
-                        <button type="submit" className="danger">Revoke</button>
-                      </form>
+                      <span className="actions">
+                        <form action={revokeKeyAction} className="inline">
+                          <input type="hidden" name="keyId" value={k.id} />
+                          <button type="submit" className="danger">Revoke</button>
+                        </form>
+                        {k.canPush && (
+                          <details className="confirm">
+                            <summary>Revoke and delete what it pushed</summary>
+                            <div className="confirm-body">
+                              <p>
+                                {pushedCounts.get(k.id) ?? 0} message{pushedCounts.get(k.id) === 1 ? '' : 's'} this
+                                key delivered {pushedCounts.get(k.id) === 1 ? 'is' : 'are'} erased, along with any
+                                source that key fed alone. Revoke above instead to stop it without touching what it
+                                already pushed.
+                              </p>
+                              <form action={revokeAndPurgeKeyAction}>
+                                <input type="hidden" name="keyId" value={k.id} />
+                                <button type="submit" className="small danger">Yes, revoke and delete what it pushed</button>
+                              </form>
+                            </div>
+                          </details>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 ))}

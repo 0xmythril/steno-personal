@@ -92,3 +92,52 @@ describe('transcript page', () => {
     expect(src).not.toMatch(/#[0-9a-f]{3,6}\b/i)
   })
 })
+
+describe('connections page', () => {
+  it('renders a Sources card listing every pushed source', () => {
+    const src = read('app/connections/page.tsx')
+    expect(src).toMatch(/<h2>Sources<\/h2>/)
+    expect(src).toMatch(/sources\.map\(/)
+    expect(src).toMatch(/s\.createdBy/)
+    expect(src).toMatch(/s\.pushedBy/)
+    expect(src).toMatch(/s\.lastImportConflicts/)
+  })
+
+  it('deleting a source sits behind a confirm, posting deleteSourceAction with a hidden sourceId', () => {
+    const src = read('app/connections/page.tsx')
+    const block = src.slice(src.indexOf('sources.map('))
+    expect(block, 'the Sources block exists').toContain('sources.map(')
+    expect(block).toMatch(/<details className="confirm">/)
+    expect(block).toMatch(/action=\{deleteSourceAction\}/)
+    expect(block).toMatch(/name="sourceId"/)
+  })
+
+  it('deleteSourceAction re-runs the session guard', () => {
+    const src = read('app/connections/actions.ts')
+    const start = src.indexOf('export async function deleteSourceAction')
+    expect(start).toBeGreaterThan(-1)
+    const next = src.indexOf('export async function ', start + 1)
+    const body = next === -1 ? src.slice(start) : src.slice(start, next)
+    expect(body).toMatch(/^export async function deleteSourceAction[\s\S]*?\{\s*\n\s*await requireSession\(\)/)
+  })
+})
+
+describe('settings page', () => {
+  it('a push-capable key offers revoke-and-purge behind a confirm', () => {
+    const src = read('app/settings/page.tsx')
+    const block = src.slice(src.indexOf('keys.map('))
+    expect(block, 'the keys table body exists').toContain('keys.map(')
+    expect(block).toMatch(/k\.canPush/)
+    expect(block).toMatch(/<details className="confirm">/)
+    expect(block).toMatch(/action=\{revokeAndPurgeKeyAction\}/)
+  })
+
+  it('revokeAndPurgeKeyAction re-runs the session guard', () => {
+    const src = read('app/settings/actions.ts')
+    const start = src.indexOf('export async function revokeAndPurgeKeyAction')
+    expect(start).toBeGreaterThan(-1)
+    const next = src.indexOf('export async function ', start + 1)
+    const body = next === -1 ? src.slice(start) : src.slice(start, next)
+    expect(body).toMatch(/^export async function revokeAndPurgeKeyAction[\s\S]*?\{\s*\n\s*(?:const session = )?await requireSession\(\)/)
+  })
+})

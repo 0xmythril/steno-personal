@@ -1,9 +1,10 @@
 import { db } from '@/lib/db/client'
 import { track } from '@/lib/services/telemetry'
-import { accessKeys } from '@/lib/db/schema'
+import { accessKeys, chats, connections, messages } from '@/lib/db/schema'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash, randomBytes } from 'node:crypto'
 import { decryptSecret, encryptSecret } from './crypto'
+import { deleteConnection } from '@/lib/services/connections'
 
 export const KEY_PREFIX = 'sp_'
 export const MAX_LABEL_LENGTH = 100
@@ -122,6 +123,42 @@ export async function revokeAccessKey(id: string): Promise<boolean> {
   const res = await db.update(accessKeys).set({ revokedAt: new Date() })
     .where(and(eq(accessKeys.id, id), isNull(accessKeys.revokedAt))).returning({ id: accessKeys.id })
   return res.length > 0
+}
+
+// How many live (undeleted) messages this key has pushed. What the Settings
+// page names in the revoke-and-purge confirm before the owner commits to it.
+export async function messagesPushedByKey(keyId: string): Promise<number> {
+  const [row] = await db.select({ n: sql<number>`count(*)` }).from(messages)
+    .where(and(eq(messages.pushKeyId, keyId), isNull(messages.deletedAt)))
+  return Number(row?.n ?? 0)
+}
+
+// Revoke a push key and take its pushes with it. The messages it delivered
+// are a real delete — the messages_ad trigger prunes the FTS index the same
+// way it does for any other row deletion — not the deleted_at tombstone the
+// import door uses for dedupe; a revoked key's text must actually be gone,
+// not just hidden from reads. Any pushed source that consequently holds no
+// live message at all is removed the same way "Delete everything" removes
+// one, through deleteConnection, so revoked_at and the row's existence never
+// disagree about whether a source is still there.
+export async function revokeAccessKeyAndPurge(id: string): Promise<{ revoked: boolean; messagesDeleted: number; sourcesDeleted: number }> {
+  const revoked = await revokeAccessKey(id)
+  const deletedRows = await db.delete(messages).where(eq(messages.pushKeyId, id)).returning({ id: messages.id })
+  const messagesDeleted = deletedRows.length
+
+  const pushSources = await db.select({ id: connections.id }).from(connections)
+    .where(and(eq(connections.mode, 'push'), isNull(connections.revokedAt)))
+  let sourcesDeleted = 0
+  for (const source of pushSources) {
+    const [{ n }] = await db.select({ n: sql<number>`count(*)` })
+      .from(messages).innerJoin(chats, eq(chats.id, messages.chatId))
+      .where(and(eq(chats.connectionId, source.id), isNull(messages.deletedAt)))
+    if (Number(n) === 0) {
+      await deleteConnection(source.id)
+      sourcesDeleted++
+    }
+  }
+  return { revoked, messagesDeleted, sourcesDeleted }
 }
 
 export async function revokeAllAccessKeys(): Promise<number> {
