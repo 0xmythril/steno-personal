@@ -3,7 +3,7 @@ import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { listChats, CHAT_CHANNELS } from '@/lib/services/queries'
 import type { Channel } from '@/lib/channels/port'
-import { hasActiveConnection } from '@/lib/services/connections'
+import { hasActiveConnection, listSources } from '@/lib/services/connections'
 import { formatRelativeTime, CHANNEL_LABELS, sourceLabel } from '@/lib/format'
 import { NO_CONNECTION } from '@/lib/mcp/copy'
 
@@ -14,9 +14,12 @@ const isChannel = (v: unknown): v is Channel => typeof v === 'string' && (CHAT_C
 export default async function ChatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
   const sp = await searchParams
+  const sources = await listSources()
   // Anything but a known channel means "all" — the value comes from a URL.
   const channel = isChannel(sp.channel) ? sp.channel : undefined
-  const [chats, connected] = await Promise.all([listChats({ channel }), hasActiveConnection()])
+  // Anything but a known source id means "all" — the value comes from a URL.
+  const source = typeof sp.source === 'string' ? sources.find(s => s.id === sp.source) : undefined
+  const [chats, connected] = await Promise.all([listChats({ channel, sourceId: source?.id }), hasActiveConnection()])
 
   return (
     <>
@@ -41,17 +44,26 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
         )}
 
         <div className="chips" role="group" aria-label="Filter by channel">
-          {channel ? <Link className="chip filter" href="/">All</Link> : <span className="chip">All</span>}
+          {channel || source ? <Link className="chip filter" href="/">All</Link> : <span className="chip">All</span>}
           {CHAT_CHANNELS.map(ch => (
             channel === ch
               ? <span key={ch} className="chip">{CHANNEL_LABELS[ch]}</span>
               : <Link key={ch} className="chip filter" href={`/?channel=${ch}`}>{CHANNEL_LABELS[ch]}</Link>
           ))}
+          {sources.map(s => (
+            source?.id === s.id
+              ? <span key={s.id} className="chip">{s.label ?? sourceLabel(s.channel)}</span>
+              : <Link key={s.id} className="chip filter" href={`/?source=${s.id}`}>{s.label ?? sourceLabel(s.channel)}</Link>
+          ))}
         </div>
 
         {chats.length === 0 ? (
           <div className="empty">
-            <h2>{channel ? `No ${CHANNEL_LABELS[channel]} chats archived yet.` : 'No chats archived yet.'}</h2>
+            <h2>{
+              source ? `No chats pushed to ${source.label ?? sourceLabel(source.channel)} yet.`
+                : channel ? `No ${CHANNEL_LABELS[channel]} chats archived yet.`
+                : 'No chats archived yet.'
+            }</h2>
             <p>Chats appear here as soon as a connected account has archived one.</p>
           </div>
         ) : (
@@ -62,7 +74,9 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
                 {chats.map(c => (
                   <tr key={c.id}>
                     <td className="name"><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                    <td>{sourceLabel(c.channel)}</td>
+                    <td>{sourceLabel(c.channel)}{c.pushers.length > 0 && (
+                      <> <span className="chip note">pushed by {c.pushers.length === 1 ? c.pushers[0] : `${c.pushers.length} keys`}</span></>
+                    )}</td>
                     <td className="muted">{KIND_LABELS[c.kind]}</td>
                     <td className="num">{c.messageCount.toLocaleString('en')}</td>
                     <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}</td>
