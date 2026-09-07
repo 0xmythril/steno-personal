@@ -150,3 +150,20 @@ describe('revokeAccessKeyAndPurge', () => {
     expect(stillTombstoned!.deletedAt).not.toBeNull()
   })
 })
+
+// A tombstone-only source must survive cleanup even when this purge removes
+// its final live message; another active key can still resend old history.
+it.each(['same key', 'another key'])('preserves %s tombstones when purging the last live message', async (owner) => {
+  await resetDb()
+  const a = await pushKey('A'), b = await pushKey('B')
+  const tombstoneKey = owner === 'same key' ? a.id : b.id
+  const original = parsed(batch({ messages: [message({ externalMessageId: 'deleted', text: 'deletedmessage' })] }))
+  const source = await importBatch(tombstoneKey, original)
+  await importBatch(tombstoneKey, parsed(batch({ messages: [], deletes: [{ externalChatId: 'C01', externalMessageId: 'deleted' }] })))
+  await importBatch(a.id, parsed(batch({ messages: [message({ externalMessageId: 'live' })] })))
+
+  expect(await revokeAccessKeyAndPurge(a.id)).toEqual({ revoked: true, messagesDeleted: 1, sourcesDeleted: 0 })
+  expect((await listSources()).find(s => s.id === source.source.id)).toMatchObject({ messageCount: 0 })
+  expect(await importBatch(b.id, original)).toMatchObject({ inserted: 0, duplicates: 1 })
+  expect((await searchMessages('deletedmessage')).hits).toHaveLength(0)
+})

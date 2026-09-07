@@ -1,8 +1,8 @@
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { chats, connections, messages } from '@/lib/db/schema'
+import { accessKeys, chats, connections, messages } from '@/lib/db/schema'
 import { FORMAT, MAX_NAME_BYTES, type Batch } from '@/lib/services/import'
-import { pushersForMessages, type ChatKind } from '@/lib/services/queries'
+import type { ChatKind } from '@/lib/services/queries'
 
 // Provenance is a debugging concern, not a reading one (see the plan doc):
 // the transcript drops the per-message `pushedBy`, and this is where the
@@ -54,7 +54,7 @@ export async function exportChat(chatId: string): Promise<ChatExport | null> {
   // debugging read needs and provenance carries. No LIMIT — this is the
   // whole chat, not one page of it.
   const rows = await db.select({
-    id: messages.id,
+    pushedBy: accessKeys.label,
     externalMessageId: messages.externalMessageId,
     senderExternalId: messages.senderExternalId,
     senderName: messages.senderName,
@@ -67,14 +67,9 @@ export async function exportChat(chatId: string): Promise<ChatExport | null> {
     conflictedAt: messages.conflictedAt,
     raw: messages.raw,
   }).from(messages)
+    .leftJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
     .where(and(eq(messages.chatId, chatId), isNull(messages.deletedAt)))
     .orderBy(asc(messages.sentAt), asc(messages.id))
-
-  // The delivering key's label, resolved the same way the transcript and the
-  // MCP tools already do — never a key value, hash or prefix, only what the
-  // owner called it. A message with no entry here was read live, not pushed
-  // — the same map doubles as the pushed/live signal below.
-  const pushedById = await pushersForMessages(rows.map(r => r.id))
 
   // messageSchema caps chatTitle at MAX_NAME_BYTES so a batch built from this
   // file always validates; chats.title carries no such bound (a live channel
@@ -86,7 +81,7 @@ export async function exportChat(chatId: string): Promise<ChatExport | null> {
   const chatTitle = chatRow.title === null ? null : truncateToBytes(chatRow.title, MAX_NAME_BYTES)
 
   const exportedMessages = rows.map(r => {
-    const pushedBy = pushedById.get(r.id) ?? null
+    const pushedBy = r.pushedBy
     const base = {
       externalChatId: chatRow.externalChatId,
       chatKind: chatRow.kind,
@@ -118,7 +113,7 @@ export async function exportChat(chatId: string): Promise<ChatExport | null> {
     // true, rather than let that JID into a row). Exporting raw verbatim for
     // a live message would hand the same number back through a second door,
     // so inclusion is gated on the message's own provenance — whether it has
-    // an entry in pushedById — not on source.mode, so a pushed message inside
+    // a joined key label — not on source.mode, so a pushed message inside
     // an otherwise-live chat still keeps its raw.
     return pushedBy === null ? base : { ...base, raw: r.raw as Record<string, unknown> }
   })

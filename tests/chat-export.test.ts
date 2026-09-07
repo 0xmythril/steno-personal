@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 // The route's cookie guard reads cookies() from next/headers, which only
 // exists inside a request scope — same in-memory jar convention as
@@ -241,3 +241,22 @@ describe('GET /api/chats/[id]/export', () => {
     expect(disposition).toContain(`steno-${chatId}-`)
   })
 })
+
+it('exports more messages than SQLite permits bound parameters, including push provenance', async () => {
+  const { chatId, keyId } = await pushChatId()
+  // One pushed row already exists. Add enough rows to exceed the 32766
+  // parameter limit, with both live and pushed provenance in the export.
+  db.run(sql`
+    WITH RECURSIVE sequence(n) AS (
+      SELECT 0 UNION ALL SELECT n + 1 FROM sequence WHERE n < 32765
+    )
+    INSERT INTO messages (id, chat_id, external_message_id, sent_at, type, text, raw, push_key_id, created_at)
+    SELECT 'large-' || n, ${chatId}, 'large-' || n, ${Date.parse('2026-09-05T10:00:00Z')},
+      'text', 'hello', '{}', CASE WHEN n % 2 = 0 THEN ${keyId} ELSE NULL END, 0
+    FROM sequence
+  `)
+  const out = await exportChat(chatId) as ChatExport
+  expect(out.messages).toHaveLength(32767)
+  expect(out.messages.find(m => m.externalMessageId === 'large-0')?.provenance.pushedBy).toBe('agent-a')
+  expect(out.messages.find(m => m.externalMessageId === 'large-1')?.provenance.pushedBy).toBeNull()
+}, 30000)

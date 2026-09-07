@@ -160,9 +160,9 @@ export async function messagesPushedByKey(keyId: string): Promise<number> {
 // rows just deleted, by connectionId, collected BEFORE the delete (the rows
 // are gone after). A source is removed, the same way "Delete everything"
 // removes one (through deleteConnection), only if it is one of those and now
-// holds zero live messages — never every push source in the database, which
-// would take a different key's still-empty, freshly registered source as
-// collateral.
+// holds no messages, including tombstones. Removing a tombstone-only source
+// would allow a later push to restore deleted content. Never sweep unrelated
+// sources, including ones another key registered but has not yet populated.
 export async function revokeAccessKeyAndPurge(id: string): Promise<{ revoked: boolean; messagesDeleted: number; sourcesDeleted: number }> {
   const revoked = await revokeAccessKey(id)
 
@@ -179,7 +179,7 @@ export async function revokeAccessKeyAndPurge(id: string): Promise<{ revoked: bo
   for (const { connectionId } of affected) {
     const [{ n }] = await db.select({ n: sql<number>`count(*)` })
       .from(messages).innerJoin(chats, eq(chats.id, messages.chatId))
-      .where(and(eq(chats.connectionId, connectionId), isNull(messages.deletedAt)))
+      .where(eq(chats.connectionId, connectionId))
     if (Number(n) === 0) {
       await deleteConnection(connectionId)
       sourcesDeleted++
