@@ -62,23 +62,30 @@ export default async function ChatPage({ params, searchParams }: {
         <div className="pad">
           <div className="pad-head">
             <h1 id="top">{page.chat.title ?? 'Untitled chat'}</h1>
-            <span className="muted mono">
-              Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} messages
-              {/* The address book is edited on /people; this page only ever
-                  links to it, because nothing here may grow a form. */}
-              {page.chat.person
-                ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
-                : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
-              {/* Pushers come from the messages, so they outlive a revoked source: the
+            <div className="pad-head-meta">
+              <span className="muted mono">
+                Read-only archive &middot; {page.chat.messageCount.toLocaleString('en')} messages
+                {/* The address book is edited on /people; this page only ever
+                    links to it, because nothing here may grow a form. */}
+                {page.chat.person
+                  ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
+                  : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
+              </span>
+              {/* Second line, quieter: who delivered it, and how it's going.
+                  Pushers come from the messages, so they outlive a revoked source: the
                   chip never depends on `source`. Only the last-push time and the
                   conflict count live on the source row, so only those are gated on it. */}
-              {page.chat.pushers.length > 0 && (
-                <> &middot; <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span></>
+              {(page.chat.pushers.length > 0 || source) && (
+                <span className="muted mono provenance">
+                  {page.chat.pushers.length > 0 && (
+                    <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span>
+                  )}
+                  {source && (
+                    <> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
+                  )}
+                </span>
               )}
-              {source && (
-                <> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
-              )}
-            </span>
+            </div>
           </div>
 
           {pager}
@@ -96,18 +103,22 @@ export default async function ChatPage({ params, searchParams }: {
                     <li key={run.messages[0].id} className="msg-run">
                       <span className="msg-time">
                         {formatTime(run.messages[0].sentAt)}
-                        {/* Runs group by sender, not by pusher, so one sender's run could in
-                            principle mix pushers — only in pathological data, since a live
-                            connection carries one key at a time. The run's first message is
-                            enough to say who delivered it. */}
-                        {page.chat.pushers.length > 1 && (
-                          <span className="pushed-via">via {run.messages[0].pushedBy}</span>
-                        )}
                       </span>
                       <div className="msg-col">
                         <p className={run.isMe ? 'msg-who me' : 'msg-who'}>
                           {run.isMe ? 'You' : run.senderLabel}
                           {run.rawLabel && <span className="muted"> ({run.rawLabel})</span>}
+                          {/* One pusher: the header already says it once, so nothing
+                              repeats here. More than one: the sender line names who
+                              delivered this run, in the text column where it wraps
+                              like prose rather than dragging the 64px time margin.
+                              Runs group by sender, not by pusher, so one sender's run
+                              could in principle mix pushers — only in pathological
+                              data, since a live connection carries one key at a time.
+                              The run's first message is enough to say who delivered it. */}
+                          {page.chat.pushers.length > 1 && (
+                            <span className="muted"> &middot; {run.messages[0].pushedBy}</span>
+                          )}
                         </p>
                         {run.messages.map(m => (
                           <div key={m.id} className="msg-body">

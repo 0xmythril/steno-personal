@@ -108,14 +108,24 @@ describe('transcript page', () => {
     expect(lastPushBlock).toContain('conflict')
   })
 
-  it('marks each run with who pushed it, only when more than one pusher delivered to this chat', () => {
-    // Sliced to the time span itself, not the whole file: an assertion that
-    // only looks at independent whole-file regexes would still pass if the
-    // guard and the span were decoupled from one another.
+  it('keeps the 64px time margin free of per-message provenance', () => {
+    // The time margin is sized for "09:05"; nothing pushed-related may live
+    // there, one pusher or many.
     const src = read(path)
     const runTimeRegion = src.slice(src.indexOf('msg-time'), src.indexOf('msg-col'))
-    expect(runTimeRegion).toMatch(/pushers\.length > 1/)
-    expect(runTimeRegion).toMatch(/<span className="pushed-via">via /)
+    expect(runTimeRegion).not.toMatch(/pushed-via/)
+    expect(runTimeRegion).not.toMatch(/pushedBy/)
+  })
+
+  it('marks each sender line with who pushed it, only when more than one pusher delivered to this chat', () => {
+    // Sliced to the sender-line paragraph itself, not the whole file: an
+    // assertion that only looks at independent whole-file regexes would
+    // still pass if the guard and the label were decoupled from one another.
+    const src = read(path)
+    const whoRegion = src.slice(src.indexOf('msg-who'), src.indexOf('msg-body'))
+    expect(whoRegion, 'the msg-who block exists').toContain('msg-who')
+    expect(whoRegion).toMatch(/pushers\.length > 1/)
+    expect(whoRegion).toMatch(/&middot;\s*\{run\.messages\[0\]\.pushedBy\}/)
   })
 
   it('still offers no way to send anything', () => {
