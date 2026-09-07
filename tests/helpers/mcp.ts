@@ -1,4 +1,5 @@
 import { POST } from '@/app/mcp/route'
+import { POST as PUSH_POST } from '@/app/mcp/push/route'
 
 // mcp-handler 2.x answers a POST with a single SSE frame carrying the
 // JSON-RPC message, and refuses any request that does not accept both media
@@ -11,9 +12,10 @@ type RpcMessage = {
   result?: { content?: Array<{ type: string; text?: string }>; tools?: ToolInfo[]; isError?: boolean }
   error?: { code: number; message: string }
 }
+type PostHandler = (req: Request) => Promise<Response>
 
-export function mcpRequest(rawKey: string, body: unknown): Request {
-  return new Request('http://localhost:3000/mcp', {
+function request(path: string, rawKey: string, body: unknown): Request {
+  return new Request(`http://localhost:3000${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -24,13 +26,29 @@ export function mcpRequest(rawKey: string, body: unknown): Request {
   })
 }
 
-export async function rpc(rawKey: string, body: unknown): Promise<{ status: number; message: RpcMessage | null }> {
-  const res = await POST(mcpRequest(rawKey, body))
+async function doRpc(handler: PostHandler, req: Request): Promise<{ status: number; message: RpcMessage | null }> {
+  const res = await handler(req)
   if (res.status !== 200) return { status: res.status, message: null }
   const sse = await res.text()
   const frame = sse.split('\n').find(line => line.startsWith('data: '))
   if (!frame) throw new Error(`no SSE data frame in response: ${sse}`)
   return { status: res.status, message: JSON.parse(frame.slice('data: '.length)) as RpcMessage }
+}
+
+export function mcpRequest(rawKey: string, body: unknown): Request {
+  return request('/mcp', rawKey, body)
+}
+
+export function pushRequest(rawKey: string, body: unknown): Request {
+  return request('/mcp/push', rawKey, body)
+}
+
+export async function rpc(rawKey: string, body: unknown): Promise<{ status: number; message: RpcMessage | null }> {
+  return doRpc(POST, mcpRequest(rawKey, body))
+}
+
+export async function pushRpc(rawKey: string, body: unknown): Promise<{ status: number; message: RpcMessage | null }> {
+  return doRpc(PUSH_POST, pushRequest(rawKey, body))
 }
 
 export async function listTools(rawKey: string): Promise<ToolInfo[]> {
@@ -42,6 +60,14 @@ export async function listTools(rawKey: string): Promise<ToolInfo[]> {
 
 export async function callTool(rawKey: string, name: string, args: Record<string, unknown> = {}): Promise<string> {
   const { message } = await rpc(rawKey, {
+    jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args },
+  })
+  if (message?.error) throw new Error(`JSON-RPC error ${message.error.code}: ${message.error.message}`)
+  return (message?.result?.content ?? []).map(c => c.text ?? '').join('\n')
+}
+
+export async function callPushTool(rawKey: string, name: string, args: Record<string, unknown> = {}): Promise<string> {
+  const { message } = await pushRpc(rawKey, {
     jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args },
   })
   if (message?.error) throw new Error(`JSON-RPC error ${message.error.code}: ${message.error.message}`)

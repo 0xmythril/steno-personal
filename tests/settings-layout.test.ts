@@ -18,12 +18,17 @@ describe('the connect-agent panel', () => {
     // The paste-in prompt already carries the Claude Code command and the
     // Cursor path, so per-client blocks only repeat it. What it cannot cover
     // is a client that cannot edit its own config (Claude Desktop), which
-    // gets the one standard mcpServers JSON block.
+    // gets the one standard mcpServers JSON block. A third, conditional block
+    // is the push door's own config — shown only for a key that can push.
     const details = src.match(/<details/g) ?? []
-    expect(details.length).toBe(2)
+    expect(details.length).toBe(3)
     expect(src).toMatch(/<details className="snippet" open>[\s\S]*?<pre>\{prompt\}/)
     expect(src).toMatch(/<details className="snippet">[\s\S]*?<pre>\{json\}[\s\S]*?<pre>\{command\}/)
     expect(src).toMatch(/<summary[\s\S]*?<CopyButton/)
+  })
+
+  it('the push snippet is gated on the selected key being able to push', () => {
+    expect(src).toMatch(/\{pushUrl && pushCommand && pushJson && \([\s\S]*?<details className="snippet">[\s\S]*?<\/details>\s*\)\}/)
   })
 
   it('choosing a key fills the snippets in without a second click', () => {

@@ -44,8 +44,11 @@ describe('settings keys page', () => {
     expect(actions).toMatch(/formData\.get\('canRead'\) === 'on'/)
     expect(actions).toMatch(/mintAccessKey\(label, caps\)/)
   })
-  it('never offers a push-only key to the connect-an-agent snippets', () => {
+  it('offers every readable or pushable key to the connect-an-agent snippets, each carrying its own canPush', () => {
+    // A push-only key used to be left off this list entirely; now it needs to
+    // be, so its own push snippet can show — ConnectAgent decides per key,
+    // per snippet, using the canPush this passes through.
     const page = readFileSync('app/settings/page.tsx', 'utf8')
-    expect(page).toMatch(/keys=\{keys\.filter\(k => k\.canRead\)/)
+    expect(page).toMatch(/keys=\{keys\.filter\(k => k\.canRead \|\| k\.canPush\)\.map\(k => \(\{ id: k\.id, label: k\.label, canPush: k\.canPush \}\)\)\}/)
   })
 })

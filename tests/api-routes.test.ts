@@ -53,6 +53,25 @@ const cookie = (url: string) => new Request(`http://localhost:3000${url}`)
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
 
+// Delivers one message through the push door's own service and hands back
+// the connectionId listChats/searchMessages accept as `source`.
+async function pushOneMessage(text: string): Promise<string> {
+  const push = await mintAccessKey('cron', { read: false, push: true })
+  if (!push.ok) throw new Error(push.reason)
+  const { FORMAT, importBatch, parseBatch } = await import('@/lib/services/import')
+  const parsed = parseBatch({
+    format: FORMAT,
+    source: { type: 'slack', id: 'acme', label: 'Slack (Acme)' },
+    messages: [{
+      externalChatId: 'C01', chatKind: 'group', externalMessageId: '1', senderExternalId: 'U01',
+      senderName: 'Ada', fromOwner: false, sentAt: '2026-09-05T10:00:00Z', type: 'text', text,
+    }],
+  })
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.problems))
+  const result = await importBatch(push.id, parsed.batch)
+  return result.source.id
+}
+
 beforeEach(async () => {
   jar.clear()
   await resetDb()
@@ -91,6 +110,25 @@ describe('REST routes serve the same data as the MCP tools', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { chats: Array<{ id: string; title: string | null }> }
     expect(body.chats.map(c => c.title)).toEqual(['Mum'])
+  })
+
+  it('GET /api/chats scopes to one source with the source query param', async () => {
+    const k = await key()
+    const connA = await seedConnection({ channel: 'telegram' })
+    await seedChat(connA, { title: 'A' })
+    const pushedConnId = await pushOneMessage('hi')
+
+    const scopedToA = (await (await getChats(bearer(`/api/chats?source=${connA}`, k.rawKey))).json()) as {
+      chats: Array<{ connectionId: string }>
+    }
+    expect(scopedToA.chats).toHaveLength(1)
+    expect(scopedToA.chats[0].connectionId).toBe(connA)
+
+    const scopedToPush = (await (await getChats(bearer(`/api/chats?source=${pushedConnId}`, k.rawKey))).json()) as {
+      chats: Array<{ connectionId: string }>
+    }
+    expect(scopedToPush.chats).toHaveLength(1)
+    expect(scopedToPush.chats[0].connectionId).toBe(pushedConnId)
   })
 
   it('GET /api/chats also accepts the portal session cookie', async () => {
@@ -205,6 +243,24 @@ describe('REST routes serve the same data as the MCP tools', () => {
 
     const blank = await getSearch(bearer('/api/search?q=%20%20', k.rawKey))
     expect(blank.status).toBe(400)
+  })
+
+  it('GET /api/search scopes to one source with the source query param', async () => {
+    const k = await key()
+    const conn = await seedConnection()
+    const chat = await seedChat(conn, { title: 'Mum' })
+    await seedMessage(chat, { text: 'umbrella here' })
+    const pushedConnId = await pushOneMessage('umbrella there')
+
+    const scoped = (await (
+      await getSearch(bearer(`/api/search?q=umbrella&source=${conn}`, k.rawKey))
+    ).json()) as { results: Array<{ chatId: string }> }
+    expect(scoped.results.map(r => r.chatId)).toEqual([chat])
+
+    const scopedToPush = (await (
+      await getSearch(bearer(`/api/search?q=umbrella&source=${pushedConnId}`, k.rawKey))
+    ).json()) as { results: Array<{ chatId: string }> }
+    expect(scopedToPush.results.map(r => r.chatId)).not.toContain(chat)
   })
 
   it('GET /api/people lists the address book without a phone number or a channel id', async () => {

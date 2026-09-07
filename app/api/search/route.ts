@@ -19,6 +19,7 @@ export const GET = withErrorBoundary(async (request: Request): Promise<Response>
   track('search', { surface: 'portal' })
   const { hits, nextCursor } = await searchMessages(q, {
     chatId: searchParams.get('chat_id') ?? undefined,
+    sourceId: searchParams.get('source') ?? undefined,
     limit: limit.value,
     order: (orderRaw as SearchOrder | null) ?? undefined,
     cursor: searchParams.get('cursor') ?? undefined,

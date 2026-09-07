@@ -54,9 +54,9 @@ describe('every verifyAccessKey call names its scope', () => {
     for (const c of calls) expect(c.args, `${c.file}: verifyAccessKey(${c.args})`).toMatch(/,\s*'(read|push)'\s*$/)
   })
 
-  it('only the import door asks for push', () => {
+  it('only the two push doors ask for push', () => {
     const pushDoors = calls.filter(c => /'push'/.test(c.args)).map(c => c.file.split(path.sep).join('/'))
-    expect(pushDoors.every(f => f === 'app/api/import/route.ts')).toBe(true)
+    expect(pushDoors.every(f => f === 'app/api/import/route.ts' || f === 'app/mcp/push/route.ts')).toBe(true)
   })
 
   it('the scanner sees nested parentheses and the check rejects a computed scope', () => {

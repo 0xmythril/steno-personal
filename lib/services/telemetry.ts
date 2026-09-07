@@ -26,6 +26,7 @@ import { SETTINGS_ID } from '@/lib/services/settings'
 
 export const MCP_TOOLS = [
   'list_chats', 'get_messages', 'search_messages', 'recent_messages', 'get_media', 'list_people', 'whoami',
+  'push_messages',
 ] as const
 export type McpTool = (typeof MCP_TOOLS)[number]
 

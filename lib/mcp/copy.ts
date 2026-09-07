@@ -34,6 +34,16 @@ export const PERSON_NOTE =
   + "address book; the id is this instance's own, usable only with list_people. The owner's own messages "
   + '(fromOwner: true) carry the owner as their person, the one list_people marks self: true.'
 
+// Every read path now mixes a paired live account with sources pushed in
+// through the import door, and an agent needs the same two words the portal
+// uses for the distinction: pushers (on a chat) and pushedBy (on a message).
+// Said once, here, and appended to every tool that can carry either field or
+// take source_id — list_chats, get_messages, recent_messages, search_messages.
+export const SOURCE_NOTE =
+  'Chats carry pushers — the labels of the keys that delivered them, empty for a chat read live — and every message '
+  + 'carries pushedBy, the label of the key that delivered it, or null. Pass source_id (a connectionId from whoami) '
+  + 'to stay inside one source.'
+
 export const CHAT_NOT_FOUND = 'Chat not found.'
 export const MEDIA_NOT_FOUND = 'Media not found.'
 
