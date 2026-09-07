@@ -5,6 +5,7 @@ import { listActivePasskeys } from '@/lib/services/passkeys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { Nav } from '@/app/nav'
 import { CopyButton } from '@/app/copy-button'
+import { ConfirmDialog } from '@/app/confirm-dialog'
 import { RegisterPasskey } from '@/app/register-passkey'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
@@ -139,29 +140,42 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     <td className="mono muted">{fmt(k.createdAt)}</td>
                     <td className="mono muted">{fmt(k.lastUsedAt)}</td>
                     <td className="end">
-                      <span className="actions">
-                        <form action={revokeKeyAction} className="inline">
-                          <input type="hidden" name="keyId" value={k.id} />
-                          <button type="submit" className="danger">Revoke</button>
-                        </form>
-                        {k.canPush && (
-                          <details className="confirm">
-                            <summary>Revoke and delete what it pushed</summary>
-                            <div className="confirm-body">
-                              <p>
-                                {pushedCounts.get(k.id) ?? 0} message{pushedCounts.get(k.id) === 1 ? '' : 's'} this
-                                key delivered {pushedCounts.get(k.id) === 1 ? 'is' : 'are'} erased, along with any
-                                source that key fed alone. Revoke above instead to stop it without touching what it
-                                already pushed.
-                              </p>
-                              <form action={revokeAndPurgeKeyAction}>
-                                <input type="hidden" name="keyId" value={k.id} />
-                                <button type="submit" className="small danger">Yes, revoke and delete what it pushed</button>
-                              </form>
-                            </div>
-                          </details>
-                        )}
-                      </span>
+                      {k.canPush ? (
+                        <ConfirmDialog
+                          trigger="Revoke"
+                          title={`Revoke "${k.label}"?`}
+                          body={
+                            <p>
+                              <strong>Revoke</strong> stops this key immediately without touching anything it
+                              already delivered. <strong>Revoke &amp; delete what it pushed</strong> does that, and
+                              also erases the {pushedCounts.get(k.id) ?? 0} message{pushedCounts.get(k.id) === 1 ? '' : 's'} this
+                              key delivered, along with any source that key fed alone.
+                            </p>
+                          }
+                        >
+                          <div className="stack">
+                            <form action={revokeKeyAction}>
+                              <input type="hidden" name="keyId" value={k.id} />
+                              <button type="submit" className="danger">Revoke</button>
+                            </form>
+                            <form action={revokeAndPurgeKeyAction}>
+                              <input type="hidden" name="keyId" value={k.id} />
+                              <button type="submit" className="danger">Revoke &amp; delete what it pushed</button>
+                            </form>
+                          </div>
+                        </ConfirmDialog>
+                      ) : (
+                        <ConfirmDialog
+                          trigger="Revoke"
+                          title={`Revoke "${k.label}"?`}
+                          body={<p>This key stops working immediately. Any agent using it loses access.</p>}
+                          confirm="Revoke"
+                        >
+                          <form action={revokeKeyAction}>
+                            <input type="hidden" name="keyId" value={k.id} />
+                          </form>
+                        </ConfirmDialog>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -169,18 +183,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </table>
           </div></div>
 
-          <details className="confirm">
-            <summary>Revoke all keys and log out</summary>
-            <div className="confirm-body">
+          <ConfirmDialog
+            trigger="Revoke all keys and log out"
+            title="Revoke all keys and log out?"
+            body={
               <p>
                 {keys.length === 1 ? 'Your only key stops' : `All ${keys.length} keys stop`} working at once. Every agent using
                 one loses access immediately, this browser is logged out, and no key can be revealed again. Your archive is untouched.
               </p>
-              <form action={revokeAllKeysAction}>
-                <button type="submit" className="danger small">{keys.length === 1 ? 'Yes, revoke it' : `Yes, revoke all ${keys.length} keys`}</button>
-              </form>
-            </div>
-          </details>
+            }
+            confirm={keys.length === 1 ? 'Yes, revoke it' : `Yes, revoke all ${keys.length} keys`}
+          >
+            <form action={revokeAllKeysAction} />
+          </ConfirmDialog>
         </section>
 
         <section className="card">
@@ -204,10 +219,21 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                         <td className="mono muted">{fmt(p.createdAt)}</td>
                         <td className="mono muted">{fmt(p.lastUsedAt)}</td>
                         <td className="end">
-                          <form action={revokePasskeyAction} className="inline">
-                            <input type="hidden" name="passkeyId" value={p.id} />
-                            <button type="submit" className="danger">Remove</button>
-                          </form>
+                          <ConfirmDialog
+                            trigger="Remove"
+                            title={`Remove "${p.label}"?`}
+                            body={
+                              <p>
+                                This passkey stops working. If this session signed in with it you are logged out,
+                                and you will need an access key to get back in.
+                              </p>
+                            }
+                            confirm="Remove"
+                          >
+                            <form action={revokePasskeyAction}>
+                              <input type="hidden" name="passkeyId" value={p.id} />
+                            </form>
+                          </ConfirmDialog>
                         </td>
                       </tr>
                     ))}
@@ -215,18 +241,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 </table>
               </div></div>
 
-              <details className="confirm">
-                <summary>Remove all passkeys</summary>
-                <div className="confirm-body">
+              <ConfirmDialog
+                trigger="Remove all passkeys"
+                title="Remove all passkeys?"
+                body={
                   <p>
                     {passkeyRows.length === 1 ? 'Your only passkey stops' : `All ${passkeyRows.length} passkeys stop`} working. If
                     this session signed in with one you are logged out, and you will need an access key to get back in.
                   </p>
-                  <form action={revokeAllPasskeysAction}>
-                    <button type="submit" className="danger small">{passkeyRows.length === 1 ? 'Yes, remove it' : `Yes, remove all ${passkeyRows.length} passkeys`}</button>
-                  </form>
-                </div>
-              </details>
+                }
+                confirm={passkeyRows.length === 1 ? 'Yes, remove it' : `Yes, remove all ${passkeyRows.length} passkeys`}
+              >
+                <form action={revokeAllPasskeysAction} />
+              </ConfirmDialog>
             </>
           )}
         </section>

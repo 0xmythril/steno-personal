@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { HostedCta } from '@/app/hosted-cta'
+import { ConfirmDialog } from '@/app/confirm-dialog'
 import { TelegramUnavailable } from './telegram-unavailable'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import { listConnections, listSources, PASSWORD_REJECTED, type ConnectionStatus } from '@/lib/services/connections'
@@ -39,20 +40,22 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
             <input type="hidden" name="connectionId" value={live.id} />
             <button type="submit" className="small">Disconnect</button>
           </form>
-          <details className="confirm">
-            <summary>Delete this account and everything it archived</summary>
-            <div className="confirm-body">
+          <ConfirmDialog
+            trigger="Delete this account and everything it archived"
+            title={`Delete this ${CHANNEL_LABELS[channel]} account?`}
+            body={
               <p>
                 Every chat, message and downloaded file this {CHANNEL_LABELS[channel]} account produced is erased from
                 this machine, and your agents stop seeing it. Deleted stays deleted: there is no undo and no export.
                 Disconnect instead if you only want to stop archiving.
               </p>
-              <form action={deleteEverythingAction}>
-                <input type="hidden" name="connectionId" value={live.id} />
-                <button type="submit" className="small danger">Yes, erase this {CHANNEL_LABELS[channel]} archive</button>
-              </form>
-            </div>
-          </details>
+            }
+            confirm={`Yes, erase this ${CHANNEL_LABELS[channel]} archive`}
+          >
+            <form action={deleteEverythingAction}>
+              <input type="hidden" name="connectionId" value={live.id} />
+            </form>
+          </ConfirmDialog>
         </div>
       </section>
     )
@@ -155,19 +158,21 @@ export default async function ConnectionsPage() {
                       <td className="mono muted">{formatRelativeTime(s.lastPushAt)}</td>
                       <td className="mono">{s.lastImportConflicts}</td>
                       <td className="end">
-                        <details className="confirm">
-                          <summary>Delete</summary>
-                          <div className="confirm-body">
+                        <ConfirmDialog
+                          trigger="Delete"
+                          title={`Delete "${s.label ?? sourceLabel(s.channel)}"?`}
+                          body={
                             <p>
                               Every chat and message pushed to {s.label ?? sourceLabel(s.channel)} is erased. Keys
                               that pushed it keep working.
                             </p>
-                            <form action={deleteSourceAction}>
-                              <input type="hidden" name="sourceId" value={s.id} />
-                              <button type="submit" className="small danger">Yes, erase this source</button>
-                            </form>
-                          </div>
-                        </details>
+                          }
+                          confirm="Yes, erase this source"
+                        >
+                          <form action={deleteSourceAction}>
+                            <input type="hidden" name="sourceId" value={s.id} />
+                          </form>
+                        </ConfirmDialog>
                       </td>
                     </tr>
                   ))}

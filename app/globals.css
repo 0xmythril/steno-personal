@@ -87,7 +87,7 @@ button:hover:not([disabled]), .btn:hover { background: var(--well); border-color
 button.primary, .btn.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: transparent; }
 button.primary:hover:not([disabled]) { background: var(--btn-bg); border-color: transparent; opacity: 0.92; }
 /* Destructive is a fill, not a text colour: a filled danger button acts on
-   click, an outlined one (details.confirm summary) only opens the question. */
+   click, an outlined one (.confirm-open) only opens the question. */
 button.danger, .btn.danger { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
 button.danger:hover:not([disabled]), .btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); opacity: 0.9; }
 button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
@@ -190,21 +190,21 @@ details.snippet pre { border: 0; border-radius: 6px; }
 .token { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--well); font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .token code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: 0; padding: 0; }
 
-/* Confirm. A destructive action that cannot be undone opens its consequence
-   before it can be pressed. A <details> so it needs no JS and no dialog: the
-   summary is an outlined danger control that only opens, the button inside is
-   the filled one that acts. */
-details.confirm > summary { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--bad); border-radius: 8px; color: var(--bad); font: 500 13px var(--sans); cursor: pointer; list-style: none; }
-details.confirm > summary::-webkit-details-marker { display: none; }
-details.confirm > summary:hover { background: var(--bad-soft); }
-details.confirm[open] { flex-basis: 100%; }
-details.confirm .confirm-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); max-width: 60ch; }
-details.confirm .confirm-body p { font-size: 13px; color: var(--ink); }
-/* td.end sets white-space: nowrap and text-align: right for its own single
-   line of numbers; a confirm sentence sitting inside that cell inherits both
-   and cannot wrap. Undo them here so the sentence reads left-to-right and
-   wraps like prose. */
-details.confirm .confirm-body { white-space: normal; text-align: left; }
+/* Confirm dialog. A destructive action that cannot be undone opens its
+   consequence before it can be pressed: .confirm-open is the outlined
+   trigger that only opens the question, and the filled button inside the
+   native <dialog> is the one that acts. showModal() traps focus and answers
+   Escape for free, so ConfirmDialog needs no focus-trap library and no
+   portal — a dialog is not in document flow, so it never fights the row or
+   cell it opens from. */
+button.confirm-open { border-color: var(--bad); color: var(--bad); }
+button.confirm-open:hover:not([disabled]) { background: var(--bad-soft); border-color: var(--bad); }
+dialog.confirm { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; max-width: 440px; width: calc(100% - 32px); background: var(--card); box-shadow: var(--shadow); }
+dialog.confirm::backdrop { background: var(--ink); opacity: 0.45; }
+dialog.confirm h3 { margin-bottom: 4px; }
+dialog.confirm .confirm-body { padding: 12px 14px; margin: 10px 0 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); }
+dialog.confirm .confirm-body p { font-size: 13px; color: var(--ink); margin: 0; }
+dialog.confirm .actions { margin-top: 14px; justify-content: flex-end; }
 
 /* Tables */
 .tbl { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--card); }

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
+import { ConfirmDialog } from '@/app/confirm-dialog'
 import { getPerson, listPeople, listIdentityCandidates, type IdentityCandidate } from '@/lib/services/people'
 import { listChats } from '@/lib/services/queries'
 import { CHANNEL_LABELS, sourceLabel } from '@/lib/format'
@@ -192,32 +193,34 @@ export default async function PersonPage({ params, searchParams }: {
           {others.length === 0 ? (
             <p className="muted">Nobody else to merge into yet.</p>
           ) : (
-            // Gated like every other action that cannot be undone: the summary
+            // Gated like every other action that cannot be undone: the trigger
             // opens the consequence, the filled button inside is the one that acts.
-            <details className="confirm">
-              <summary>Merge this person into another</summary>
-              <div className="confirm-body">
+            <ConfirmDialog
+              trigger="Merge this person into another"
+              title="Merge this person into another?"
+              body={
                 <p>
                   This row is deleted for good, and {person.identities.length === 1
                     ? 'its one identity moves'
                     : `its ${person.identities.length} identities move`} to whoever you pick. There is
                   no undo — Hide, further down, is the reversible one.
                 </p>
-                <form action={mergePeopleAction} className="row">
-                  <input type="hidden" name="personId" value={person.id} />
-                  <label className="field">
-                    <span>Move everything to</span>
-                    <select name="intoId" defaultValue="">
-                      <option value="">Choose someone…</option>
-                      {others.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="submit" className="danger">Merge and delete this row</button>
-                </form>
-              </div>
-            </details>
+              }
+              confirm="Merge and delete this row"
+            >
+              <form action={mergePeopleAction} className="row">
+                <input type="hidden" name="personId" value={person.id} />
+                <label className="field">
+                  <span>Move everything to</span>
+                  <select name="intoId" defaultValue="">
+                    <option value="">Choose someone…</option>
+                    {others.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </form>
+            </ConfirmDialog>
           )}
         </section>
 

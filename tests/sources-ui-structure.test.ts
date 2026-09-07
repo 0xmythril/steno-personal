@@ -143,7 +143,7 @@ describe('connections page', () => {
     const src = read('app/connections/page.tsx')
     const block = src.slice(src.indexOf('sources.map('))
     expect(block, 'the Sources block exists').toContain('sources.map(')
-    expect(block).toMatch(/<details className="confirm">/)
+    expect(block).toMatch(/<ConfirmDialog\b/)
     expect(block).toMatch(/action=\{deleteSourceAction\}/)
     expect(block).toMatch(/name="sourceId"/)
   })
@@ -164,7 +164,7 @@ describe('settings page', () => {
     const block = src.slice(src.indexOf('keys.map('))
     expect(block, 'the keys table body exists').toContain('keys.map(')
     expect(block).toMatch(/k\.canPush/)
-    expect(block).toMatch(/<details className="confirm">/)
+    expect(block).toMatch(/<ConfirmDialog\b/)
     expect(block).toMatch(/action=\{revokeAndPurgeKeyAction\}/)
   })
 

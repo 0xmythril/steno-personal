@@ -76,12 +76,18 @@ describe('destructive actions', () => {
     ['app/people/[id]/page.tsx', 'Merge this person into another'],
   ] as const
 
-  it.each(IRREVERSIBLE)('%s: "%s" is a confirm summary, not a bare submit', (path, label) => {
+  // A <details class="confirm"> used to gate these — DESIGN.md's Confirm
+  // section said so and this test enforced it — but a <details> cannot lay
+  // out inside a table cell, and a confirm sentence in the last column of a
+  // row is exactly where several of these live. The owner replaced the
+  // pattern with one ConfirmDialog everywhere (2026-09-07), so the guard
+  // now asserts the label opens that component's `trigger` prop instead.
+  it.each(IRREVERSIBLE)('%s: "%s" opens a ConfirmDialog, not a bare submit', (path, label) => {
     const src = readFileSync(path, 'utf8')
-    expect(src).toContain(`<summary>${label}</summary>`)
-    const at = src.indexOf(`<summary>${label}</summary>`)
-    const opensConfirm = src.lastIndexOf('<details className="confirm">', at)
-    expect(opensConfirm, `${label} sits inside a details.confirm`).toBeGreaterThan(-1)
-    expect(src.slice(opensConfirm, at)).not.toContain('</details>')
+    const at = src.indexOf(`trigger="${label}"`)
+    expect(at, `${label} is a ConfirmDialog trigger`).toBeGreaterThan(-1)
+    const opensDialog = src.lastIndexOf('<ConfirmDialog', at)
+    expect(opensDialog, `${label} sits inside a <ConfirmDialog`).toBeGreaterThan(-1)
+    expect(src.slice(opensDialog, at)).not.toContain('</ConfirmDialog>')
   })
 })

@@ -191,9 +191,11 @@ The one icon in the interface. A person and a key, drawn in `currentColor` strok
 
 ### Confirm
 
-Anything that cannot be undone opens its consequence before it can be pressed. A `<details class="confirm">`, so it needs no JavaScript and no dialog: the summary is an *outlined* danger control that only opens, and the button inside the `bad-soft` body is the *filled* one that acts. Outline opens, fill acts — that pairing is the whole grammar.
+Anything that cannot be undone opens its consequence before it can be pressed. `ConfirmDialog` (`app/confirm-dialog.tsx`) is the one component every such action shares: an *outlined* `.confirm-open` button is the trigger that only opens the question, and a native `<dialog>` — opened with `showModal()` — holds the consequence in a `bad-soft` body above a *filled* `danger` button that acts. Outline opens, fill acts — that pairing is the whole grammar, and it lives in one place so it cannot drift between screens.
 
-The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke all keys, remove all passkeys.
+The body names what is destroyed, in numbers where there are numbers, and says what the safer neighbouring action does instead. Used by: delete an account and its archive, revoke a key (or revoke and delete what it pushed), revoke all keys, remove a passkey, remove all passkeys, delete a source, merge a person into another.
+
+This is a client component — the one place `showModal()`, `close()` and the Escape/backdrop dismissal live — and that was accepted deliberately: a `<details>` could carry the same grammar with no JavaScript at all, but it cannot lay out inside a table cell, and several of these triggers (revoke a key, delete a source) sit in the last column of a row. A dialog is not in document flow, so it never fights the row it opens from. No focus-trap library and no portal: `showModal()` already traps focus and answers Escape, and the dialog paints in the browser's own top layer.
 
 ### Chips
 
@@ -259,7 +261,7 @@ Don't
 
 ## Iteration Guide
 
-`tests/design-system-adoption.test.ts` sweeps every view for the promises this file makes: tables wrapped so they scroll inside their own container, controls labelled with `.field` rather than a bare `<label>`, siblings spaced with `gap` rather than an inline margin, the eyebrow used as a section label rather than a badge, and every irreversible action behind a `details.confirm`. It names no file, so a new screen is held to the same bar as the ones already here.
+`tests/design-system-adoption.test.ts` sweeps every view for the promises this file makes: tables wrapped so they scroll inside their own container, controls labelled with `.field` rather than a bare `<label>`, siblings spaced with `gap` rather than an inline margin, the eyebrow used as a section label rather than a badge, and every irreversible action opened by a `ConfirmDialog`. It names no file, so a new screen is held to the same bar as the ones already here.
 
 When adding a screen, start from the shell (nav, page, footer) and reuse the components above. If a new component is needed, derive it from a card or a row rather than inventing a new surface. Any new colour must be a tint of an existing token and must be added to `tests/design-tokens.test.ts`. Any new typeface is out of scope. When in doubt, remove one thing.
 
