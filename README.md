@@ -176,8 +176,8 @@ with channels and display names, never a phone number.
 
 A key reads the **whole** archive. Create one key per agent, put the scope in the
 agent's own instructions (`channel`, `kind`, named chats), and revoke on any
-doubt. All seven tools, their filters and the agent safety notes:
-[docs/mcp.md](docs/mcp.md).
+doubt. All eight tools across both endpoints, their filters and the agent
+safety notes: [docs/mcp.md](docs/mcp.md).
 
 ## Telegram
 

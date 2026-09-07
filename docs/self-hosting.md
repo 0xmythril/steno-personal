@@ -322,7 +322,8 @@ when it was last pushed and how many conflicts that push reported. Deleting
 one there erases everything it carries; the keys that pushed it keep
 working. In Settings, revoking a key stops it without touching what it
 already pushed — **Revoke and delete what it pushed** removes both, key and
-messages, in the same step.
+messages, in the same step, and takes with it any pushed source that key fed
+alone; a source another key also feeds stays.
 
 ## Backups
 

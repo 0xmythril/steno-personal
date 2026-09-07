@@ -16,7 +16,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Documentation
 - **The README is a front page again.** Problem, quick start, connect an agent,
-  in that order; the long-form detail moved to `docs/mcp.md` (the seven MCP
+  in that order; the long-form detail moved to `docs/mcp.md` (the eight MCP
   tools, their filters and the agent safety notes), `docs/people.md` (the
   address book) and `docs/self-hosting.md` (the full environment-variable
   table). No guarantee changed: read-only, the WhatsApp consent sentences, and
