@@ -230,7 +230,8 @@ Telegram and WhatsApp arrive live. Anything else — a Slack workspace an agent
 can already read, an exported chat, an agent's own transcript — is pushed:
 something you run posts a batch to your instance under a **push key**.
 
-Mint a key in **Settings** and tick **Push**. Leave **Read** unticked for a
+In **Settings**, turn on **Advanced mode** and confirm the explanation.
+Then mint a key and tick **Push**. Leave **Read** unticked for a
 cron job — a key that only pushes cannot log in or read anything — and tick
 both for an agent that searches and also stores its own transcript. Keep
 the key out of the command line — a key on argv shows up in `ps` for any
@@ -475,3 +476,12 @@ not writable) or a `SECRET_KEY` shorter than 32 characters.
 offline for a long stretch, and it ends immediately if you unlink from the
 phone. Re-pair from Connections. Repeated forced logouts can also be the first
 sign of a restriction — see the WhatsApp paragraph in the README.
+
+### Advanced mode
+
+Settings starts with Advanced mode off. Turn it on and confirm the explanation
+to show push-key creation, agent write configuration, source management, chat
+export, and revoke-and-purge controls. The preference is saved for this instance.
+Turning it off hides those controls without revoking keys, stopping imports, or
+removing archived conversations. Existing keys can still be revoked in Settings.
+Advanced mode is a UI preference, not an API permission or a write kill switch.

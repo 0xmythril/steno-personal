@@ -95,7 +95,8 @@ describe('the settings section', () => {
   it('is rendered from the settings page with the chosen key, else the minted one', () => {
     const src = readFileSync('app/settings/page.tsx', 'utf8')
     expect(src).toContain('<ConnectAgent')
-    expect(src).toMatch(/rawKey=\{chosen\?\.rawKey \?\? minted\?\.rawKey \?\? null\}/)
+    expect(src).toContain('[chosen, minted].find(flash => flash && instructionKeys.some(k => k.id === flash.id))')
+    expect(src).toContain('rawKey={instructionKey?.rawKey ?? null}')
     // The chosen-key flash is dropped the moment its key is gone, like the others.
     expect(src).toMatch(/if \(chosen && !keys\.some\(k => k\.id === chosen!\.id\)\) chosen = null/)
   })

@@ -1,3 +1,5 @@
+import { getSettings } from '@/lib/services/settings'
+import { AdvancedMode } from './advanced-mode'
 import { cookies } from 'next/headers'
 import { requireSession } from '@/lib/auth'
 import { listActiveAccessKeys, messagesPushedByKey, MAX_LABEL_LENGTH, KEY_PREFIX } from '@/lib/services/access-keys'
@@ -26,12 +28,13 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
+  const { advancedMode } = await getSettings()
   const keys = await listActiveAccessKeys()
   const passkeyRows = await listActivePasskeys()
   // Only push-capable keys need the count: it feeds the revoke-and-purge
   // confirm's body, which only that row offers.
   const pushedCounts = new Map<string, number>()
-  for (const k of keys) if (k.canPush) pushedCounts.set(k.id, await messagesPushedByKey(k.id))
+  for (const k of keys) if (advancedMode && k.canPush) pushedCounts.set(k.id, await messagesPushedByKey(k.id))
   const sp = await searchParams
   const mintError = typeof sp.mintError === 'string' ? sp.mintError : null
   const revealError = typeof sp.revealError === 'string' ? sp.revealError : null
@@ -48,19 +51,23 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   if (revealed && !keys.some(k => k.id === revealed!.id)) revealed = null
   if (chosen && !keys.some(k => k.id === chosen!.id)) chosen = null
 
+  const instructionKeys = keys.filter(k => advancedMode ? (k.canRead || k.canPush) : k.canRead)
+  const instructionKey = [chosen, minted].find(flash => flash && instructionKeys.some(k => k.id === flash.id)) ?? null
+
   return (
     <>
       <Nav label={session.label} via={session.via} current="settings" />
       <main>
         <div className="page-head"><div><p className="eyebrow">This instance</p><h1>Settings</h1></div></div>
 
+        <AdvancedMode enabled={advancedMode} />
+
         <section className="card">
           <h2>Access keys</h2>
           <p className="muted">
-            A key can read, push, or both. Read logs you into this portal and lets an agent search your archive over
-            MCP. Push lets something you run deliver conversations. A key that does both carries both risks if it
-            leaks: it can read everything and it can plant text every agent trusts. Make one per device, agent or
-            source so you can revoke them one at a time.
+            {advancedMode
+              ? 'A key can read, push, or both. Read lets an agent search your archive and logs you into this portal. Push lets an agent store conversations here. A key with both permissions can read everything and change what other agents read. Make one per agent so you can revoke them separately.'
+              : 'An access key logs you into this portal and lets an agent read and search your archive. Make one per device or agent so you can revoke them separately.'}
           </p>
 
           {minted && (
@@ -88,17 +95,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               {mintError === 'label_too_long' && <p className="danger" role="alert">Label is too long (max {MAX_LABEL_LENGTH}).</p>}
               {mintError === 'no_capability' && <p className="danger" role="alert">Tick at least one of Read and Push.</p>}
             </label>
-            <fieldset className="field">
+            {advancedMode ? <fieldset className="field">
               <span>What it may do</span>
               <label><input type="checkbox" name="canRead" defaultChecked /> Read: log in here and search over MCP</label>
               <label><input type="checkbox" name="canPush" /> Push: deliver conversations to /api/import</label>
-            </fieldset>
+            </fieldset> : <input type="hidden" name="canRead" value="on" />}
             <button type="submit" className="primary">Create key</button>
           </form>
 
           <div className="tbl"><div className="scroll">
             <table>
-              <thead><tr><th>Label</th><th>Can</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+              <thead><tr><th>Label</th>{(advancedMode || keys.some(k => k.canPush)) && <th>Can</th>}<th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
               <tbody>
                 {keys.map(k => {
                   const rowRenameError = renameKeyId === k.id ? renameError : null
@@ -114,7 +121,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                       />
                       {k.id === session.keyId && <> <span className="chip">this session</span></>}
                     </td>
-                    <td className="muted">{k.canRead && k.canPush ? 'Read, push' : k.canPush ? 'Push' : 'Read'}</td>
+                    {(advancedMode || keys.some(key => key.canPush)) && <td className="muted">{k.canRead && k.canPush ? 'Read, push' : k.canPush ? 'Push' : 'Read'}</td>}
                     <td>
                       {revealed?.id === k.id ? (
                         <span className="token">
@@ -135,7 +142,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                     <td className="mono muted">{fmt(k.createdAt)}</td>
                     <td className="mono muted">{fmt(k.lastUsedAt)}</td>
                     <td className="end">
-                      {k.canPush ? (
+                      {advancedMode && k.canPush ? (
                         <ConfirmDialog
                           trigger="Revoke"
                           title={`Revoke "${k.label}"?`}
@@ -258,9 +265,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             truncates: an MCP URL and JSON snippets on one side, and on the other
             a model name plus the provider that receives your files. */}
         <ConnectAgent
-          rawKey={chosen?.rawKey ?? minted?.rawKey ?? null}
-          selectedId={chosen?.id ?? minted?.id ?? null}
-          keys={keys.filter(k => k.canRead || k.canPush).map(k => ({ id: k.id, label: k.label, canRead: k.canRead, canPush: k.canPush }))}
+          rawKey={instructionKey?.rawKey ?? null}
+          selectedId={instructionKey?.id ?? null}
+          advancedMode={advancedMode}
+          keys={instructionKeys.map(k => ({ id: k.id, label: k.label, canRead: k.canRead, canPush: k.canPush }))}
           error={instructionsError}
         />
 

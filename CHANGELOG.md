@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Fix confirmation dialog hydration when a server-rendered form is passed into it.
+- Add an off-by-default Advanced mode in Settings, with an opt-in explanation before revealing agent write setup, push-key creation, source management, and chat export controls. Existing keys, imports, and archived conversations keep working when it is off.
+
 ### Security
 - **The first-run claim is instance-wide.** Setup bound a pairing to the
   browser that started it, but only per channel: while the owner's Telegram

@@ -288,3 +288,14 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 - Form validation beyond the `bad` colour is not designed. A field error goes inside its `.field`, under the input; `.row > .danger` breaks to its own full-width line as a backstop, because `align-items: flex-end` would otherwise sit it on the submit button's baseline.
 - Print styles are not designed.
 - Chat titles for unnamed WhatsApp direct chats still show the full phone number. Masking to the last four digits is a copy rule for a later change.
+
+## Advanced mode
+
+Settings opens with an off-by-default Advanced mode switch. Enabling it opens a
+native explanatory dialog with Cancel focused first and a primary "Turn on
+Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
+Disabling it saves immediately and hides push-key creation, agent write setup,
+source management, transcript export, and detailed push attribution. Existing
+keys remain visible with their actual permissions and ordinary revoke controls;
+conversations, source filters, and conflict warnings remain readable. The mode is
+a UI preference only: it does not revoke keys or stop imports.

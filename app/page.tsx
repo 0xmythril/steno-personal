@@ -1,3 +1,4 @@
+import { getSettings } from '@/lib/services/settings'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
@@ -11,6 +12,7 @@ const isChannel = (v: unknown): v is Channel => typeof v === 'string' && (CHAT_C
 
 export default async function ChatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
+  const { advancedMode } = await getSettings()
   const sp = await searchParams
   const sources = await listSources()
   // Anything but a known channel means "all" — the value comes from a URL.
@@ -73,7 +75,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
                 {chats.map(c => (
                   <tr key={c.id}>
                     <td className="name"><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                    <td>{sourceLabel(c.channel)}{c.pushers.length > 0 && (
+                    <td>{sourceLabel(c.channel)}{advancedMode && c.pushers.length > 0 && (
                       <> <span className="chip note">pushed by {c.pushers.length === 1 ? c.pushers[0] : `${c.pushers.length} keys`}</span></>
                     )}</td>
                     <td className="muted">{KIND_LABELS[c.kind]}</td>

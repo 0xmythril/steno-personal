@@ -99,6 +99,13 @@
       "when": 1788798207345,
       "tag": "0013_message_conflicts",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788806961490,
+      "tag": "0014_advanced_mode",
+      "breakpoints": true
     }
   ]
 }

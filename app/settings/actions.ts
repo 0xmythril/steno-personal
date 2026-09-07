@@ -199,3 +199,12 @@ export async function updateEnrichmentAction(formData: FormData) {
   })
   redirect('/settings')
 }
+
+// This is a presentation preference, not an authorization boundary. Existing
+// push keys and endpoints retain their capabilities in either mode.
+export async function setAdvancedModeAction(enabled: boolean): Promise<void> {
+  await requireSession()
+  if (typeof enabled !== 'boolean') throw new Error('Invalid advanced mode setting')
+  await updateSettings({ advancedMode: enabled })
+  revalidatePath('/', 'layout')
+}

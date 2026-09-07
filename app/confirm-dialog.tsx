@@ -1,6 +1,6 @@
 'use client'
 
-import { cloneElement, isValidElement, useId, useRef, type MouseEvent, type ReactElement, type ReactNode } from 'react'
+import { useId, useRef, type MouseEvent, type ReactNode } from 'react'
 
 // One grammar for anything that cannot be undone: an outlined trigger opens
 // the consequence, a filled button inside acts on it. A native <dialog> so
@@ -11,7 +11,7 @@ import { cloneElement, isValidElement, useId, useRef, type MouseEvent, type Reac
 //
 // `children` is the caller's own form(s). Most callers pass a single
 // <form action={…}> without its own submit button and a `confirm` label, and
-// this component appends the filled button as that form's last child. Every
+// this component renders a filled button that submits that form. Every
 // server action here redirects or revalidates the row out of existence, so
 // there is no explicit close on success — the dialog's row is simply gone
 // from the next render. A caller offering more than one outcome (the
@@ -29,6 +29,10 @@ export function ConfirmDialog({ trigger, title, body, confirm, children }: {
 
   const open = () => ref.current?.showModal()
   const close = () => ref.current?.close()
+  // The form can arrive as a deferred server-rendered child. Cloning it to
+  // append a button makes server and hydration output disagree. Submit the
+  // actual form instead, preserving validation and the server action.
+  const submit = () => ref.current?.querySelector('form')?.requestSubmit()
 
   // A click on the backdrop lands on the <dialog> element itself, never on
   // anything inside it, so this is the whole test — no coordinate math.
@@ -48,19 +52,10 @@ export function ConfirmDialog({ trigger, title, body, confirm, children }: {
             beside Cancel instead of falling to a row of its own. */}
         <div className="actions">
           <button type="button" onClick={close}>Cancel</button>
-          {confirm ? withSubmit(children, confirm) : children}
+          {children}
+          {confirm && <button type="button" className="danger" onClick={submit}>{confirm}</button>}
         </div>
       </dialog>
     </>
   )
-}
-
-// Appends the filled confirm button as the last child of the caller's own
-// <form>, so one click both submits it and reads as the "fill acts" half of
-// the grammar. Only used when `confirm` is given; the push-key row instead
-// passes complete forms, each carrying its own submit button.
-function withSubmit(children: ReactNode, label: string): ReactNode {
-  if (!isValidElement(children)) return children
-  const form = children as ReactElement<{ children?: ReactNode }>
-  return cloneElement(form, undefined, <>{form.props.children}<button type="submit" className="danger">{label}</button></>)
 }

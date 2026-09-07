@@ -225,6 +225,7 @@ export const mediaAnalysis = sqliteTable('media_analysis', {
 // is the whole of "the user's preferences".
 export const settings = sqliteTable('settings', {
   id: integer('id').primaryKey(),
+  advancedMode: integer('advanced_mode', { mode: 'boolean' }).notNull().default(false),
   openrouterKeyCiphertext: text('openrouter_key_ciphertext'),
   analyzeImages: integer('analyze_images', { mode: 'boolean' }).notNull().default(false),
   analyzeAudio: integer('analyze_audio', { mode: 'boolean' }).notNull().default(false),

@@ -29,6 +29,6 @@ export async function resetDb(): Promise<void> {
   await db.update(s.settings).set({
     openrouterKeyCiphertext: null, analyzeImages: false, analyzeAudio: false,
     visionModel: null, transcriptionModel: null,
-    telemetryEnabled: true, telemetryInstanceId: null,
+    advancedMode: false, telemetryEnabled: true, telemetryInstanceId: null,
   })
 }

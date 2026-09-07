@@ -17,6 +17,7 @@ export type Settings = {
   analyzeAudio: boolean
   visionModel: string
   transcriptionModel: string
+  advancedMode: boolean
   telemetryEnabled: boolean
 }
 
@@ -32,6 +33,7 @@ async function readRow() {
 export async function getSettings(): Promise<Settings> {
   const row = await readRow()
   return {
+    advancedMode: row?.advancedMode ?? false,
     hasOpenrouterKey: !!row?.openrouterKeyCiphertext,
     analyzeImages: row?.analyzeImages ?? false,
     analyzeAudio: row?.analyzeAudio ?? false,
@@ -49,6 +51,7 @@ export type SettingsPatch = Partial<{
   analyzeAudio: boolean
   visionModel: string
   transcriptionModel: string
+  advancedMode: boolean
   telemetryEnabled: boolean
 }>
 
@@ -73,6 +76,7 @@ export async function updateSettings(patch: SettingsPatch): Promise<void> {
   if (patch.transcriptionModel !== undefined && getTranscriptionCatalogEntry(patch.transcriptionModel)) {
     values.transcriptionModel = patch.transcriptionModel
   }
+  if (patch.advancedMode !== undefined) values.advancedMode = patch.advancedMode
   if (patch.telemetryEnabled !== undefined) values.telemetryEnabled = patch.telemetryEnabled
   if (Object.keys(values).length === 0) return
   await db.insert(settings).values({ id: SETTINGS_ID, ...values })
