@@ -118,8 +118,8 @@ Agents talk to `https://<your-host>/mcp` (or `http://localhost:3000/mcp` on your
 laptop) with an access key as a bearer token.
 
 There is no `--read-only` flag to remember, because there is nothing to switch
-off: every tool declares itself read-only to the client, and the code has no
-path that sends. Read-only is how it is built, not a mode it is in.
+off: every tool on `/mcp` declares itself read-only to the client, and the code
+has no path that sends. Read-only is how it is built, not a mode it is in.
 
 **Fastest path:** Settings → create a key → **Copy instructions** under "Let the
 agent set itself up" → paste into an agent that can edit its own MCP config. It
