@@ -205,15 +205,25 @@ describe('transcript page', () => {
     expect(runTimeRegion).not.toMatch(/pushedBy/)
   })
 
-  it('marks each sender line with who pushed it, only when more than one pusher delivered to this chat', () => {
+  it('no longer annotates the sender line with who pushed it — the header says who pushed last, and the export has the rest', () => {
     // Sliced to the sender-line paragraph itself, not the whole file: an
     // assertion that only looks at independent whole-file regexes would
-    // still pass if the guard and the label were decoupled from one another.
+    // still pass if a stray reference to pushedBy lived elsewhere.
     const src = read(path)
     const whoRegion = src.slice(src.indexOf('msg-who'), src.indexOf('msg-body'))
     expect(whoRegion, 'the msg-who block exists').toContain('msg-who')
-    expect(whoRegion).toMatch(/pushers\.length > 1/)
-    expect(whoRegion).toMatch(/&middot;\s*\{run\.messages\[0\]\.pushedBy\}/)
+    expect(whoRegion).not.toMatch(/pushers\.length > 1/)
+    expect(whoRegion).not.toMatch(/pushedBy/)
+  })
+
+  it('offers an export anchor in the header, downloading rather than navigating', () => {
+    // An anchor with `download`, not a button in a form: the transcript page
+    // must keep growing no form control (tests/transcript-page-structure.test.ts).
+    const src = read(path)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head).toMatch(/<a\s[^>]*href=\{`\/api\/chats\/\$\{page\.chat\.id\}\/export`\}[^>]*>/s)
+    expect(head).toMatch(/\bdownload\b/)
+    expect(head).toMatch(/aria-label=\{`Export \$\{page\.chat\.title[^}]*\}`\}/)
   })
 
   it('still offers no way to send anything', () => {

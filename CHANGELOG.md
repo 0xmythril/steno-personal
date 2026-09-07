@@ -66,7 +66,10 @@ All notable changes to this project are documented here. The format follows
   with a `provenance` block per message (who pushed it, whether it conflicted,
   when it was edited) that import ignores. Strip `provenance` and the file
   pushes straight back into another instance. A deleted message contributes
-  only its two ids to `deletes`, never its text.
+  only its two ids to `deletes`, never its text. The transcript header
+  carries an Export link to it now; the per-message "· pusher" annotation on
+  the sender line is gone with it — the header already says who pushed last,
+  and anyone who needs it per message downloads the file instead.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.
