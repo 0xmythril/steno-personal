@@ -156,6 +156,21 @@ describe('an outline means you can press it', () => {
     expect(at).toBeGreaterThan(-1)
     expect(css.lastIndexOf('prefers-reduced-motion: no-preference', at)).toBeGreaterThan(-1)
   })
+
+  // showModal() only promotes a <dialog> to the top layer for painting; the
+  // node stays a DOM descendant of wherever it was mounted. Three
+  // ConfirmDialog triggers sit in a td (source delete, key revoke, passkey
+  // remove), and `td button` (0,0,0,2) would otherwise outrank the base
+  // `button` rule (0,0,0,1) and shrink the dialog's own buttons to 26px —
+  // exactly the row it is meant never to fight. This asserts the reset
+  // exists and matches the base button height, so a future edit cannot
+  // silently reintroduce the shrink.
+  it('a dialog button keeps the base size, not the 26px td shrink', () => {
+    const baseHeight = rule('button, .btn').match(/height:\s*([^;]+);/)?.[1]?.trim()
+    expect(baseHeight, 'the base button rule sets a height').toBeTruthy()
+    const dialogBody = rule('dialog.confirm button, dialog.confirm .btn')
+    expect(dialogBody.match(/height:\s*([^;]+);/)?.[1]?.trim()).toBe(baseHeight)
+  })
 })
 
 describe('fonts', () => {
