@@ -47,3 +47,48 @@ describe('chats page', () => {
     expect(src).not.toMatch(/#[0-9a-f]{3,6}\b/i)
   })
 })
+
+describe('transcript page', () => {
+  const path = 'app/chats/[id]/page.tsx'
+
+  it('imports listSources and formatRelativeTime for push provenance', () => {
+    const src = read(path)
+    expect(src).toMatch(/import\s*\{[^}]*\blistSources\b[^}]*\}\s*from\s*'@\/lib\/services\/connections'/)
+    expect(src).toMatch(/import\s*\{[^}]*\bformatRelativeTime\b[^}]*\}\s*from\s*'@\/lib\/format'/)
+  })
+
+  it('marks a pushed chat with the note chip in the pad-head, naming who pushed it', () => {
+    const src = read(path)
+    // Anchor on the pad-head block itself, not the whole file: an assertion
+    // that only looks at the whole file would pass on unrelated text alone,
+    // feature deleted or not.
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head, 'the pad-head block exists').toContain('pad-head')
+    expect(head).toMatch(/pushers\.length > 0/)
+    expect(head).toMatch(/<span className="chip note">/)
+    expect(head).toMatch(/Pushed by/)
+  })
+
+  it('shows the last push time and conflict count from the source, in the pad-head', () => {
+    const src = read(path)
+    const head = src.slice(src.indexOf('pad-head'), src.indexOf('{pager}'))
+    expect(head).toMatch(/last push/)
+    expect(head).toMatch(/conflicts?/)
+  })
+
+  it('marks each run with who pushed it, only when more than one pusher delivered to this chat', () => {
+    const src = read(path)
+    expect(src).toMatch(/pushers\.length > 1/)
+    expect(src).toMatch(/<span className="pushed-via">via /)
+  })
+
+  it('still offers no way to send anything', () => {
+    const src = read(path)
+    expect(src).not.toMatch(/<textarea|<form|type=["']submit["']|<input/)
+  })
+
+  it('carries no colour literal', () => {
+    const src = read(path)
+    expect(src).not.toMatch(/#[0-9a-f]{3,6}\b/i)
+  })
+})

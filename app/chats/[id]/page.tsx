@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
 import { getMessages } from '@/lib/services/queries'
+import { listSources } from '@/lib/services/connections'
 import { groupRuns, groupByDate, linkify } from '@/lib/transcript'
-import { formatTime } from '@/lib/format'
+import { formatTime, formatRelativeTime } from '@/lib/format'
 import { MediaAttachment } from './media-attachment'
 import { track } from '@/lib/services/telemetry'
 
@@ -26,10 +27,15 @@ export default async function ChatPage({ params, searchParams }: {
   const sp = await searchParams
   const cursor = typeof sp.cursor === 'string' ? sp.cursor : undefined
 
-  const page = await getMessages(id, { limit: PAGE_SIZE, cursor })
+  const [page, sources] = await Promise.all([getMessages(id, { limit: PAGE_SIZE, cursor }), listSources()])
   if (!page) notFound()
   // That a transcript was opened. Not which one, and not which page of it.
   track('transcript_viewed', {})
+
+  // listSources() only ever lists pushed connections, so a chat with no
+  // pushers has no match here — and the lookup is skipped rather than relied
+  // on to fail, since a revoked connection also drops out of the list.
+  const source = page.chat.pushers.length > 0 ? sources.find(s => s.id === page.chat.connectionId) : undefined
 
   // The query returns newest-first; a conversation reads oldest-first.
   const chronological = [...page.messages].reverse()
@@ -63,6 +69,9 @@ export default async function ChatPage({ params, searchParams }: {
               {page.chat.person
                 ? <> &middot; <Link href={`/people/${page.chat.person.id}`}>{page.chat.person.name}</Link></>
                 : page.chat.kind === 'dm' && <> &middot; <Link href="/people">Add to people</Link></>}
+              {page.chat.pushers.length > 0 && source && (
+                <> &middot; <span className="chip note">Pushed by {page.chat.pushers.join(', ')}</span> &middot; last push {formatRelativeTime(source.lastPushAt)} &middot; {source.lastImportConflicts} {source.lastImportConflicts === 1 ? 'conflict' : 'conflicts'} in the last push</>
+              )}
             </span>
           </div>
 
@@ -79,7 +88,16 @@ export default async function ChatPage({ params, searchParams }: {
                   <li className="date-sep">{group.dateLabel}</li>
                   {groupRuns(group.messages).map(run => (
                     <li key={run.messages[0].id} className="msg-run">
-                      <span className="msg-time">{formatTime(run.messages[0].sentAt)}</span>
+                      <span className="msg-time">
+                        {formatTime(run.messages[0].sentAt)}
+                        {/* Runs group by sender, not by pusher, so one sender's run could in
+                            principle mix pushers — only in pathological data, since a live
+                            connection carries one key at a time. The run's first message is
+                            enough to say who delivered it. */}
+                        {page.chat.pushers.length > 1 && (
+                          <span className="pushed-via">via {run.messages[0].pushedBy}</span>
+                        )}
+                      </span>
                       <div className="msg-col">
                         <p className={run.isMe ? 'msg-who me' : 'msg-who'}>
                           {run.isMe ? 'You' : run.senderLabel}
