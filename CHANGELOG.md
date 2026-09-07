@@ -61,6 +61,12 @@ All notable changes to this project are documented here. The format follows
   every message carries `pushedBy`, and `whoami`'s `mode` says whether a
   source is live or pushed. A key minted with Push can deliver a batch as an
   MCP tool too: `push_messages`, alone on its own endpoint, `/mcp/push`.
+- **Download one chat.** `GET /api/chats/<id>/export`, cookie session only,
+  streams a chat as a `steno/1` file — the same shape `push_messages` accepts,
+  with a `provenance` block per message (who pushed it, whether it conflicted,
+  when it was edited) that import ignores. Strip `provenance` and the file
+  pushes straight back into another instance. A deleted message contributes
+  only its two ids to `deletes`, never its text.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.
