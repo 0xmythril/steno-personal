@@ -279,7 +279,9 @@ curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" 
 - Message identity is `externalChatId` plus `externalMessageId`. Resending is
   safe: a message already stored is counted as a duplicate and left alone, so
   a cron job can post the last hour every ten minutes. Set `editedAt` on a
-  resent message to update its text. A `deletes` entry removes a message from
+  resent message to update its text. Steno stores the source's edit timestamp
+  and only accepts a strictly newer edit; older or equal timestamps count as
+  duplicates without changing the message. A `deletes` entry removes a message from
   every read for good.
   Any push key may push to any source, and every message remembers which key
   delivered it. If two keys push the same message with different text, the

@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { chats, messages } from '@/lib/db/schema'
 
@@ -80,13 +80,14 @@ async function upsertChat(connectionId: string, channel: string, m: IncomingMess
 // from a disagreement, or a resend of something already deleted, from either
 // (import's conflict count) has it without a second table reach of its own;
 // recordMessage already selects the row to report messageId here.
-export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage, opts: { pushKeyId?: string } = {}): Promise<{ chatId: string; messageId: string; inserted: boolean; existingText: string | null; existingDeleted: boolean }> {
+export async function recordMessage(connectionId: string, channel: string, m: IncomingMessage, opts: { pushKeyId?: string; editedAt?: Date | null } = {}): Promise<{ chatId: string; messageId: string; inserted: boolean; existingText: string | null; existingDeleted: boolean }> {
   const chatId = await upsertChat(connectionId, channel, m)
   const inserted = await db.insert(messages).values({
     chatId, externalMessageId: m.externalMessageId,
     senderExternalId: m.senderExternalId, senderName: m.senderName, fromOwner: m.fromOwner,
     sentAt: m.sentAt, type: m.type, text: m.text, hasMedia: m.media !== null,
     replyToExternalId: m.replyToExternalId ?? null, pushKeyId: opts.pushKeyId ?? null, raw: m.raw,
+    editedAt: opts.editedAt ?? null,
   }).onConflictDoNothing({ target: [messages.chatId, messages.externalMessageId] })
     .returning({ id: messages.id })
   if (inserted.length > 0) return { chatId, messageId: inserted[0].id, inserted: true, existingText: null, existingDeleted: false }
@@ -101,6 +102,20 @@ export async function recordMessage(connectionId: string, channel: string, m: In
 // tombstoned row is never passed here, so deleted stays deleted.
 export async function markConflict(messageId: string): Promise<void> {
   await db.update(messages).set({ conflictedAt: new Date() }).where(eq(messages.id, messageId))
+}
+
+// Push batches can arrive out of order or be retried after a newer edit.
+// Compare and write in one statement so concurrent imports also keep the
+// newest source timestamp. Equal versions and tombstones are unchanged.
+export async function applyPushedEdit(messageId: string, text: string | null, editedAt: Date): Promise<boolean> {
+  const updated = await db.update(messages)
+    .set({ text, editedAt, conflictedAt: null })
+    .where(and(
+      eq(messages.id, messageId), isNull(messages.deletedAt),
+      or(isNull(messages.editedAt), lt(messages.editedAt, editedAt)),
+    ))
+    .returning({ id: messages.id })
+  return updated.length > 0
 }
 
 export async function applyEdit(connectionId: string, channel: string, m: IncomingMessage): Promise<void> {

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
-import { applyDelete, applyEdit, markConflict, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
+import { applyDelete, applyPushedEdit, markConflict, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
 import { SOURCE_TYPE_RE, isLiveChannel } from '@/lib/services/sources'
 
 // The push door's format and its service. One batch names one source and
@@ -131,10 +131,11 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
   const conflicting: Array<{ externalChatId: string; externalMessageId: string }> = []
   for (const m of batch.messages) {
     const dto = toIncoming(m)
-    const res = await recordMessage(sourceId, batch.source.type, dto, { pushKeyId: keyId })
+    const editedAt = m.editedAt ? new Date(m.editedAt) : null
+    const res = await recordMessage(sourceId, batch.source.type, dto, { pushKeyId: keyId, editedAt })
     if (res.inserted) { inserted++; continue }
     duplicates++
-    // A known message resent with editedAt is an edit; without it, a replay —
+    // A known message with a newer editedAt is an edit; without it, a replay —
     // unless the replay disagrees with what is stored, in which case first
     // writer wins: the disagreement is counted and named, never overwritten.
     // A fresh insert already carries the edited text, so it is not counted
@@ -142,7 +143,10 @@ export async function importBatch(keyId: string, batch: Batch): Promise<ImportRe
     // is never a conflict and never an edit — deleted stays deleted, so a
     // resend with different text or an editedAt is just an ordinary duplicate.
     if (res.existingDeleted) continue
-    if (m.editedAt) { await applyEdit(sourceId, batch.source.type, dto); edited++; continue }
+    if (editedAt) {
+      if (await applyPushedEdit(res.messageId, m.text, editedAt)) edited++
+      continue
+    }
     if (res.existingText !== m.text) {
       conflicts++
       if (conflicting.length < MAX_PROBLEMS) conflicting.push({ externalChatId: m.externalChatId, externalMessageId: m.externalMessageId })

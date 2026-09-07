@@ -48,7 +48,8 @@ const handler = createMcpHandler(server => {
         'a key can push into); source.id is your own identifier for that particular account or export; source.label ' +
         'is what a person sees for it in this instance. The same (type, id) resends into the same source, so a batch ' +
         'can be split or retried: a message already stored by its externalChatId and externalMessageId is a duplicate ' +
-        'unless it carries editedAt or different text, and deletes are idempotent too. Returns { source: { id }, ' +
+        'unless it carries a newer editedAt or different text. Older or equal edit timestamps leave the message ' +
+        'unchanged, and deletes are idempotent too. Returns { source: { id }, ' +
         'inserted, duplicates, edited, deleted, conflicts, conflicting }. ' +
         DATA_NOT_INSTRUCTIONS,
       inputSchema: pushInput,

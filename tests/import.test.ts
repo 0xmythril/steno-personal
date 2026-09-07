@@ -129,8 +129,56 @@ describe('importBatch', () => {
     const rows = await db.select().from(messages)
     const edited = rows.find(r => r.externalMessageId === '1725500000.000100')
     expect(edited?.text).toBe('net 45 after all')
-    expect(edited?.editedAt).toBeInstanceOf(Date)
-    expect(rows.find(r => r.externalMessageId === 'new')?.text).toBe('brand new')
+    expect(edited?.editedAt).toEqual(new Date('2026-09-05T11:00:00Z'))
+    expect(rows.find(r => r.externalMessageId === 'new')).toMatchObject({
+      text: 'brand new', editedAt: new Date('2026-09-05T11:00:00Z'),
+    })
+  })
+
+  it.each([false, true])('keeps the newest edit when retrying an older batch (already edited on insert: %s)', async (editedOnInsert) => {
+    const keyId = await pushKey()
+    const older = parsed(batch({ messages: [message({ text: 'older version', editedAt: '2026-09-05T11:00:00Z' })] }))
+    const newer = parsed(batch({ messages: [message({ text: 'latest version', editedAt: '2026-09-05T12:00:00Z' })] }))
+    if (!editedOnInsert) await importBatch(keyId, parsed(batch()))
+    await importBatch(keyId, older)
+    expect(await importBatch(keyId, newer)).toMatchObject({ inserted: 0, duplicates: 1, edited: 1 })
+    expect(await importBatch(keyId, older)).toMatchObject({ inserted: 0, duplicates: 1, edited: 0, conflicts: 0 })
+    const [row] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(row).toMatchObject({ text: 'latest version', editedAt: new Date('2026-09-05T12:00:00Z') })
+    expect((await searchMessages('latest version')).hits).toHaveLength(1)
+    expect((await searchMessages('older version')).hits).toHaveLength(0)
+  })
+
+  it('does not replace a newly inserted edited message with an older edit', async () => {
+    const keyId = await pushKey()
+    await importBatch(keyId, parsed(batch({ messages: [message({ text: 'latest version', editedAt: '2026-09-05T12:00:00Z' })] })))
+    expect(await importBatch(keyId, parsed(batch({ messages: [message({ text: 'older version', editedAt: '2026-09-05T11:00:00Z' })] }))))
+      .toMatchObject({ duplicates: 1, edited: 0 })
+    const [row] = await db.select().from(messages)
+    expect(row).toMatchObject({ text: 'latest version', editedAt: new Date('2026-09-05T12:00:00Z') })
+  })
+
+  it('equal edit timestamps preserve text and conflict markers, including equivalent timezone offsets', async () => {
+    const keyId = await pushKey()
+    const original = parsed(batch({ messages: [message({ text: 'latest version', editedAt: '2026-09-05T12:00:00Z' })] }))
+    await importBatch(keyId, original)
+    await importBatch(keyId, parsed(batch({ messages: [message({ text: 'disputed version' })] })))
+    const [before] = await db.select().from(messages)
+    expect(before.conflictedAt).toBeInstanceOf(Date)
+    expect(await importBatch(keyId, original)).toMatchObject({ duplicates: 1, edited: 0 })
+    expect(await importBatch(keyId, parsed(batch({ messages: [message({ text: 'replacement', editedAt: '2026-09-05T20:00:00+08:00' })] }))))
+      .toMatchObject({ duplicates: 1, edited: 0 })
+    const [after] = await db.select().from(messages)
+    expect(after).toMatchObject({ text: before.text, editedAt: before.editedAt, conflictedAt: before.conflictedAt })
+  })
+
+  it('concurrent imports keep the newest source edit timestamp', async () => {
+    const keyId = await pushKey()
+    await importBatch(keyId, parsed(batch()))
+    const edits = ['2026-09-05T13:00:00Z', '2026-09-05T12:00:00Z', '2026-09-05T11:00:00Z']
+    await Promise.all(edits.map(editedAt => importBatch(keyId, parsed(batch({ messages: [message({ text: editedAt, editedAt })] })))))
+    const [row] = await db.select().from(messages).where(eq(messages.externalMessageId, '1725500000.000100'))
+    expect(row).toMatchObject({ text: edits[0], editedAt: new Date(edits[0]) })
   })
 
   it('tombstones a delete so no read path serves it', async () => {
