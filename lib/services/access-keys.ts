@@ -1,6 +1,6 @@
 import { db } from '@/lib/db/client'
 import { track } from '@/lib/services/telemetry'
-import { accessKeys, chats, connections, messages } from '@/lib/db/schema'
+import { accessKeys, chats, messages } from '@/lib/db/schema'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash, randomBytes } from 'node:crypto'
 import { decryptSecret, encryptSecret } from './crypto'
@@ -133,28 +133,43 @@ export async function messagesPushedByKey(keyId: string): Promise<number> {
   return Number(row?.n ?? 0)
 }
 
-// Revoke a push key and take its pushes with it. The messages it delivered
-// are a real delete — the messages_ad trigger prunes the FTS index the same
-// way it does for any other row deletion — not the deleted_at tombstone the
-// import door uses for dedupe; a revoked key's text must actually be gone,
-// not just hidden from reads. Any pushed source that consequently holds no
-// live message at all is removed the same way "Delete everything" removes
-// one, through deleteConnection, so revoked_at and the row's existence never
-// disagree about whether a source is still there.
+// Revoke a push key and take its pushes with it. Only LIVE messages the key
+// pushed are deleted (a real delete — the messages_ad trigger prunes the FTS
+// index the same way it does for any other row deletion — not the
+// deleted_at tombstone the import door uses for dedupe). A tombstoned row is
+// left alone even if this key pushed it: it already carries no content any
+// read path serves, and it is the tombstone itself — not the row's absence —
+// that keeps a deleted message from coming back. Deleting it here would
+// remove the very record that makes importBatch skip a resend of the same
+// message (res.existingDeleted → continue), so ground rule 5 ("deleted stays
+// deleted") requires it survive.
+//
+// Only sources this key actually fed are swept afterward: the chats of the
+// rows just deleted, by connectionId, collected BEFORE the delete (the rows
+// are gone after). A source is removed, the same way "Delete everything"
+// removes one (through deleteConnection), only if it is one of those and now
+// holds zero live messages — never every push source in the database, which
+// would take a different key's still-empty, freshly registered source as
+// collateral.
 export async function revokeAccessKeyAndPurge(id: string): Promise<{ revoked: boolean; messagesDeleted: number; sourcesDeleted: number }> {
   const revoked = await revokeAccessKey(id)
-  const deletedRows = await db.delete(messages).where(eq(messages.pushKeyId, id)).returning({ id: messages.id })
+
+  const affected = await db.selectDistinct({ connectionId: chats.connectionId }).from(messages)
+    .innerJoin(chats, eq(chats.id, messages.chatId))
+    .where(and(eq(messages.pushKeyId, id), isNull(messages.deletedAt)))
+
+  const deletedRows = await db.delete(messages)
+    .where(and(eq(messages.pushKeyId, id), isNull(messages.deletedAt)))
+    .returning({ id: messages.id })
   const messagesDeleted = deletedRows.length
 
-  const pushSources = await db.select({ id: connections.id }).from(connections)
-    .where(and(eq(connections.mode, 'push'), isNull(connections.revokedAt)))
   let sourcesDeleted = 0
-  for (const source of pushSources) {
+  for (const { connectionId } of affected) {
     const [{ n }] = await db.select({ n: sql<number>`count(*)` })
       .from(messages).innerJoin(chats, eq(chats.id, messages.chatId))
-      .where(and(eq(chats.connectionId, source.id), isNull(messages.deletedAt)))
+      .where(and(eq(chats.connectionId, connectionId), isNull(messages.deletedAt)))
     if (Number(n) === 0) {
-      await deleteConnection(source.id)
+      await deleteConnection(connectionId)
       sourcesDeleted++
     }
   }

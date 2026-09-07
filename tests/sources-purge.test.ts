@@ -4,6 +4,9 @@ import { mintAccessKey, verifyAccessKey, revokeAccessKeyAndPurge, messagesPushed
 import { importBatch, parseBatch, FORMAT } from '@/lib/services/import'
 import { listSources } from '@/lib/services/connections'
 import { searchMessages } from '@/lib/services/queries'
+import { db } from '@/lib/db/client'
+import { messages } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 async function pushKey(label: string): Promise<{ id: string; raw: string }> {
   const r = await mintAccessKey(label, { read: false, push: true })
@@ -82,5 +85,68 @@ describe('revokeAccessKeyAndPurge', () => {
     const result = await revokeAccessKeyAndPurge(key.id)
     expect(result).toEqual({ revoked: true, messagesDeleted: 0, sourcesDeleted: 0 })
     expect(await verifyAccessKey(key.raw, 'push')).toBeNull()
+  })
+
+  it("never touches a source a different key registered, even one still empty of messages", async () => {
+    const keyA = await pushKey('keyA')
+    const keyB = await pushKey('keyB')
+
+    // keyA pushes into its own source with a real message.
+    await importBatch(keyA.id, parsed(batch({
+      source: { type: 'slack', id: 'a-source', label: 'A source' },
+      messages: [message({ externalMessageId: 'a1', text: 'keyA text' })],
+    })))
+
+    // keyB registers a source but has not pushed any message into it yet —
+    // a batch may carry {format, source} with no messages, which is how an
+    // empty source exists.
+    const bSource = await importBatch(keyB.id, parsed(batch({
+      source: { type: 'slack', id: 'b-source', label: 'B source' },
+      messages: [],
+    })))
+
+    const result = await revokeAccessKeyAndPurge(keyA.id)
+    expect(result).toEqual({ revoked: true, messagesDeleted: 1, sourcesDeleted: 1 })
+
+    // keyB's still-empty source is untouched collateral-free.
+    const sources = await listSources()
+    expect(sources.find(s => s.id === bSource.source.id)).toBeDefined()
+  })
+
+  it('never resurrects a message someone deleted, even after the pushing key is purged', async () => {
+    const keyA = await pushKey('keyA')
+    const keyB = await pushKey('keyB')
+
+    const original = batch({
+      source: { type: 'slack', id: 'shared', label: 'Shared' },
+      messages: [message({ externalMessageId: 'm1', text: 'original text' })],
+    })
+    await importBatch(keyA.id, parsed(original))
+
+    // The owner deletes the message: a tombstone, not a row removal.
+    await importBatch(keyA.id, parsed(batch({
+      source: { type: 'slack', id: 'shared', label: 'Shared' },
+      messages: [],
+      deletes: [{ externalChatId: 'C01', externalMessageId: 'm1' }],
+    })))
+    expect((await searchMessages('original text')).hits).toEqual([])
+
+    // Purging keyA must not remove the tombstone: it is what keeps the
+    // deletion enforced.
+    const result = await revokeAccessKeyAndPurge(keyA.id)
+    expect(result.messagesDeleted).toBe(0)
+    const [tombstone] = await db.select({ deletedAt: messages.deletedAt })
+      .from(messages).where(eq(messages.externalMessageId, 'm1'))
+    expect(tombstone).toBeDefined()
+    expect(tombstone!.deletedAt).not.toBeNull()
+
+    // A later push of the exact same batch, under a different key, must not
+    // bring the message back.
+    await importBatch(keyB.id, parsed(original))
+    expect((await searchMessages('original text')).hits).toEqual([])
+    const [stillTombstoned] = await db.select({ deletedAt: messages.deletedAt })
+      .from(messages).where(eq(messages.externalMessageId, 'm1'))
+    expect(stillTombstoned).toBeDefined()
+    expect(stillTombstoned!.deletedAt).not.toBeNull()
   })
 })
