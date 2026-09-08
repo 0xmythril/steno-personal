@@ -1,4 +1,5 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
+import { heartbeatFile } from '@/lib/services/readiness'
 import { errorShape } from '@/lib/log'
 import { env } from '@/lib/env'
 import { getSecretKey } from '@/lib/services/secret-key'
@@ -19,6 +20,7 @@ async function main() {
   }
   getSecretKey()
   runMigrations()
+  rmSync(heartbeatFile(), { force: true })
   await purgeExpiredSessions()
   let minted = false
   if (env.STENO_MINT_KEY) {

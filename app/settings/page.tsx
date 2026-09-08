@@ -13,6 +13,9 @@ import { EditableLabel } from './editable-label'
 import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
 import { TelemetrySection } from './telemetry'
+import { UpdatesSection } from './updates'
+import { upgradesConfigured } from '@/lib/services/upgrades'
+import { version } from '@/package.json'
 import {
   mintKeyAction, dismissMintedKeyAction, revealKeyAction, hideRevealedKeyAction, revokeKeyAction,
   revokeAllKeysAction, revokeAndPurgeKeyAction, revokePasskeyAction, revokeAllPasskeysAction,
@@ -275,6 +278,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <EnrichmentSection />
 
         <TelemetrySection />
+        <UpdatesSection currentVersion={version} configured={upgradesConfigured()} />
       </main>
     </>
   )
