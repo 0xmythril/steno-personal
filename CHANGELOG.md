@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Move Advanced mode to the bottom of Settings, after enrichment and anonymous usage, while keeping direct links to its card.
+
 ## [0.2.0] — 2026-09-08
 
 ### Added

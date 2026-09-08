@@ -293,7 +293,8 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 
 ## Advanced mode
 
-Settings opens with an off-by-default Advanced mode switch. Enabling it opens a
+Settings ends with an off-by-default Advanced mode switch, after enrichment and
+anonymous usage settings. Links to `#advanced-mode` jump directly to this card. Enabling it opens a
 native explanatory dialog with Cancel focused first and a primary "Turn on
 Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
 Disabling it saves immediately and hides push-key creation, agent write setup,

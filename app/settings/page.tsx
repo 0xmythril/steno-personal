@@ -60,8 +60,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <main>
         <div className="page-head"><div><p className="eyebrow">This instance</p><h1>Settings</h1></div></div>
 
-        <AdvancedMode enabled={advancedMode} />
-
         <section className="card">
           <h2>Access keys</h2>
           <p className="muted">
@@ -275,6 +273,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <EnrichmentSection />
 
         <TelemetrySection />
+
+        <AdvancedMode enabled={advancedMode} />
       </main>
     </>
   )
