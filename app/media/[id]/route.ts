@@ -1,3 +1,4 @@
+import { withHistoryRead } from '@/lib/services/history-reads'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { withErrorBoundary } from '@/lib/api'
 import { authenticateRequest } from '@/lib/auth'
@@ -14,7 +15,7 @@ const INLINE_SAFE = new Set([
 
 // Cookie OR bearer: the portal renders these in a transcript, and an agent
 // that read a mediaUrl over MCP fetches it with the same access key.
-export const GET = withErrorBoundary(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withHistoryRead('get_media', withErrorBoundary(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
   if (!(await authenticateRequest(req))) {
     return new Response('unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } })
   }
@@ -43,4 +44,4 @@ export const GET = withErrorBoundary(async (req: Request, { params }: { params: 
       'Cache-Control': 'private, no-store',
     },
   })
-})
+}))

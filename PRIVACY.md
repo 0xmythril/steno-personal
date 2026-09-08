@@ -291,3 +291,14 @@ not agree to this, and they cannot see it. Whether it is fair to keep it, and
 for how long, is your call — the software just makes sure it stays yours and
 does not leak. Your local law may have an opinion; this project offers no legal
 advice.
+
+
+## Local History
+
+History is stored in your own SQLite archive, independently of optional outbound usage telemetry. It records push counts, authenticated archive reads (portal, API and MCP), real syncs, and key/source changes. Records contain internal references and safe label snapshots, never message text, search terms, credentials or raw errors. History reads, static files, discovery, authentication polling and connection heartbeats are excluded. Portal entries describe requests for archive data; they are not proof that a person read it. Speculative prefetch is excluded.
+
+Activity is retained for 90 days or the newest 10,000 terminal events, whichever expires first. Maintenance runs with the worker and after reads/imports. Safe historical labels and counts can survive source deletion until that retention expires; deleting an archive does not reconstruct past activity. History is operational information, not a tamper-proof audit log. If read recording fails, the archive remains available and reports degraded coverage when the database can record it.
+
+Disputed incoming text is held separately for owner review and is never indexed for archive search or returned to agents or activity exports. Resolution, a newer explicit edit, deletion, or applicable key cleanup removes the pending text. Unresolved candidates do not expire with activity. Their admission limits are 10,000 candidates and 512 MiB of incoming text; a batch that cannot be recorded within those limits is rejected atomically. Existing conflicts from before this feature have no recoverable incoming version.
+
+Keeping, accepting or deleting a disputed message changes only the local archive. Later cleanup of a revoked key removes messages originally delivered by it and pending copies it supplied, preserving other keys’ messages and existing deletion tombstones. It does not roll back that key’s later accepted edits to messages originally delivered by another key. The confirmation previews the scope and refuses a stale preview. As elsewhere in this archive, logical removal is not a promise of forensic erasure from SQLite pages, WAL files or backups.

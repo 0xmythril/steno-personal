@@ -1,9 +1,10 @@
+import { withHistoryRead } from '@/lib/services/history-reads'
 import { authenticateRequest } from '@/lib/auth'
 import { badRequest, unauthorized, withErrorBoundary } from '@/lib/api'
 import { listChats } from '@/lib/services/queries'
 import { isSourceType } from '@/lib/services/sources'
 
-export const GET = withErrorBoundary(async (request: Request): Promise<Response> => {
+export const GET = withHistoryRead('list_chats', withErrorBoundary(async (request: Request): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
   const { searchParams } = new URL(request.url)
   const raw = searchParams.get('channel')
@@ -13,4 +14,4 @@ export const GET = withErrorBoundary(async (request: Request): Promise<Response>
   // whole source *type* instead. The two are independent and both optional.
   const sourceId = searchParams.get('source') ?? undefined
   return Response.json({ chats: await listChats({ channel: raw ?? undefined, sourceId }) })
-})
+}))

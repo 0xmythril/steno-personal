@@ -1,3 +1,5 @@
+import { lastPushesForChats } from '@/lib/services/history'
+import { recordPortalRead } from '@/lib/services/history-reads'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
@@ -18,6 +20,9 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
   // Anything but a known source id means "all" — the value comes from a URL.
   const source = typeof sp.source === 'string' ? sources.find(s => s.id === sp.source) : undefined
   const [chats, connected] = await Promise.all([listChats({ channel, sourceId: source?.id }), hasActiveConnection()])
+
+  const lastPushes = lastPushesForChats(chats.map(c => c.id))
+  await recordPortalRead(session, 'portal_chats', chats)
 
   return (
     <>
@@ -78,7 +83,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
                     )}</td>
                     <td className="muted">{KIND_LABELS[c.kind]}</td>
                     <td className="num">{c.messageCount.toLocaleString('en')}</td>
-                    <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}</td>
+                    <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}{lastPushes.has(c.id) && <Link className="history-last-push" href={`/history/sources/${c.connectionId}`} aria-label={`Last pushed by ${lastPushes.get(c.id)!.label}`}><span aria-hidden="true">↑</span> {lastPushes.get(c.id)!.label}</Link>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -150,7 +150,7 @@ export default async function ConnectionsPage() {
                 <tbody>
                   {sources.map(s => (
                     <tr key={s.id}>
-                      <td className="name">{s.label ?? '—'}</td>
+                      <td className="name"><Link href={`/history/sources/${s.id}`}>{s.label ?? '—'}</Link></td>
                       <td className="muted">{sourceLabel(s.channel)}</td>
                       <td className="muted">{s.createdBy ?? '—'}</td>
                       <td className="muted">{s.pushedBy.length > 0 ? s.pushedBy.join(', ') : '—'}</td>

@@ -1,15 +1,17 @@
 import { z } from 'zod'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { connections } from '@/lib/db/schema'
-import { applyDelete, applyPushedEdit, markConflict, recordMessage, type IncomingMessage } from '@/lib/services/ingest'
+import { accessKeys, connections } from '@/lib/db/schema'
+import { applyDeleteSync, applyPushedEditSync, recordMessageSync, markChatPushes, type IncomingMessage } from '@/lib/services/ingest'
+import { captureDispute, pendingBudget } from './disputes'
+import { keyActor, recordEvent, trimHistory, type HistorySurface, type Store } from './history'
+import { log } from '@/lib/log'
 import { SOURCE_TYPE_RE, isLiveChannel } from '@/lib/services/sources'
 
 // The push door's format and its service. One batch names one source and
 // carries messages and deletes in the ingest DTO's own field names, so a
 // validated entry maps onto IncomingMessage without a translation layer.
-// Validation is all-or-nothing; ingest is per message and idempotent, so a
-// batch cut off half-way is safe to resend in full.
+// Validation and database ingest are all-or-nothing; retries remain idempotent.
 
 export const FORMAT = 'steno/1'
 export const MAX_BATCH_ITEMS = 1_000
@@ -94,22 +96,17 @@ export function parseBatch(input: unknown): { ok: true; batch: Batch } | { ok: f
 // transaction so two pushers racing for the same (type, id) cannot both pass
 // the select and both insert — the second would throw on the partial unique
 // index instead of finding the first's row.
-async function upsertSource(keyId: string, source: Batch['source']): Promise<string> {
-  return db.transaction((tx): string => {
-    const existing = tx.select({ id: connections.id }).from(connections)
-      .where(and(
-        eq(connections.mode, 'push'), eq(connections.channel, source.type),
-        eq(connections.externalAccountId, source.id), isNull(connections.revokedAt),
-      )).get()
-    if (existing) {
-      tx.update(connections).set({ displayName: source.label }).where(eq(connections.id, existing.id)).run()
-      return existing.id
-    }
-    return tx.insert(connections).values({
-      channel: source.type, mode: 'push', status: 'active', purpose: 'archive',
-      externalAccountId: source.id, displayName: source.label, pushKeyId: keyId,
-    }).returning({ id: connections.id }).get().id
-  }, { behavior: 'immediate' })
+function upsertSource(keyId: string, source: Batch['source'], store: Store, surface: HistorySurface): string {
+  const existing = store.select({ id: connections.id }).from(connections).where(and(
+    eq(connections.mode, 'push'), eq(connections.channel, source.type), eq(connections.externalAccountId, source.id), isNull(connections.revokedAt),
+  )).get()
+  if (existing) {
+    store.update(connections).set({ displayName: source.label }).where(eq(connections.id, existing.id)).run()
+    return existing.id
+  }
+  const row = store.insert(connections).values({ channel: source.type, mode: 'push', status: 'active', purpose: 'archive', externalAccountId: source.id, displayName: source.label, pushKeyId: keyId }).returning({ id: connections.id }).get()
+  recordEvent({ kind: 'connection', operation: 'source_created', surface, actor: keyActor(keyId, store), sourceIds: [row.id] }, store)
+  return row.id
 }
 
 function toIncoming(m: Batch['messages'][number]): IncomingMessage {
@@ -125,44 +122,49 @@ function toIncoming(m: Batch['messages'][number]): IncomingMessage {
   }
 }
 
-export async function importBatch(keyId: string, batch: Batch): Promise<ImportResult> {
-  const sourceId = await upsertSource(keyId, batch.source)
-  let inserted = 0, duplicates = 0, edited = 0, deleted = 0, conflicts = 0
-  const conflicting: Array<{ externalChatId: string; externalMessageId: string }> = []
-  for (const m of batch.messages) {
-    const dto = toIncoming(m)
-    const editedAt = m.editedAt ? new Date(m.editedAt) : null
-    const res = await recordMessage(sourceId, batch.source.type, dto, { pushKeyId: keyId, editedAt })
-    if (res.inserted) { inserted++; continue }
-    duplicates++
-    // A known message with a newer editedAt is an edit; without it, a replay —
-    // unless the replay disagrees with what is stored, in which case first
-    // writer wins: the disagreement is counted and named, never overwritten.
-    // A fresh insert already carries the edited text, so it is not counted
-    // twice. No actor: the source vouches for its own edits. A tombstoned row
-    // is never a conflict and never an edit — deleted stays deleted, so a
-    // resend with different text or an editedAt is just an ordinary duplicate.
-    if (res.existingDeleted) continue
-    if (editedAt) {
-      if (await applyPushedEdit(res.messageId, m.text, editedAt)) edited++
-      continue
+export async function importBatch(keyId: string, batch: Batch, surface: HistorySurface = 'api'): Promise<ImportResult> {
+  // Synchronous SQLite primitives: batch data, candidates and its event either
+  // commit together or roll back together. No Promise inside a transaction.
+  let result: ImportResult
+  try { result = db.transaction(tx => {
+    const key = tx.select({ id: accessKeys.id }).from(accessKeys).where(and(eq(accessKeys.id, keyId), eq(accessKeys.canPush, true), isNull(accessKeys.revokedAt))).get()
+    if (!key) throw new Error('push_key_revoked')
+    const sourceId = upsertSource(keyId, batch.source, tx, surface)
+    let inserted = 0, duplicates = 0, edited = 0, deleted = 0, conflicts = 0
+    const conflicting: ImportResult['conflicting'] = []
+    const touched = new Set<string>()
+    const budget = pendingBudget(tx)
+    for (const m of batch.messages) {
+      const dto = toIncoming(m), editedAt = m.editedAt ? new Date(m.editedAt) : null
+      const res = recordMessageSync(sourceId, batch.source.type, dto, { pushKeyId: keyId, editedAt }, tx)
+      touched.add(res.chatId)
+      if (res.inserted) { inserted++; continue }
+      duplicates++
+      if (res.existingDeleted) continue
+      // Preserve PR #7's newer-source-edit rule, including first-insert edits.
+      if (editedAt) { if (applyPushedEditSync(res.messageId, m.text, editedAt, keyId, tx)) edited++; continue }
+      if (res.existingText !== m.text) {
+        conflicts++
+        if (conflicting.length < MAX_PROBLEMS) conflicting.push({ externalChatId: m.externalChatId, externalMessageId: m.externalMessageId })
+        captureDispute(res.messageId, keyId, m.text, tx, budget)
+      }
     }
-    if (res.existingText !== m.text) {
-      conflicts++
-      if (conflicting.length < MAX_PROBLEMS) conflicting.push({ externalChatId: m.externalChatId, externalMessageId: m.externalMessageId })
-      // The disagreement is marked on the message it concerns, not just
-      // counted on the source — a chat should only ever show a conflict
-      // that actually happened in it. The losing text itself is never
-      // stored: first writer wins, and the mark is that a second account
-      // existed, not what it said.
-      await markConflict(res.messageId)
+    for (const d of batch.deletes) {
+      deleted += applyDeleteSync(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId }, tx)
     }
+    const now = new Date()
+    tx.update(connections).set({ lastSyncAt: now, lastImportConflicts: conflicts, lastPushKeyId: keyId }).where(eq(connections.id, sourceId)).run()
+    markChatPushes(sourceId, keyId, touched, batch.deletes.map(d => d.externalChatId), now, tx)
+    recordEvent({ kind: 'push', operation: 'push', surface, actor: keyActor(keyId, tx), sourceIds: [sourceId], counts: { entries: batch.messages.length + batch.deletes.length, inserted, duplicates, edited, deleted, conflicts } }, tx)
+    return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
+  }, { behavior: 'immediate' })
+  } catch (error) {
+    try {
+      const source = db.select({ id: connections.id }).from(connections).where(and(eq(connections.mode, 'push'), eq(connections.channel, batch.source.type), eq(connections.externalAccountId, batch.source.id), isNull(connections.revokedAt))).get()
+      recordEvent({ kind: 'push', operation: 'push', surface, actor: keyActor(keyId), sourceIds: source ? [source.id] : [], outcome: 'failed', counts: { entries: batch.messages.length + batch.deletes.length } })
+    } catch { log.error({}, 'history push failure could not be recorded') }
+    throw error
   }
-  for (const d of batch.deletes) {
-    deleted += await applyDelete(sourceId, { externalChatId: d.externalChatId, externalMessageId: d.externalMessageId })
-  }
-  await db.update(connections)
-    .set({ lastSyncAt: new Date(), lastImportConflicts: conflicts, lastPushKeyId: keyId })
-    .where(eq(connections.id, sourceId))
-  return { source: { id: sourceId }, inserted, duplicates, edited, deleted, conflicts, conflicting }
+  try { trimHistory() } catch { log.error({}, 'history retention failed') }
+  return result
 }

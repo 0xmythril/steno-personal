@@ -2,16 +2,17 @@ import Link from 'next/link'
 import { logoutAction } from '@/app/login/actions'
 import { BrandLogo, Wordmark } from '@/app/brand-logo'
 
-export type NavPage = 'chats' | 'people' | 'connections' | 'settings'
+export type NavPage = 'chats' | 'people' | 'connections' | 'settings' | 'history'
 
 const LINKS: { page: NavPage; href: string; text: string }[] = [
   { page: 'chats', href: '/', text: 'Chats' },
   { page: 'people', href: '/people', text: 'People' },
   { page: 'connections', href: '/connections', text: 'Connections' },
+  { page: 'history', href: '/history', text: 'History' },
   { page: 'settings', href: '/settings', text: 'Settings' },
 ]
 
-// Four pages, and the session's credential — `key` or `passkey`, with its
+// Five pages, and the session's credential — `key` or `passkey`, with its
 // label — and a Log out where the shared design system draws an avatar: this
 // edition signs in with access keys and passkeys, not accounts.
 export function Nav({ label, via, current }: { label: string; via: 'key' | 'passkey'; current?: NavPage }) {
