@@ -19,8 +19,8 @@ export type Operation = keyof typeof OPERATIONS
 export type HistoryKind = typeof historyEvents.$inferSelect.kind
 export type HistorySurface = typeof historyEvents.$inferSelect.surface
 export type HistoryActor = { id: string | null; label: string }
-export const OWNER: HistoryActor = { id: null, label: 'Owner' }
-export const WORKER: HistoryActor = { id: null, label: 'Worker' }
+export const OWNER: HistoryActor = { id: null, label: 'You (web app)' }
+export const WORKER: HistoryActor = { id: null, label: 'System (background sync)' }
 const countsSchema = z.object(Object.fromEntries(['entries', 'inserted', 'duplicates', 'edited', 'deleted', 'conflicts', 'returned', 'sources', 'candidates', 'contacts'].map(k => [k, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional()]))).strict()
 
 // History snapshots never fall back to account IDs; strip identifier-shaped
@@ -44,7 +44,7 @@ export function recordEvent(input: {
   store.insert(historyState).values({ id: 1, enabledAt: now }).onConflictDoNothing().run()
   const actor = input.actor ?? (input.surface === 'worker' ? WORKER : OWNER)
   const event = store.insert(historyEvents).values({ kind: input.kind, operation: input.operation,
-    surface: input.surface ?? 'portal', subjectKeyId: input.subjectKeyId, subjectLabel: input.subjectKeyId ? keyActor(input.subjectKeyId, store).label : null, actorId: actor.id, actorLabel: safeHistoryLabel(actor.label, 'Owner'),
+    surface: input.surface ?? 'portal', subjectKeyId: input.subjectKeyId, subjectLabel: input.subjectKeyId ? keyActor(input.subjectKeyId, store).label : null, actorId: actor.id, actorLabel: safeHistoryLabel(actor.label, OWNER.label),
     counts, occurredAt: now, finishedAt: input.outcome === 'running' ? null : now, outcome: input.outcome ?? 'completed', runId: input.runId,
   }).returning({ id: historyEvents.id }).get()
   const ids = [...new Set(input.sourceIds ?? [])]
@@ -70,7 +70,12 @@ export function trimHistory(now = new Date(), limit = HISTORY_LIMIT, days = HIST
   })
 }
 
-export type HistoryFilters = { kind?: HistoryKind; source?: string; actor?: string; from?: Date; to?: Date; cursor?: string; until?: string }
+export const SYNC_OPERATIONS = { backfill: 'Conversation backfill', contacts: 'Contacts', live: 'Live changes' } as const
+export type SyncOperation = keyof typeof SYNC_OPERATIONS
+export const HISTORY_OUTCOMES = ['running', 'completed', 'failed', 'interrupted'] as const
+export type HistoryOutcome = typeof HISTORY_OUTCOMES[number]
+export const LIVE_WINDOW_MS = 300_000
+export type HistoryFilters = { operation?: SyncOperation; outcome?: HistoryOutcome; kind?: HistoryKind; source?: string; actor?: string; from?: Date; to?: Date; cursor?: string; until?: string }
 const kinds: HistoryKind[] = ['push', 'read', 'sync', 'key', 'connection', 'resolution', 'purge']
 export const HISTORY_KINDS = kinds
 export function parseHistoryFilters(params: Record<string, string | string[] | undefined>): HistoryFilters {
@@ -81,16 +86,24 @@ export function parseHistoryFilters(params: Record<string, string | string[] | u
     return new Date(Date.parse(s) + (key === 'to' ? 86_400_000 : 0))
   }
   const kind = one('kind'); if (kind && !kinds.includes(kind as HistoryKind)) throw new Error('invalid_history_kind')
+  const operation = one('operation') || undefined, outcome = one('outcome') || undefined
+  if (operation && !Object.hasOwn(SYNC_OPERATIONS, operation)) throw new Error('invalid_history_operation')
+  if (outcome && !HISTORY_OUTCOMES.includes(outcome as HistoryOutcome)) throw new Error('invalid_history_outcome')
   const from = date('from'), to = date('to'); if (from && to && from >= to) throw new Error('invalid_history_range')
   const cursor = one('cursor'), until = one('until')
   for (const c of [cursor, until]) if (c && !/^\d{1,16}_[a-f0-9-]{36}$/.test(c)) throw new Error('invalid_history_cursor')
-  return { kind: kind as HistoryKind | undefined, source: one('source')?.slice(0, 100), actor: one('actor')?.slice(0, 100), from, to, cursor, until }
+  return { operation: operation as SyncOperation | undefined, outcome: outcome as HistoryOutcome | undefined, kind: kind as HistoryKind | undefined, source: one('source')?.slice(0, 100), actor: one('actor')?.slice(0, 100), from, to, cursor, until }
 }
 export function eventCursor(row: { occurredAt: Date; id: string }) { return `${row.occurredAt.getTime()}_${row.id}` }
 function whereHistory(f: HistoryFilters): SQL | undefined {
   const terms: SQL[] = []
   if (f.kind) terms.push(eq(historyEvents.kind, f.kind))
-  if (f.actor) terms.push(or(eq(historyEvents.actorId, f.actor), eq(historyEvents.subjectKeyId, f.actor))!)
+  if (f.operation) terms.push(and(eq(historyEvents.kind, 'sync'), eq(historyEvents.operation, f.operation))!)
+  if (f.outcome) terms.push(eq(historyEvents.outcome, f.outcome))
+  if (f.actor === 'you' || f.actor === 'system') {
+    terms.push(sql`${historyEvents.actorId} is null`)
+    terms.push(f.actor === 'system' ? eq(historyEvents.surface, 'worker') : sql`${historyEvents.surface} != 'worker'`)
+  } else if (f.actor) terms.push(or(eq(historyEvents.actorId, f.actor), eq(historyEvents.subjectKeyId, f.actor))!)
   if (f.source) terms.push(sql`exists (select 1 from event_sources es where es.event_id = ${historyEvents.id} and es.source_id = ${f.source})`)
   if (f.from) terms.push(sql`${historyEvents.occurredAt} >= ${f.from.getTime()}`)
   if (f.to) terms.push(lt(historyEvents.occurredAt, f.to))
@@ -104,12 +117,12 @@ export function historyPage(filters: HistoryFilters = {}, limit = 50) {
   const rows = db.select().from(historyEvents).where(whereHistory(filters)).orderBy(desc(historyEvents.occurredAt), desc(historyEvents.id)).limit(Math.min(limit, 200) + 1).all()
   const page = rows.slice(0, Math.min(limit, 200))
   const sources = page.length ? db.select().from(historySources).where(inArray(historySources.eventId, page.map(r => r.id))).all() : []
-  return { events: page.map(e => ({ ...e, sources: sources.filter(s => s.eventId === e.id) })), nextCursor: rows.length > page.length ? eventCursor(page[page.length - 1]) : null }
+  return { events: page.map(e => ({ ...e, actorLabel: e.actorId === null ? (e.surface === 'worker' ? WORKER.label : OWNER.label) : e.actorLabel, sources: sources.filter(s => s.eventId === e.id) })), nextCursor: rows.length > page.length ? eventCursor(page[page.length - 1]) : null }
 }
 export function historyOptions() {
   return {
     sources: db.selectDistinct({ id: historySources.sourceId, label: historySources.label }).from(historySources).all(),
-    actors: [...db.selectDistinct({ id: historyEvents.actorId, label: historyEvents.actorLabel }).from(historyEvents).where(sql`${historyEvents.actorId} is not null`).all(), ...db.selectDistinct({ id: historyEvents.subjectKeyId, label: historyEvents.subjectLabel }).from(historyEvents).where(sql`${historyEvents.subjectKeyId} is not null`).all()],
+    actors: [{ id: 'you', label: OWNER.label }, { id: 'system', label: WORKER.label }, ...db.selectDistinct({ id: historyEvents.actorId, label: historyEvents.actorLabel }).from(historyEvents).where(sql`${historyEvents.actorId} is not null`).all(), ...db.selectDistinct({ id: historyEvents.subjectKeyId, label: historyEvents.subjectLabel }).from(historyEvents).where(sql`${historyEvents.subjectKeyId} is not null`).all()],
     state: db.select().from(historyState).get(),
   }
 }
@@ -125,14 +138,14 @@ export function csvCell(value: unknown) {
   return `"${s.replaceAll('"', '""')}"`
 }
 export function* historyCsv(filters: HistoryFilters) {
-  yield ['Time (UTC)', 'Kind', 'Operation', 'Surface', 'Actor', 'Affected key', 'Sources', 'Outcome', 'Counts'].map(csvCell).join(',') + '\r\n'
+  yield ['Time (UTC)', 'Kind', 'Operation', 'Surface', 'Actor', 'Affected key', 'Sources', 'Outcome', 'Counts', 'Finished (UTC)', 'Duration (seconds)', 'Window end (UTC)', 'Last change recorded (UTC)'].map(csvCell).join(',') + '\r\n'
   const first = historyPage({ ...filters, cursor: undefined }, 1).events[0]
   if (!first) return
   let cursor: string | undefined
   do {
     const page = historyPage({ ...filters, cursor, until: eventCursor(first) }, 200)
     for (const row of page.events) yield [row.occurredAt.toISOString(), row.kind, OPERATIONS[row.operation as Operation], row.surface, row.actorLabel, row.subjectLabel, row.sources.map(s => s.label).join('; '), row.outcome,
-      Object.entries(row.counts).map(([k, n]) => `${k}: ${n}`).join('; ')].map(csvCell).join(',') + '\r\n'
+      Object.entries(row.counts).map(([k, n]) => `${k}: ${n}`).join('; '), row.operation === 'live' ? null : row.finishedAt?.toISOString(), row.operation !== 'live' && row.finishedAt ? Math.max(0, (row.finishedAt.getTime() - row.occurredAt.getTime()) / 1000) : null, row.operation === 'live' ? new Date(row.occurredAt.getTime() + LIVE_WINDOW_MS).toISOString() : null, row.operation === 'live' ? row.finishedAt?.toISOString() : null].map(csvCell).join(',') + '\r\n'
     cursor = page.nextCursor ?? undefined
   } while (cursor)
 }
@@ -140,14 +153,18 @@ export function* historyCsv(filters: HistoryFilters) {
 // A durable five-minute bucket, updated inside the same transaction as live
 // ingest. Unlike process-local counters it survives an interrupted worker.
 export function recordLiveChanges(sourceId: string, counts: Record<string, number>, store: Store = db) {
-  const bucket = Math.floor(Date.now() / 300_000) * 300_000
+  const now = new Date()
+  const bucket = Math.floor(now.getTime() / LIVE_WINDOW_MS) * LIVE_WINDOW_MS
   const runId = `live:${sourceId}:${bucket}`
   const existing = store.select().from(historyEvents).where(eq(historyEvents.runId, runId)).get()
   if (existing) {
     const merged = { ...existing.counts }
     for (const [k, n] of Object.entries(counts)) merged[k] = (merged[k] ?? 0) + n
-    store.update(historyEvents).set({ counts: merged, finishedAt: new Date() }).where(eq(historyEvents.id, existing.id)).run()
-  } else recordEvent({ kind: 'sync', operation: 'live', surface: 'worker', sourceIds: [sourceId], counts, runId, now: new Date(bucket) }, store)
+    store.update(historyEvents).set({ counts: merged, finishedAt: now }).where(eq(historyEvents.id, existing.id)).run()
+  } else {
+    const id = recordEvent({ kind: 'sync', operation: 'live', surface: 'worker', sourceIds: [sourceId], counts, runId, now: new Date(bucket) }, store)
+    store.update(historyEvents).set({ finishedAt: now }).where(eq(historyEvents.id, id)).run()
+  }
 }
 
 // Called only by the worker entrypoint, before it starts any runs. This

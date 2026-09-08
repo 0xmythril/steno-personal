@@ -32,3 +32,19 @@ it('durably aggregates only committed live changes and interrupts abandoned runs
   interruptAbandonedRuns()
   expect(historyPage({ kind: 'sync' }).events.find(e => e.operation === 'backfill')?.outcome).toBe('interrupted')
 })
+
+it('does not count repeated delete notifications as new live changes', async () => {
+  const c = await makeConnection('telegram')
+  await recordMessage(c.id, 'telegram', message())
+  expect(await applyDelete(c.id, { externalChatId: 'chat', externalMessageId: 'one' })).toBe(1)
+  expect(await applyDelete(c.id, { externalChatId: 'chat', externalMessageId: 'one' })).toBe(0)
+  expect(historyPage({ operation: 'live' }).events.reduce((n, e) => n + (e.counts.deleted ?? 0), 0)).toBe(1)
+})
+
+it('records an unseen Telegram message inserted from an edit as one live addition', async () => {
+  const c = await makeConnection('telegram')
+  await applyEdit(c.id, 'telegram', message())
+  const events = historyPage({ operation: 'live' }).events
+  expect(events).toHaveLength(1)
+  expect(events[0].counts).toEqual({ inserted: 1 })
+})

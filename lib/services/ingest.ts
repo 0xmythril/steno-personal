@@ -153,7 +153,8 @@ function applyEditSync(connectionId: string, channel: string, m: IncomingMessage
   // message itself is still coming, and an edit whose text is already in the
   // pushed history changes nothing.
   if (channel === 'whatsapp') return
-  recordMessageSync(connectionId, channel, m, {}, store)
+  const result = recordMessageSync(connectionId, channel, m, {}, store)
+  if (result.inserted) recordLiveChanges(connectionId, { inserted: 1 }, store)
 }
 
 // Returns the number of rows actually tombstoned, so a caller (importBatch)
@@ -176,7 +177,7 @@ export function applyDeleteSync(connectionId: string, ref: DeleteRef, store: Sto
   let count = 0
   for (const chat of targets) {
     const updated = store.update(messages).set({ deletedAt, conflictedAt: null, revision: sql`${messages.revision} + 1` })
-      .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId), authoredBy(ref.actor)))
+      .where(and(eq(messages.chatId, chat.id), eq(messages.externalMessageId, ref.externalMessageId), isNull(messages.deletedAt), authoredBy(ref.actor)))
       .returning({ id: messages.id }).all()
     clearDisputes(updated.map(r => r.id), store)
     count += updated.length

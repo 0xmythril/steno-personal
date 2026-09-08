@@ -5,7 +5,7 @@ import { historyEvents, messageDisputes, messages } from '@/lib/db/schema'
 import { resetDb } from './helpers/db'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { importBatch, parseBatch } from '@/lib/services/import'
-import { historyPage, historyCsv, recordEvent, trimHistory, csvCell, safeHistoryLabel } from '@/lib/services/history'
+import { historyPage, historyCsv, historyOptions, recordEvent, trimHistory, csvCell, safeHistoryLabel } from '@/lib/services/history'
 import { getDispute, resolveDispute } from '@/lib/services/disputes'
 
 beforeEach(resetDb)
@@ -66,6 +66,26 @@ describe('History and competing versions', () => {
   })
 })
 describe('retained metadata', () => {
+  it('offers and filters web-app and background actors, including legacy entries and CSV', async () => {
+    const keyId = await key('Importer')
+    db.delete(historyEvents).run()
+    const web = recordEvent({ kind: 'read', operation: 'portal_chats', actor: owner })
+    const system = recordEvent({ kind: 'sync', operation: 'contacts', surface: 'worker', actor: { id: null, label: 'Worker' } })
+    const keyed = recordEvent({ kind: 'read', operation: 'list_chats', surface: 'api', actor: { id: keyId, label: 'Owner' } })
+    const lifecycle = recordEvent({ kind: 'key', operation: 'key_renamed', subjectKeyId: keyId })
+    expect(historyOptions().actors).toEqual(expect.arrayContaining([
+      { id: 'you', label: 'You (web app)' },
+      { id: 'system', label: 'System (background sync)' },
+    ]))
+    expect(historyPage({ actor: 'you' }).events.map(e => e.id).sort()).toEqual([web, lifecycle].sort())
+    expect(historyPage({ actor: 'system' }).events.map(e => e.id)).toEqual([system])
+    expect(historyPage({ actor: keyId }).events.map(e => e.id).sort()).toEqual([keyed, lifecycle].sort())
+    expect(historyPage({ actor: keyId }).events.find(e => e.id === keyed)?.actorLabel).toBe('Owner')
+    const csv = [...historyCsv({ actor: 'you' })].join('')
+    expect(csv).toContain('You (web app)')
+    expect(csv).not.toContain('System (background sync)')
+    expect([...historyCsv({ actor: 'system' })].join('')).toContain('System (background sync)')
+  })
   it('paginates tied timestamps without duplicates and applies age and count caps', () => {
     const now = new Date('2026-09-08T00:00:00Z')
     for (let i = 0; i < 5; i++) recordEvent({ kind: 'read', operation: 'list_chats', now })
