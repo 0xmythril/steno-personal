@@ -16,6 +16,10 @@ All notable changes to this project are documented here. The format follows
 - Refuse startup when the database contains unknown or changed migrations,
   guarding against accidental schema downgrades.
 
+### Changed
+
+- Place Advanced mode between Enrichment and Anonymous usage. Combine OpenRouter setup with Enrichment and shorten Settings explanations, including compact usage-reporting bullets and a separate controls area. Clearing the OpenRouter key immediately resets the visible enrichment checkboxes.
+
 ## [0.2.0] — 2026-09-08
 
 ### Added
