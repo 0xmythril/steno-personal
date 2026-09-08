@@ -9,3 +9,4 @@ data
 .env.*
 .superpowers
 docs
+.steno-updater

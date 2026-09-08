@@ -151,6 +151,7 @@ most people touch; this is all of them.
 | `STENO_POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingest host. Set the EU host if your project lives there. |
 | `DO_NOT_TRACK` | unset | Set to `1` and no usage event is ever sent, whatever Settings says. The same variable GitHub CLI and other tools honour. |
 | `NEXT_TELEMETRY_DISABLED` | `1` in Docker, unset otherwise | Read by Next.js, not by this project: without it, `next build` and `next dev` report anonymous build statistics to Vercel. The Docker image sets it; set it yourself when you build from source. |
+| `STENO_UPDATER_SOCKET` | unset | Absolute Unix socket path for the optional Docker companion. The host installer sets it; leave unset on Railway. See [upgrades](upgrades.md). |
 | `STENO_MINT_KEY` | unset | Set to a label (say `laptop`) and restart: boot mints an access key with that label and prints it **once** in the boot log, then remembers the value in `$DATA_DIR/boot-ops.json` so a restart with it still set prints nothing. For when every key is lost and you cannot pair the same phone again. Remove it afterwards. See [Lost access](#lost-access). |
 | `STENO_RESET` | unset | Set to any word and restart: boot empties `DATA_DIR` — database, media, WhatsApp auth state, generated secret — once for that word, and the next visit starts setup from scratch. Unlink **steno-personal** on your phone yourself afterwards; a reset cannot reach the phone. |
 
@@ -364,6 +365,13 @@ accordingly.
 
 ## Upgrading
 
+For the optional **Upgrade** button in Settings, see [upgrades.md](upgrades.md).
+Once enabled, use its managed Compose commands instead of the source-build
+commands below. Railway continues to use its existing Docker deployment.
+
+Back up the complete data directory and preserve `SECRET_KEY` before every
+upgrade, including minor releases with migrations.
+
 ```bash
 cd steno-personal
 git pull
@@ -384,7 +392,7 @@ the web app or the worker starts, so there is nothing to run by hand and no
 window where a new build talks to an old schema. If a migration fails, boot
 exits non-zero and the supervisor refuses to start the app — you get a broken
 container with a readable error rather than a half-migrated database. Take a
-backup before a major upgrade anyway; migrations are forward-only and there is
+backup before every upgrade; migrations are forward-only and there is
 no down path.
 
 Your access keys, connections, and archive survive an upgrade. No key is ever

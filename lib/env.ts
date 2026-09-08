@@ -37,6 +37,7 @@ const baseSchema = z.object({
   // and prints it to the log — the only place a key is ever printed.
   STENO_RESET: blank(z.string().optional()),
   STENO_MINT_KEY: blank(z.string().optional()),
+  STENO_UPDATER_SOCKET: blank(z.string().startsWith('/').optional()),
   // Anonymous usage events go to PostHog (lib/services/telemetry.ts). The
   // key is the write-only project token every PostHog client embeds, shipped
   // as a default so an instance reports from day one; a fork points it at

@@ -110,3 +110,15 @@ test enforces that.
   re-readable; the messages themselves are as safe as the volume they sit on.
 - Back up `DATA_DIR` somewhere you would also be comfortable storing the chats
   themselves, because that is what a backup is.
+## Optional Docker upgrade authority
+
+The optional companion updater has Docker daemon access, equivalent to host
+control. The host operator explicitly installs it. Steno receives only a
+private Unix socket offering status, release checks and upgrades from the fixed
+project repository. Cookie-authenticated owners can initiate an upgrade through
+Settings; bearer tokens are not accepted directly. A key that can log into the
+portal can obtain a session and upgrade, so the cookie requirement is not a
+second authorization boundary. The companion exposes no TCP port. No
+Docker socket, registry credentials or cloud deployment tokens are added to the
+web app. The control directory and backups contain sensitive configuration and
+archive data and must remain private. See [docs/upgrades.md](docs/upgrades.md).

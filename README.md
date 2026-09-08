@@ -19,10 +19,11 @@ Mac mini, or a Raspberry Pi at home — or on Railway in one click.
 
 - **Read-only by construction** — the code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
-- **Yours** — one container, one volume, one SQLite file. No sign-up. Two
-  things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
+- **Yours** — one container, one volume, one SQLite file. No sign-up. Outbound
+  traffic is listed in [PRIVACY.md](PRIVACY.md): enrichment,
   off until you turn it on, and anonymous usage events — that a feature was
-  used, never what it was used on — which you can turn off.
+  used, never what it was used on — which you can turn off. The optional
+  [updater](docs/upgrades.md) checks releases and downloads images only when you ask.
 - **One person, not two accounts** — the [address book](docs/people.md) links
   the same human across both apps, so a chat and a transcript say *Ada* whether
   she wrote from Telegram or from WhatsApp.

@@ -3,8 +3,8 @@
 Read CONTRIBUTING.md first; its "Ground rules" are enforced by tests and are
 not negotiable. Summary for an agent:
 
-- Read-only channels, one importer per chat library, only the two disclosed
-  and switchable outbound calls (CONTRIBUTING rule 3), no secret in a URL or
+- Read-only channels, one importer per chat library, only the disclosed
+  outbound calls and operator-enabled upgrades (CONTRIBUTING rule 3), no secret in a URL or
   log, deleted stays deleted, one user.
 - Verify before claiming done: `npm run lint && npm run typecheck && npm test && npm run build`.
   Touching Dockerfile, start.mjs, migrations or auth: also `bash scripts/smoke.sh`.
