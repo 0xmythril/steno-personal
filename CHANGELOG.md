@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Optional Docker companion and Settings controls for owner-initiated upgrades,
+  with complete archive backups, pinned release images, readiness checks and
+  recovery after failed or interrupted upgrades. Railway retains its existing
+  deployment path with guided instructions. Release checks contact GitHub only
+  on request; image downloads use GHCR. See `docs/upgrades.md`.
+- Refuse startup when the database contains unknown or changed migrations,
+  guarding against accidental schema downgrades.
+
 ## [0.2.0] — 2026-09-08
 
 ### Added

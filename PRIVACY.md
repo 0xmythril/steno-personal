@@ -137,10 +137,9 @@ Messages you delete on your own phone are treated the same way.
 ## What leaves your machine
 
 Mostly the only traffic is to Telegram and WhatsApp themselves, which is how a
-chat client works. Beyond that there are exactly two things at runtime, and
-this section is the whole list of them.
-
-Two more happen only when you *build* from source, never while it runs:
+chat client works. Beyond that, enrichment and anonymous usage events can leave at runtime, plus
+explicitly requested checks and image downloads when the optional updater is
+installed. This section lists them. Two more happen only when you *build* from source, never while it runs:
 `next build` downloads the three font families once from Google so pages
 never fetch them, and Next.js reports anonymous build statistics to Vercel
 unless `NEXT_TELEMETRY_DISABLED=1` is set — the Docker image sets it, and the
@@ -198,7 +197,14 @@ feature. PostHog therefore sees *when* this instance searched or opened a
 transcript, even though it never sees what. If that timing is more than you
 want a third party to hold, turn it off.
 
-Beyond those two: no crash reporting, no update check, nothing else.
+**Optional upgrades, only on request.** If the host operator installs the Docker
+companion, clicking Check for updates contacts GitHub for release information.
+Clicking Upgrade checks again and downloads the selected image from GHCR and
+its delivery infrastructure. Those services see the host IP and request timing;
+the registry also sees the requested image. No archive content, account
+identifiers, access keys or instance identifier are sent. There are no scheduled
+checks. Disable the companion to remove this capability. See
+[the upgrade guide](docs/upgrades.md). No crash reporting is sent.
 
 ## What the logs contain
 

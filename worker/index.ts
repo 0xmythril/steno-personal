@@ -5,6 +5,7 @@ import { purgeExpiredSessions } from '@/lib/services/sessions'
 import { SessionManager } from '@/lib/channels/session-manager'
 import { buildPorts } from '@/lib/channels/ports'
 import { buildDrains } from '@/worker/drains'
+import { recordWorkerProgress } from '@/lib/services/readiness'
 
 const TICK_MS = 3000
 const SESSION_PURGE_EVERY_MS = 60_000
@@ -14,6 +15,15 @@ async function main() {
   const ports = buildPorts({ apiId: env.TELEGRAM_API_ID, apiHash: env.TELEGRAM_API_HASH })
   const manager = new SessionManager(ports)
   log.info({ channels: [...ports.keys()] }, 'worker started')
+  // Readiness measures a responsive worker, not channel connectivity. A
+  // history sync or provider request can take minutes without being a failed
+  // deployment; waiting for an entire tick would cause spurious rollbacks.
+  recordWorkerProgress()
+  const heartbeat = setInterval(() => {
+    try { recordWorkerProgress() }
+    catch (e) { log.error({ err: errorShape(e) }, 'worker heartbeat failed') }
+  }, 5000)
+  heartbeat.unref()
 
   // Shutdown is cooperative: the signal only flips the flag and wakes the
   // sleep. stopAll() runs AFTER the loop exits, so it never overlaps an
@@ -23,6 +33,7 @@ async function main() {
   let timer: ReturnType<typeof setTimeout> | undefined
   const stop = () => {
     stopping = true
+    clearInterval(heartbeat)
     if (timer) clearTimeout(timer)
     wake?.()
   }
