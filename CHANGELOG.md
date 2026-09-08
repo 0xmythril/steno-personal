@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Move Advanced mode to the bottom of Settings, after enrichment and anonymous usage, while keeping direct links to its card.
+- Place Advanced mode between Enrichment and Anonymous usage. Combine OpenRouter setup with Enrichment and shorten Settings explanations, including usage-reporting bullets. Clearing the OpenRouter key immediately resets the visible enrichment checkboxes.
 
 ## [0.2.0] — 2026-09-08
 

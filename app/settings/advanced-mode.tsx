@@ -58,7 +58,7 @@ export function AdvancedMode({ enabled }: { enabled: boolean }) {
           <span>{pending ? 'Saving…' : enabled ? 'On' : 'Off'}</span>
         </button>
       </div>
-      <p className="help">Turning this off hides the advanced controls. Existing keys and imports keep working. History stays visible and continues recording.</p>
+      <p className="help">Turning off hides these controls. Existing keys, imports, and History keep working.</p>
       {enabled && error && <p className="danger" role="alert">{error}</p>}
       <dialog
         ref={dialog}
@@ -72,13 +72,13 @@ export function AdvancedMode({ enabled }: { enabled: boolean }) {
         <div className="confirm-body" id={`${descriptionId}-dialog`}>
           <p>You will see controls to:</p>
           <ul>
-            <li>Create keys that let agents store conversations, including updates and deletions, in this archive.</li>
-            <li>Set up an agent to import conversations and manage the sources it adds.</li>
-            <li>Resolve disputed messages by keeping the stored version, accepting an incoming version, or deleting the archived message.</li>
-            <li>Export a chat with its import details, or remove a revoked key’s contributions.</li>
+            <li>Create keys for agents to add, update, or delete archived messages.</li>
+            <li>Set up imports and manage their sources.</li>
+            <li>Resolve disputes: keep, replace, or delete an archived message.</li>
+            <li>Export chats or remove a revoked key’s contributions.</li>
           </ul>
-          <p>A key with write access can change what you and your agents read here. Give it only to agents you trust.</p>
-          <p>This reveals controls only. It does not change existing key permissions or let Steno send messages to Telegram or WhatsApp.</p>
+          <p>Push keys can change your archive. Give them only to agents you trust.</p>
+          <p>Existing key permissions stay the same. Steno cannot send messages to Telegram or WhatsApp.</p>
         </div>
         {error && <p className="danger" role="alert">{error}</p>}
         <div className="actions">

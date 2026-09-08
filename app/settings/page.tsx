@@ -64,15 +64,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <h2>Access keys</h2>
           <p className="muted">
             {advancedMode
-              ? 'A key can read, push, or both. Read lets an agent search your archive and logs you into this portal. Push lets an agent store conversations here. A key with both permissions can read everything and change what other agents read. Make one per agent so you can revoke them separately.'
-              : 'An access key logs you into this portal and lets an agent read and search your archive. Make one per device or agent so you can revoke them separately.'}
+              ? 'Read keys let you sign in and let agents search your archive. Push keys let agents add, update, or delete archived messages. Use a separate key for each agent.'
+              : 'Sign in or let an agent search your archive. Use a separate key for each device or agent.'}
           </p>
 
           {minted && (
             <div className="banner">
               <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
                 <span>
-                  <strong>New key created.</strong> Copy it now; you can reveal it again later from this page.
+                  <strong>New key created.</strong> Copy it here or reveal it later.
                   {(() => {
                     const row = keys.find(k => k.id === minted!.id)
                     if (!row) return null
@@ -202,7 +202,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <section className="card">
           <h2>Passkeys</h2>
           <p className="muted">
-            A passkey logs you into this portal with Touch ID, Windows Hello, or your phone. It cannot be used by an agent; agents use keys.
+            Sign in with your fingerprint, face, or screen lock. Agents use access keys instead.
           </p>
 
           <RegisterPasskey />
@@ -272,9 +272,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <EnrichmentSection />
 
-        <TelemetrySection />
-
         <AdvancedMode enabled={advancedMode} />
+
+        <TelemetrySection />
       </main>
     </>
   )

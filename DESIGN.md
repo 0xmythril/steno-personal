@@ -291,10 +291,19 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 - Print styles are not designed.
 - Chat titles for unnamed WhatsApp direct chats still show the full phone number. Masking to the last four digits is a copy rule for a later change.
 
+## Settings copy and enrichment
+
+Keep Settings explanations short. Use bullets for usage-reporting disclosures,
+including the destination, included metadata, excluded content, and random ID.
+Enrichment is one card with two numbered sections: OpenRouter key setup, then
+feature and model selection. Separate forms retain their own save buttons,
+with a divider and section spacing between them. Provider disclosures stay
+visible beside model choices.
+
 ## Advanced mode
 
-Settings ends with an off-by-default Advanced mode switch, after enrichment and
-anonymous usage settings. Links to `#advanced-mode` jump directly to this card. Enabling it opens a
+Settings places the off-by-default Advanced mode switch after enrichment and
+before anonymous usage settings. Links to `#advanced-mode` jump directly to this card. Enabling it opens a
 native explanatory dialog with Cancel focused first and a primary "Turn on
 Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
 Disabling it saves immediately and hides push-key creation, agent write setup,
