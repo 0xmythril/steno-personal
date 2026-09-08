@@ -13,31 +13,26 @@ export async function TelemetrySection() {
   return (
     <section className="card">
       <h2>Anonymous usage</h2>
-      <p className="muted">
-        When you use a feature — run a search, open a transcript, link a person, connect a channel,
-        make a key, or turn enrichment on or off — this instance tells the project that it happened,
-        so the project can see which parts are worth keeping. Each event is the feature&apos;s name,
-        the version, and at most one word more: which channel, which agent tool. It never carries
-        what you searched for, which chat you opened, a name, a phone number, or a key, and the random
-        id that groups one instance&apos;s events is tied to nothing else — not your volume, not your
-        account, not this machine. Events go to PostHog.
-      </p>
+      <p className="muted">Help improve Steno by sending feature usage to PostHog.</p>
+      <ul className="settings-copy-list muted">
+        <li>Includes feature names, app version, and basic details such as channel, tool, or enabled features.</li>
+        <li>Excludes messages, searches, chat IDs, names, phone numbers, and keys.</li>
+        <li>Groups events with a random instance ID, not one derived from your account or device.</li>
+      </ul>
 
       {!configured && (
         <p className="help">
-          This build carries no PostHog key, so nothing is sent at all right now. The box below
-          decides whether it may be, once a build does.
+          Usage reporting is not configured in this build. This preference will apply if it is configured later.
         </p>
       )}
 
-      <form action={updateTelemetryAction} className="stack" style={{ gap: 10 }}>
+      <form action={updateTelemetryAction} className="usage-settings-form">
         <label className="check">
           <input type="checkbox" name="telemetryEnabled" defaultChecked={s.telemetryEnabled} />
           Send anonymous usage events
         </label>
         <p className="help">
-          Turn this off and this instance never sends anything, ever. Setting <code>DO_NOT_TRACK=1</code> on
-          the host does the same without opening this page.
+          Turn off to stop usage reporting. The host can also disable it with <code>DO_NOT_TRACK=1</code>.
         </p>
         <div className="actions"><button type="submit" className="small">Save usage setting</button></div>
       </form>
