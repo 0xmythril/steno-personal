@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "05883a6b-0f1c-4191-a8d0-e8919eba3d24",
+  "id": "c3b55529-59c1-4a25-a0e6-3a728934dffa",
   "prevId": "f8d8ee00-2498-40d2-aa8b-534abaee816c",
   "tables": {
     "access_keys": {
@@ -187,6 +187,20 @@
     "chats": {
       "name": "chats",
       "columns": {
+        "last_push_at": {
+          "name": "last_push_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_push_key_id": {
+          "name": "last_push_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "id": {
           "name": "id",
           "type": "text",
@@ -255,6 +269,19 @@
         }
       },
       "foreignKeys": {
+        "chats_last_push_key_id_access_keys_id_fk": {
+          "name": "chats_last_push_key_id_access_keys_id_fk",
+          "tableFrom": "chats",
+          "tableTo": "access_keys",
+          "columnsFrom": [
+            "last_push_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "chats_connection_id_connections_id_fk": {
           "name": "chats_connection_id_connections_id_fk",
           "tableFrom": "chats",
@@ -540,6 +567,231 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "events": {
+      "name": "events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "surface": {
+          "name": "surface",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor_label": {
+          "name": "actor_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'completed'"
+        },
+        "counts": {
+          "name": "counts",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "events_time_idx": {
+          "name": "events_time_idx",
+          "columns": [
+            "occurred_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "events_kind_time_idx": {
+          "name": "events_kind_time_idx",
+          "columns": [
+            "kind",
+            "occurred_at",
+            "id"
+          ],
+          "isUnique": false
+        },
+        "events_actor_time_idx": {
+          "name": "events_actor_time_idx",
+          "columns": [
+            "actor_id",
+            "occurred_at",
+            "id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "event_sources": {
+      "name": "event_sources",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "event_sources_source_idx": {
+          "name": "event_sources_source_idx",
+          "columns": [
+            "source_id",
+            "event_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "event_sources_event_id_events_id_fk": {
+          "name": "event_sources_event_id_events_id_fk",
+          "tableFrom": "event_sources",
+          "tableTo": "events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "event_sources_event_id_source_id_pk": {
+          "columns": [
+            "event_id",
+            "source_id"
+          ],
+          "name": "event_sources_event_id_source_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "history_state": {
+      "name": "history_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "enabled_at": {
+          "name": "enabled_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trimmed_at": {
+          "name": "trimmed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "read_failures": {
+          "name": "read_failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "media": {
       "name": "media",
       "columns": {
@@ -817,9 +1069,150 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "message_disputes": {
+      "name": "message_disputes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "incoming_key_id": {
+          "name": "incoming_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "incoming_text": {
+          "name": "incoming_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fingerprint": {
+          "name": "fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurrences": {
+          "name": "occurrences",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        }
+      },
+      "indexes": {
+        "disputes_candidate_idx": {
+          "name": "disputes_candidate_idx",
+          "columns": [
+            "message_id",
+            "revision",
+            "incoming_key_id",
+            "fingerprint"
+          ],
+          "isUnique": true
+        },
+        "disputes_key_idx": {
+          "name": "disputes_key_idx",
+          "columns": [
+            "incoming_key_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "message_disputes_message_id_messages_id_fk": {
+          "name": "message_disputes_message_id_messages_id_fk",
+          "tableFrom": "message_disputes",
+          "tableTo": "messages",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "message_disputes_incoming_key_id_access_keys_id_fk": {
+          "name": "message_disputes_incoming_key_id_access_keys_id_fk",
+          "tableFrom": "message_disputes",
+          "tableTo": "access_keys",
+          "columnsFrom": [
+            "incoming_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "messages": {
       "name": "messages",
       "columns": {
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "content_key_id": {
+          "name": "content_key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "content_actor": {
+          "name": "content_actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "id": {
           "name": "id",
           "type": "text",
@@ -976,6 +1369,19 @@
         }
       },
       "foreignKeys": {
+        "messages_content_key_id_access_keys_id_fk": {
+          "name": "messages_content_key_id_access_keys_id_fk",
+          "tableFrom": "messages",
+          "tableTo": "access_keys",
+          "columnsFrom": [
+            "content_key_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "messages_chat_id_chats_id_fk": {
           "name": "messages_chat_id_chats_id_fk",
           "tableFrom": "messages",
@@ -1371,14 +1777,6 @@
           "primaryKey": true,
           "notNull": true,
           "autoincrement": false
-        },
-        "advanced_mode": {
-          "name": "advanced_mode",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "openrouter_key_ciphertext": {
           "name": "openrouter_key_ciphertext",

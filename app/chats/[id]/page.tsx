@@ -1,3 +1,4 @@
+import { recordPortalRead } from '@/lib/services/history-reads'
 import { Fragment } from 'react'
 import { getSettings } from '@/lib/services/settings'
 import Link from 'next/link'
@@ -56,6 +57,8 @@ export default async function ChatPage({ params, searchParams }: {
       <Link href={latestHref}>Latest messages &darr;</Link>
     </p>
   )
+
+  await recordPortalRead(session, 'portal_chat', page)
 
   return (
     <>
@@ -145,20 +148,15 @@ export default async function ChatPage({ params, searchParams }: {
                                 ? <a key={i} href={seg.href} target="_blank" rel="noopener noreferrer nofollow">{seg.value}</a>
                                 : <Fragment key={i}>{seg.value}</Fragment>)}
                             {m.editedAt && <span className="edited">edited</span>}
-                            {/* Not a link yet — it will point at this message's own
-                                History entry once that exists — so it carries none
-                                of a control's affordances: no border, no pointer
-                                cursor, no hover state (.conflict-marker in
-                                globals.css). A message with no conflict renders no
-                                marker; a tombstoned message is never marked (deleted
-                                stays deleted). */}
+                            {/* The owner can compare conflicting versions in History. */}
                             {m.conflictedAt && (
-                              <span
+                              <Link
+                                href={`/history/disputes/${m.id}`}
                                 className="conflict-marker"
                                 aria-label="A later push disagreed with this message; the stored version was kept."
                               >
                                 <AlertIcon /> conflict
-                              </span>
+                              </Link>
                             )}
                             {m.media && <MediaAttachment media={m.media} />}
                           </div>

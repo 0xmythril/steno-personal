@@ -1,3 +1,4 @@
+import { trimHistory, interruptAbandonedRuns } from '@/lib/services/history'
 import { env } from '@/lib/env'
 import { log, errorShape } from '@/lib/log'
 import { purgeExpiredSessions } from '@/lib/services/sessions'
@@ -9,6 +10,7 @@ const TICK_MS = 3000
 const SESSION_PURGE_EVERY_MS = 60_000
 
 async function main() {
+  interruptAbandonedRuns()
   const ports = buildPorts({ apiId: env.TELEGRAM_API_ID, apiHash: env.TELEGRAM_API_HASH })
   const manager = new SessionManager(ports)
   log.info({ channels: [...ports.keys()] }, 'worker started')
@@ -43,6 +45,7 @@ async function main() {
       await manager.tick()
       if (Date.now() - lastPurge > SESSION_PURGE_EVERY_MS) {
         lastPurge = Date.now()
+        trimHistory()
         const purged = await purgeExpiredSessions()
         if (purged) log.info({ purged }, 'expired sessions purged')
       }

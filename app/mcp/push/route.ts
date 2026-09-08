@@ -1,3 +1,4 @@
+import { DisputeCapacityError } from '@/lib/services/disputes'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
 import { errorShape, log } from '@/lib/log'
@@ -62,12 +63,13 @@ const handler = createMcpHandler(server => {
       }
       try {
         const batch: Batch = { format: FORMAT, ...args }
-        const result = await importBatch(clientId, batch)
+        const result = await importBatch(clientId, batch, 'mcp')
         // The fact of a push, never its content. Same event as the HTTP
         // door, distinguished only by which surface it came through.
         track('source_pushed', { surface: 'mcp' })
         return text(result)
       } catch (e) {
+        if (e instanceof DisputeCapacityError) return { content: [{ type: 'text', text: 'Pending dispute storage is full. Review disputes in History, then retry. Nothing in this batch was saved.' }], isError: true }
         // Never the thrown message here either: drizzle puts the SQL and its
         // bound parameters (which, for a write, can be the pushed text
         // itself) straight into an error string.

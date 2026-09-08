@@ -481,7 +481,21 @@ sign of a restriction — see the WhatsApp paragraph in the README.
 
 Settings starts with Advanced mode off. Turn it on and confirm the explanation
 to show push-key creation, agent write configuration, source management, chat
-export, and revoke-and-purge controls. The preference is saved for this instance.
+export, dispute resolution, and contribution removal controls. The preference is saved for this instance.
 Turning it off hides those controls without revoking keys, stopping imports, or
 removing archived conversations. Existing keys can still be revoked in Settings.
+History, its filters and CSV export, and disputed-version comparisons remain
+available in either mode. Resolving disputes and removing contributions requires
+revealing the controls with Advanced mode. Recording continues while it is off.
 Advanced mode is a UI preference, not an API permission or a write kill switch.
+
+
+## Reviewing archive History
+
+Open **History** for Activity, Disputes and Revoked keys. Activity filters and CSV dates use UTC. Source summaries describe retained events in the chosen period; they are not lifetime totals. Metadata recording begins on the first boot with History enabled; previous activity and previously discarded conflicting text cannot be reconstructed. The worker maintains retention even when no channel is connected. Run one worker per archive, as the supplied supervisor does: on worker startup unfinished sync runs are marked interrupted.
+
+The last pusher shown in Chats is recorded by future pushes affecting that chat; older unknown values are left blank. A source creator is distinct from its subsequent pushers.
+
+Push ingestion is now atomic, retaining the existing `steno/1` counts and timestamp ordering. `duplicates` includes conflicts and edited existing rows; do not add those counts as disjoint totals. An HTTP `409` with `dispute_capacity` means pending review storage is full and nothing from that batch was saved. Review disputes, then retry. MCP push reports the same condition in its tool error. Limits: 10,000 pending candidates and 512 MiB of incoming text, independent of activity’s 90-day/10,000-event retention. No extra service, credential or environment variable is required.
+
+History and its CSV export require an owner portal session. API/MCP keys continue to read only normal archive content. See [Privacy](../PRIVACY.md#local-history) for recording coverage, retained deletion metadata and key-cleanup semantics.

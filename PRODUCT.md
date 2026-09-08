@@ -33,7 +33,8 @@ in transcripts. Follow the established steno-pad system in DESIGN.md.
 - Keep secrets out of URLs and logs.
 - Preserve the distinction between importing an archive and sending messages to
   a connected account. Steno never sends messages to those accounts.
-- Keep the four-page navigation and the single-user model.
+- Keep History available for reading activity and comparisons in either mode,
+  and preserve the single-user model.
 
 ## Accessibility & Inclusion
 

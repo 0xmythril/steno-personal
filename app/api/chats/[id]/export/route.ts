@@ -1,3 +1,4 @@
+import { withHistoryRead } from '@/lib/services/history-reads'
 import { requireCookieAuth } from '@/lib/auth'
 import { notFound, withErrorBoundary } from '@/lib/api'
 import { exportChat } from '@/lib/services/chat-export'
@@ -19,7 +20,7 @@ function slugify(title: string | null, chatId: string): string {
 // Owner-only: the export carries the whole chat including provenance, so a
 // bearer access key must never reach it — requireCookieAuth is the same
 // cookie-or-nothing guard the mutating connection routes use.
-export const GET = withErrorBoundary(async (
+export const GET = withHistoryRead('export_chat', withErrorBoundary(async (
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> => {
@@ -38,4 +39,4 @@ export const GET = withErrorBoundary(async (
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   })
-})
+}))

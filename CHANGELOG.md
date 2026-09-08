@@ -6,8 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
 - Fix confirmation dialog hydration when a server-rendered form is passed into it.
-- Add an off-by-default Advanced mode in Settings, with an opt-in explanation before revealing agent write setup, push-key creation, source management, and chat export controls. Existing keys, imports, and archived conversations keep working when it is off.
+- Add an off-by-default Advanced mode in Settings, with an opt-in explanation before revealing agent write setup, push-key creation, source management, chat export, dispute resolution, and contribution removal controls. History activity, CSV export, and dispute comparisons remain available in either mode. Existing keys, imports, and recording keep working when it is off.
+
+- **History for your archive.** Review pushes, authenticated reads, syncs and source/key changes; filter by source, key, kind and UTC date; export matching activity as CSV. Compare disputed messages and keep, accept or delete a version locally. Return to revoked keys later to remove their original contributions while keeping other keys’ messages.
+
+### Changed
+- Live-change history counts repeated deletions once and includes previously unseen Telegram messages received through edits.
+- Keep individual sync runs visible for debugging, with sync-operation and outcome filters shared by Activity, source history, pagination, and CSV. Show precise run timing, retain zero counts, and label live changes as grouped five-minute windows.
+- Align History’s Clear link with Apply and give it a full-height touch target.
+- History labels web-app actions as “You (web app)” and background activity as “System (background sync)”, with both available in the actor filter and CSV exports, including older entries.
+
+- Push batches now commit atomically with their history and conflicting versions. Older retried source edits still leave newer edits unchanged. Chats link to their source history and show the last known pusher for that chat.
+- Activity retains 90 days or 10,000 events. Pending disputes are separate, bounded by 10,000 candidates or 512 MiB of text; a batch exceeding capacity is refused without partial changes.
 
 ### Security
 - **The first-run claim is instance-wide.** Setup bound a pairing to the

@@ -120,6 +120,8 @@ export const connections = sqliteTable('connections', {
 ])
 
 export const chats = sqliteTable('chats', {
+  lastPushAt: integer('last_push_at', { mode: 'timestamp_ms' }),
+  lastPushKeyId: text('last_push_key_id').references(() => accessKeys.id, { onDelete: 'set null' }),
   id: text('id').primaryKey().$defaultFn(randomUUID),
   connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
   // The source type of the connection this chat belongs to; see connections.
@@ -135,6 +137,9 @@ export const chats = sqliteTable('chats', {
 // backfill that replays what live ingest already stored is a no-op. deleted_at
 // is a tombstone kept for dedupe only — no read path ever returns the row.
 export const messages = sqliteTable('messages', {
+  revision: integer('revision').notNull().default(0),
+  contentKeyId: text('content_key_id').references(() => accessKeys.id, { onDelete: 'set null' }),
+  contentActor: text('content_actor', { enum: ['key', 'owner', 'channel'] }),
   id: text('id').primaryKey().$defaultFn(randomUUID),
   chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   externalMessageId: text('external_message_id').notNull(),
@@ -320,3 +325,49 @@ export const dismissedSuggestions = sqliteTable('dismissed_suggestions', {
   whatsappExternalId: text('whatsapp_external_id').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [primaryKey({ columns: [t.telegramExternalId, t.whatsappExternalId] })])
+
+
+// Local owner history. References deliberately survive source/key deletion;
+// these are safe snapshots, not credentials or channel account identifiers.
+export const historyEvents = sqliteTable('events', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  kind: text('kind', { enum: ['push', 'read', 'sync', 'key', 'connection', 'resolution', 'purge'] }).notNull(),
+  operation: text('operation').notNull(),
+  surface: text('surface', { enum: ['portal', 'api', 'mcp', 'worker'] }).notNull(),
+  actorId: text('actor_id'),
+  subjectKeyId: text('subject_key_id'),
+  subjectLabel: text('subject_label'),
+  actorLabel: text('actor_label').notNull(),
+  outcome: text('outcome', { enum: ['completed', 'failed', 'interrupted', 'running'] }).notNull().default('completed'),
+  counts: text('counts', { mode: 'json' }).$type<Record<string, number>>().notNull().default({}),
+  runId: text('run_id'),
+}, t => [uniqueIndex('events_run_idx').on(t.runId), index('events_time_idx').on(t.occurredAt, t.id), index('events_kind_time_idx').on(t.kind, t.occurredAt, t.id), index('events_actor_time_idx').on(t.actorId, t.occurredAt, t.id)])
+
+export const historySources = sqliteTable('event_sources', {
+  eventId: text('event_id').notNull().references(() => historyEvents.id, { onDelete: 'cascade' }),
+  sourceId: text('source_id').notNull(),
+  label: text('label').notNull(),
+  channel: text('channel').notNull(),
+}, t => [primaryKey({ columns: [t.eventId, t.sourceId] }), index('event_sources_source_idx').on(t.sourceId, t.eventId)])
+
+export const historyState = sqliteTable('history_state', {
+  id: integer('id').primaryKey().default(1),
+  enabledAt: integer('enabled_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  trimmedAt: integer('trimmed_at', { mode: 'timestamp_ms' }),
+  readFailures: integer('read_failures').notNull().default(0),
+})
+
+// Only pending alternative text. Never selected by archive/agent queries.
+export const messageDisputes = sqliteTable('message_disputes', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull(),
+  incomingKeyId: text('incoming_key_id').notNull().references(() => accessKeys.id, { onDelete: 'cascade' }),
+  incomingText: text('incoming_text'),
+  fingerprint: text('fingerprint').notNull(),
+  firstSeenAt: integer('first_seen_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  occurrences: integer('occurrences').notNull().default(1),
+}, t => [uniqueIndex('disputes_candidate_idx').on(t.messageId, t.revision, t.incomingKeyId, t.fingerprint), index('disputes_key_idx').on(t.incomingKeyId)])

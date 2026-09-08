@@ -19,7 +19,7 @@ The mark is fixed and must be reproduced exactly (see Components → Mark). Ever
 These are settled product decisions for steno-personal (see CONTRIBUTING.md, "Ground rules"). Do not design them away.
 
 - **Access-key login.** There is a login page — a passkey button first when one is registered, the key form beneath — and the nav shows `key` or `passkey` with the session's label and a Log out. There is no avatar, no accounts, no OAuth.
-- **Four pages.** Chats, People, Connections, Settings. Agent access is a panel inside Settings.
+- **Five pages.** Chats, People, Connections, History, Settings. Agent access is a panel inside Settings.
 - **WhatsApp live is first-class.** No gate, no switch. Its three risk sentences sit on the card, unsoftened, in the `bad` colour.
 - **Keys are re-revealable.** A key can be shown again from the Settings table.
 - **No page view fetches anything.** Fonts are bundled at build time with `next/font`; nothing is pulled from Google, and no script reports on what the user looked at. The usage events the product sends are posted from the server at the moment a feature is used, never by a script in the page, and Settings carries the switch that stops them.
@@ -187,13 +187,15 @@ Favicon: the same paths on a rounded square with literal hex values, palette inv
 
 ### Icon set
 
-The app has a small, named, deliberately capped icon set — four glyphs, no more. Each is drawn in `currentColor` strokes so it follows the surrounding text colour in both palettes, each is `aria-hidden` because the control around it carries the accessible name, and each is drawn for the one size it is actually used at rather than scaled down from a generic set. Adding a glyph is a design decision, weighed the same as adding a colour token under Colors above, not a convenience for the next button that would rather show a picture than a word.
+The app has a small, named, deliberately capped icon set — five glyphs, no more. Each is drawn in `currentColor` strokes so it follows the surrounding text colour in both palettes, each is `aria-hidden` because the control around it carries the accessible name, and each is drawn for the one size it is actually used at rather than scaled down from a generic set. Adding a glyph is a design decision, weighed the same as adding a colour token under Colors above, not a convenience for the next button that would rather show a picture than a word.
 
 **Passkey.** A person and a key, drawn at 18px, on the "Log in with a passkey" and "Register this device" buttons. It is here because a passkey is a thing people have learned to *look* for rather than to read, and the platform glyph is what they scan for. Source: `app/passkey-icon.tsx`. Drawn for 18px — a second tooth on the key closes up below 20px.
 
 **Pencil.** Drawn at 16px, on the icon-only button that turns a key's label from text into its rename form in Settings. Source: `app/icons.tsx`. It is a real button — `aria-label={`Rename ${label}`}`, a visible focus ring, reachable by tap and by keyboard — never a hover reveal, because the label table is used from a phone.
 
-**Alert.** Drawn at 14px, at the end of a message's own body, beside the word "conflict" (`.conflict-marker`, `--warn` text, no border, no pointer cursor) — a sibling of the `.edited` marker beside it, on the same mono scale. Source: `app/icons.tsx`. It is not a button — the marker isn't a link yet, since the per-message History entry it will point at doesn't exist — so the glyph, the `--warn` colour and a full-sentence `aria-label` on the marker all say the same thing together rather than any one of them carrying it alone. A message with no conflict renders no marker.
+**Alert.** Drawn at 14px beside “conflict” at the end of a message. The marker is a link to the owner-only History comparison, with an accessible name explaining that the stored version was kept. No marker is shown without a conflict. Legacy comparisons explicitly say the incoming version was not saved.
+
+**Push arrow.** A small up-arrow with visible key label in the chat-list last-message column. It means the last push affecting this chat, not the newest push anywhere in its source. The glyph is decorative; the link has an accessible name. Unknown legacy attribution is omitted. This addition was reviewed with the History prototype.
 
 **Download.** Drawn at 16px, beside the word "Export" in the transcript header's top row (`.pad-head-top`), a sibling of the `<h1>` and vertically level with it. Source: `app/icons.tsx`. It is a real link — `download`, an href, and `aria-label="Export this chat as a file with every message and who pushed it"` — always visible text beside the glyph, never a hover reveal or an icon-only button standing in for the word. The explanatory sentence that used to sit under the control lives in the accessible name now, not on the page: a file named `steno-<chat>-<date>.json` explains itself once it lands.
 
@@ -283,7 +285,7 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 
 ## Known Gaps
 
-- The icon set (Components → Icon set) stays at four glyphs, passkey, pencil, alert and download, on purpose. Prefer text labels everywhere else. The brand mark in the nav and footer is a separate case (Components → Mark); a fifth icon-set glyph needs the same kind of argument the first four got, not a convenience.
+- The icon set (Components → Icon set) stays at five glyphs, passkey, pencil, alert, download and the push arrow, on purpose. Prefer text labels everywhere else. The brand mark in the nav and footer is a separate case (Components → Mark); a fifth icon-set glyph needs the same kind of argument the first four got, not a convenience.
 - Motion is limited to 150ms colour transitions.
 - Form validation beyond the `bad` colour is not designed. A field error goes inside its `.field`, under the input; `.row > .danger` breaks to its own full-width line as a backstop, because `align-items: flex-end` would otherwise sit it on the submit button's baseline.
 - Print styles are not designed.
@@ -295,7 +297,20 @@ Settings opens with an off-by-default Advanced mode switch. Enabling it opens a
 native explanatory dialog with Cancel focused first and a primary "Turn on
 Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
 Disabling it saves immediately and hides push-key creation, agent write setup,
-source management, transcript export, and detailed push attribution. Existing
+source management, transcript export, detailed push attribution in chats, dispute
+resolution controls, and contribution removal. Existing
 keys remain visible with their actual permissions and ordinary revoke controls;
-conversations, source filters, and conflict warnings remain readable. The mode is
-a UI preference only: it does not revoke keys or stop imports.
+conversations, source filters, and conflict warnings remain readable. History, its
+filters and CSV export, source activity, and dispute comparisons stay available in
+either mode. Comparison and contribution previews link to Settings when their
+mutation controls are hidden. The mode is a UI preference only: it does not
+revoke keys, stop imports, or stop History recording.
+
+
+## History
+
+History uses Activity, Disputes and Revoked keys, with dedicated source-history and per-message comparison pages. Activity is a record with time in the margin and a rule beside its facts, URL-based filters, cursor links and CSV export. Filters and displayed times explicitly use UTC. Source summaries describe the selected retained period, not lifetime totals.
+
+Comparisons place stored and selected incoming text side by side, stacked on phones. Use existing mint-soft/pine-ink tokens to highlight changed text, with an explanation of the highlight. Candidate provenance belongs here; normal transcripts retain only the conflict link. Several incoming versions have an explicit selector. Keep stored acts directly; replacement and deletion use ConfirmDialog. A stale form refreshes the comparison rather than applying an unseen version.
+
+Later key cleanup previews messages, pending disputed copies and other keys’ surviving messages. It uses the same confirmation component as Settings. History is an owner surface and is never exposed as an agent tool.

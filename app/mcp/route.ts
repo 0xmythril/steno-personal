@@ -1,3 +1,5 @@
+import { recordRead } from '@/lib/services/history-reads'
+import { keyActor } from '@/lib/services/history'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { track, type McpTool } from '@/lib/services/telemetry'
 import { z } from 'zod'
@@ -28,7 +30,7 @@ const text = (value: unknown): ToolResult => ({
 // throw: each one is wrapped here, the error goes to the log through
 // errorShape, and the agent is told only that something went wrong.
 function guarded<A extends unknown[]>(
-  tool: McpTool,
+  tool: Exclude<McpTool, 'push_messages'>,
   fn: (...args: A) => Promise<ToolResult>,
 ): (...args: A) => Promise<ToolResult> {
   return async (...args: A) => {
@@ -36,8 +38,18 @@ function guarded<A extends unknown[]>(
     track('mcp_tool_call', { tool })
     if (tool === 'search_messages') track('search', { surface: 'mcp' })
     try {
-      return await fn(...args)
+      const result = await fn(...args)
+      const context = args[1] as { http?: { authInfo?: { clientId: string } } } | undefined
+      const id = context?.http?.authInfo?.clientId
+      if (id) {
+        let value: unknown = null
+        for (const block of result.content) if (block.type === 'text') { try { value = JSON.parse(block.text) } catch { /* Plain status is not an archive result. */ } }
+        recordRead(tool, keyActor(id), 'mcp', value, result.isError === true, (args[0] as { source_id?: string } | undefined)?.source_id)
+      }
+      return result
     } catch (e) {
+      const context = args[1] as { http?: { authInfo?: { clientId: string } } } | undefined
+      if (context?.http?.authInfo?.clientId) recordRead(tool, keyActor(context.http.authInfo.clientId), 'mcp', null, true)
       log.error({ err: errorShape(e), tool }, 'mcp tool failed')
       return { content: [{ type: 'text' as const, text: INTERNAL_ERROR }], isError: true }
     }

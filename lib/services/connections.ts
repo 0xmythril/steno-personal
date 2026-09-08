@@ -1,3 +1,4 @@
+import { recordEvent, type HistorySurface } from './history'
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
@@ -102,6 +103,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
       tx.delete(connections).where(eq(connections.id, own.id)).run()
     }
     const row = tx.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id }).get()
+    recordEvent({ kind: 'connection', operation: 'source_created', sourceIds: [row.id] }, tx)
     return { ok: true, id: row.id }
   }, { behavior: 'immediate' })
 }
@@ -140,8 +142,11 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
   }
 
   try {
-    const [row] = await db.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id })
-    return { ok: true, id: row.id }
+    return db.transaction(tx => {
+      const row = tx.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id }).get()
+      recordEvent({ kind: 'connection', operation: 'source_created', sourceIds: [row.id] }, tx)
+      return { ok: true as const, id: row.id }
+    })
   } catch (err) {
     // A concurrent request won the insert between our pre-check and here:
     // the partial unique index caught what the pre-check could not.
@@ -321,14 +326,15 @@ export async function submitLoginPassword(id: string, password: string): Promise
 // can never disagree. Called by the portal's Disconnect and by the worker when
 // the phone kills the session. Nothing else in the repo writes status:'revoked'
 // — a structural test enforces that.
-export async function revokeConnection(id: string, reason: string): Promise<boolean> {
-  const res = await db.update(connections).set({
-    status: 'revoked', revokedAt: new Date(), lastError: reason,
-    sessionCiphertext: null, loginQrToken: null, loginQrAt: null,
-    loginNeedsPassword: false, loginSecretCiphertext: null, loginSecretAt: null,
-  }).where(and(eq(connections.id, id), isNull(connections.revokedAt)))
-    .returning({ id: connections.id })
-  return res.length > 0
+export async function revokeConnection(id: string, reason: string, surface: HistorySurface = 'portal'): Promise<boolean> {
+  return db.transaction(tx => {
+    const res = tx.update(connections).set({
+      status: 'revoked', revokedAt: new Date(), lastError: reason, sessionCiphertext: null,
+      loginQrToken: null, loginQrAt: null, loginNeedsPassword: false, loginSecretCiphertext: null, loginSecretAt: null,
+    }).where(and(eq(connections.id, id), isNull(connections.revokedAt))).returning({ id: connections.id }).all()
+    if (res.length) recordEvent({ kind: 'connection', operation: 'source_revoked', sourceIds: [id], surface }, tx)
+    return res.length > 0
+  })
 }
 
 // The auth directory name is deterministic: lib/channels/whatsapp.ts derives
@@ -443,7 +449,10 @@ export async function deleteConnection(id: string): Promise<boolean> {
     log.error({ connectionId: id, unlinkFailures, err: { name, code } }, 'failed to unlink some media files')
   }
 
-  await db.delete(connections).where(eq(connections.id, id))
+  db.transaction(tx => {
+    recordEvent({ kind: 'connection', operation: 'source_deleted', sourceIds: [id], outcome: unlinkFailures ? 'failed' : 'completed' }, tx)
+    tx.delete(connections).where(eq(connections.id, id)).run()
+  })
   if (isWhatsapp) await removeWhatsappAuthDirs(row.id, whatsappCiphertext)
   return true
 }
