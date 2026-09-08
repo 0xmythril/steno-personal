@@ -16,7 +16,7 @@ export function isSourceType(value: unknown): value is string {
   return typeof value === 'string' && SOURCE_TYPE_RE.test(value)
 }
 
-export const LIVE_SOURCE_TYPES: readonly Channel[] = ['telegram', 'whatsapp']
+export const LIVE_SOURCE_TYPES: readonly Channel[] = ['telegram', 'whatsapp', 'wechat']
 
 export function isLiveChannel(value: string): value is Channel {
   return (LIVE_SOURCE_TYPES as readonly string[]).includes(value)

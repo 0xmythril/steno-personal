@@ -308,3 +308,9 @@ Activity is retained for 90 days or the newest 10,000 terminal events, whichever
 Disputed incoming text is held separately for owner review and is never indexed for archive search or returned to agents or activity exports. Resolution, a newer explicit edit, deletion, or applicable key cleanup removes the pending text. Unresolved candidates do not expire with activity. Their admission limits are 10,000 candidates and 512 MiB of incoming text; a batch that cannot be recorded within those limits is rejected atomically. Existing conflicts from before this feature have no recoverable incoming version.
 
 Keeping, accepting or deleting a disputed message changes only the local archive. Later cleanup of a revoked key removes messages originally delivered by it and pending copies it supplied, preserving other keys’ messages and existing deletion tombstones. It does not roll back that key’s later accepted edits to messages originally delivered by another key. The confirmation previews the scope and refuses a stale preview. As elsewhere in this archive, logical removal is not a promise of forensic erasure from SQLite pages, WAL files or backups.
+
+Optional WeChat capture connects the server to an operator-configured private
+Stele instance. This is account-source traffic, like the Telegram and WhatsApp
+connections; it is disabled unless configured. Stele credentials remain in
+private server files. Login QR frames are ephemeral and never archived. See
+[WeChat setup and limitations](docs/self-hosting.md#wechat-through-stele).

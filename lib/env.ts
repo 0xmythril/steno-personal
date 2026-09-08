@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { isAbsolute } from 'node:path'
+import { validSteleUrl } from '@/lib/channels/stele-url'
 import 'dotenv/config'
 import { TELEGRAM_DEFAULT_API_ID, TELEGRAM_DEFAULT_API_HASH } from '@/lib/channels/telegram-defaults'
 import { POSTHOG_DEFAULT_KEY, POSTHOG_DEFAULT_HOST } from '@/lib/telemetry-defaults'
@@ -8,6 +10,9 @@ import { POSTHOG_DEFAULT_KEY, POSTHOG_DEFAULT_HOST } from '@/lib/telemetry-defau
 const blank = <T extends z.ZodTypeAny>(inner: T) => z.preprocess(v => (v === '' ? undefined : v), inner)
 
 const baseSchema = z.object({
+  STELE_WECHAT_URL: blank(z.string().refine(validSteleUrl, 'Stele requires HTTPS or loopback HTTP, without credentials, path or query.').optional()),
+  STELE_WECHAT_READ_TOKEN_FILE: blank(z.string().refine(isAbsolute, 'Use an absolute token-file path.').optional()),
+  STELE_WECHAT_LOGIN_TOKEN_FILE: blank(z.string().refine(isAbsolute, 'Use an absolute token-file path.').optional()),
   DATA_DIR: blank(z.string().min(1).optional()).default('./data'),
   PORT: blank(z.coerce.number().int().positive().optional()).default(3000),
   SECRET_KEY: blank(z.string().min(32, 'SECRET_KEY must be at least 32 characters').optional()),
@@ -63,6 +68,9 @@ export const envSchema = z.preprocess((input, ctx) => {
       code: 'custom',
       message: 'TELEGRAM_API_ID and TELEGRAM_API_HASH must be set together (or TELEGRAM_API_ID=0 to run without Telegram)',
     })
+  }
+  if (Boolean(rawString(r.STELE_WECHAT_URL)) !== Boolean(rawString(r.STELE_WECHAT_READ_TOKEN_FILE)) || (rawString(r.STELE_WECHAT_LOGIN_TOKEN_FILE) && !rawString(r.STELE_WECHAT_URL))) {
+    ctx.addIssue({ code: 'custom', message: 'Set STELE_WECHAT_URL and STELE_WECHAT_READ_TOKEN_FILE together before configuring login.' })
   }
   return input
 }, baseSchema)

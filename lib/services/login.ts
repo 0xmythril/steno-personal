@@ -105,7 +105,7 @@ export async function completeLogin(id: string, sessionString: string, account: 
   // Which channel, and nothing about whose account. A login only ever
   // completes on a live row, so the guard is for the type, not the data.
   const channel = updated[0].channel
-  if (isLiveChannel(channel)) track('channel_connected', { channel })
+  if (channel === 'telegram' || channel === 'whatsapp') track('channel_connected', { channel })
   return 'ok'
 }
 

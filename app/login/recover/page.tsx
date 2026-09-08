@@ -4,7 +4,6 @@ import { getRecoveryAttempt, knownAccountChannels, type RecoveryStatus } from '@
 import { PASSWORD_REJECTED } from '@/lib/services/connections'
 import { renderQrSvg } from '@/lib/qrcode'
 import { CHANNEL_LABELS, sourceLabel } from '@/lib/format'
-import type { Channel } from '@/lib/channels/port'
 import { BrandLogo, Wordmark } from '@/app/brand-logo'
 import { WhatsAppRisk } from '@/app/connections/whatsapp-consent'
 import { ConnectPanel } from '@/app/connections/connect-panel'
@@ -20,7 +19,7 @@ export const dynamic = 'force-dynamic'
 
 const LOST_ACCESS_DOCS = 'https://github.com/0xmythril/steno-personal/blob/main/docs/self-hosting.md#lost-access'
 
-function StartCards({ channels }: { channels: Channel[] }) {
+function StartCards({ channels }: { channels: ('telegram' | 'whatsapp')[] }) {
   if (channels.length === 0) {
     return (
       <section className="card">

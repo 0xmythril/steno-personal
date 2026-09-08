@@ -287,7 +287,7 @@ export const people = sqliteTable('people', {
 export const personIdentities = sqliteTable('person_identities', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   personId: text('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  channel: text('channel', { enum: ['telegram', 'whatsapp', 'wechat'] }).notNull(),
   externalId: text('external_id').notNull(),
   displayName: text('display_name'),
   phone: text('phone'),
@@ -306,7 +306,7 @@ export const personIdentities = sqliteTable('person_identities', {
 export const channelContacts = sqliteTable('channel_contacts', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
   connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  channel: text('channel', { enum: ['telegram', 'whatsapp', 'wechat'] }).notNull(),
   externalId: text('external_id').notNull(),
   displayName: text('display_name'),
   phone: text('phone'),
