@@ -1,3 +1,4 @@
+import { APP_VERSION } from '@/lib/version'
 import { recordRead } from '@/lib/services/history-reads'
 import { keyActor } from '@/lib/services/history'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
@@ -321,7 +322,7 @@ const handler = createMcpHandler(server => {
     }),
   )
 }, {
-  serverInfo: { name: 'steno-personal', version: '0.1.0' },
+  serverInfo: { name: 'steno-personal', version: APP_VERSION },
 })
 
 // The same access keys that log into the portal. verifyAccessKey rejects

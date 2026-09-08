@@ -1,3 +1,4 @@
+import { APP_VERSION } from '@/lib/version'
 import { DisputeCapacityError } from '@/lib/services/disputes'
 import { createMcpHandler, withMcpAuth } from 'mcp-handler'
 import { z } from 'zod'
@@ -79,7 +80,7 @@ const handler = createMcpHandler(server => {
     },
   )
 }, {
-  serverInfo: { name: 'steno-personal-push', version: '0.1.0' },
+  serverInfo: { name: 'steno-personal-push', version: APP_VERSION },
 })
 
 // A push key only: verifyAccessKey(token, 'push') refuses a read-only key,

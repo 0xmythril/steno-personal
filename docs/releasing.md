@@ -112,6 +112,9 @@ git checkout main && git pull
 npm version X.Y.Z --no-git-tag-version   # bumps package.json and the lockfile
 ```
 
+Update `APP_VERSION` in `lib/version.ts` to the same version. The version
+consistency test checks it against `package.json`.
+
 Then in `CHANGELOG.md`:
 
 - rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD` and open a fresh,

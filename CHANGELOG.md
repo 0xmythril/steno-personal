@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-08
+
 ### Added
 
 - Fix confirmation dialog hydration when a server-rendered form is passed into it.
@@ -283,5 +285,6 @@ First release. Everything below is new.
 - At 0.1.0 the project shipped no Telegram application pair, so Telegram
   needed one from my.telegram.org. Lifted in the next release, above.
 
-[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.2.0
 [0.1.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.1.0

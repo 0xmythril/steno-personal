@@ -1,6 +1,6 @@
 {
   "name": "steno-personal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Your own Telegram and WhatsApp chats, archived read-only into one SQLite file on a machine you control, readable by your agents over MCP.",
   "repository": {
