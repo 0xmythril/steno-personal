@@ -54,6 +54,7 @@ export async function seedMessage(chatId: string, opts: {
   fromOwner?: boolean
   deletedAt?: Date | null
   type?: 'text' | 'image' | 'video' | 'audio' | 'document' | 'sticker' | 'reaction' | 'poll' | 'location' | 'contact' | 'system' | 'unknown'
+  raw?: Record<string, unknown>
 } = {}): Promise<string> {
   const id = randomUUID()
   const sentAt = opts.sentAt ?? new Date()
@@ -69,7 +70,7 @@ export async function seedMessage(chatId: string, opts: {
     type: opts.type ?? 'text',
     text: opts.text === undefined ? 'hello' : opts.text,
     deletedAt: opts.deletedAt ?? null,
-    raw: {},
+    raw: opts.raw ?? {},
   })
   await db.update(chats).set({ lastMessageAt: sentAt }).where(eq(chats.id, chatId))
   return id

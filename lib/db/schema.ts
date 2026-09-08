@@ -15,6 +15,12 @@ export const accessKeys = sqliteTable('access_keys', {
   // First 8 chars after the prefix, shown in lists so a reader can match a
   // key to an agent config without revealing it.
   prefix: text('prefix').notNull(),
+  // What the key may do. Either, or both: an agent that searches and also
+  // stores its own transcript holds one key with both. Settings says out
+  // loud that a key with both carries both risks (read = exfiltration,
+  // push = planted text).
+  canRead: integer('can_read', { mode: 'boolean' }).notNull().default(true),
+  canPush: integer('can_push', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
@@ -65,7 +71,18 @@ export const sessions = sqliteTable('sessions', {
 // stores a session, and never owns a chat; it ends revoked with an outcome.
 export const connections = sqliteTable('connections', {
   id: text('id').primaryKey().$defaultFn(randomUUID),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // A source type. Live rows hold exactly 'telegram' or 'whatsapp' — the
+  // ports the worker can open — and only createConnection writes them. Pushed
+  // rows hold any slug the pusher chose (lib/services/sources.ts isSourceType).
+  channel: text('channel').notNull(),
+  // 'live' is opened by the worker through a ChannelPort; 'push' is written
+  // from outside under a push key and never reaches the worker at all.
+  mode: text('mode', { enum: ['live', 'push'] }).notNull().default('live'),
+  // Pushed rows only: the push key that created the source — "created by"
+  // history, kept even though any push key may push to it afterward (see
+  // messages.pushKeyId for per-message provenance). Keys are never hard
+  // deleted (revocation is revoked_at), so no ON DELETE action is declared.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   purpose: text('purpose', { enum: ['archive', 'recovery'] }).notNull().default('archive'),
   status: text('status', { enum: ['pending', 'active', 'revoked', 'error'] }).notNull().default('pending'),
   externalAccountId: text('external_account_id'),
@@ -87,14 +104,28 @@ export const connections = sqliteTable('connections', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastSyncAt: integer('last_sync_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the `conflicts` count the last importBatch reported for
+  // this source — a disagreeing pusher is visible at a glance, not only by
+  // reading a batch response the owner never saw. It still describes the
+  // last batch, not any one message; messages.conflictedAt is the mark that
+  // says which message a disagreement was actually about.
+  lastImportConflicts: integer('last_import_conflicts').notNull().default(0),
+  // Pushed rows only: the key that delivered the most recent accepted batch
+  // — so the source can say who pushed last without implying every pusher
+  // did. Updated alongside last_sync_at on every batch, never cleared.
+  lastPushKeyId: text('last_push_key_id').references(() => accessKeys.id),
 }, t => [
-  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL`),
+  uniqueIndex('connections_live_channel_purpose').on(t.channel, t.purpose).where(sql`revoked_at IS NULL AND mode = 'live'`),
+  uniqueIndex('connections_push_source').on(t.channel, t.externalAccountId).where(sql`revoked_at IS NULL AND mode = 'push'`),
 ])
 
 export const chats = sqliteTable('chats', {
+  lastPushAt: integer('last_push_at', { mode: 'timestamp_ms' }),
+  lastPushKeyId: text('last_push_key_id').references(() => accessKeys.id, { onDelete: 'set null' }),
   id: text('id').primaryKey().$defaultFn(randomUUID),
   connectionId: text('connection_id').notNull().references(() => connections.id, { onDelete: 'cascade' }),
-  channel: text('channel', { enum: ['telegram', 'whatsapp'] }).notNull(),
+  // The source type of the connection this chat belongs to; see connections.
+  channel: text('channel').notNull(),
   externalChatId: text('external_chat_id').notNull(),
   kind: text('kind', { enum: ['dm', 'group', 'channel'] }).notNull(),
   title: text('title'),
@@ -106,6 +137,9 @@ export const chats = sqliteTable('chats', {
 // backfill that replays what live ingest already stored is a no-op. deleted_at
 // is a tombstone kept for dedupe only — no read path ever returns the row.
 export const messages = sqliteTable('messages', {
+  revision: integer('revision').notNull().default(0),
+  contentKeyId: text('content_key_id').references(() => accessKeys.id, { onDelete: 'set null' }),
+  contentActor: text('content_actor', { enum: ['key', 'owner', 'channel'] }),
   id: text('id').primaryKey().$defaultFn(randomUUID),
   chatId: text('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   externalMessageId: text('external_message_id').notNull(),
@@ -122,6 +156,19 @@ export const messages = sqliteTable('messages', {
   replyToExternalId: text('reply_to_external_id'),
   editedAt: integer('edited_at', { mode: 'timestamp_ms' }),
   deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }),
+  // Set when a push disagreed with the text already stored here (first
+  // writer wins, so the disagreement is marked and the losing text is never
+  // stored). Cleared the moment an explicit edit settles it — an edit
+  // replaces conflictedAt with editedAt in the same update, because an edit
+  // is the owner's account of what changed, and the earlier disagreement is
+  // moot once there is a new, authored answer. Never set on a tombstoned
+  // row: deleted stays deleted, and a delete is checked before a conflict
+  // is ever considered.
+  conflictedAt: integer('conflicted_at', { mode: 'timestamp_ms' }),
+  // Pushed rows only: the key that delivered this message. Null for a message
+  // the worker read live. Sources are shared — any push key may push to any
+  // source — so provenance lives here, per message, not on the source.
+  pushKeyId: text('push_key_id').references(() => accessKeys.id),
   raw: text('raw', { mode: 'json' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [
@@ -130,6 +177,7 @@ export const messages = sqliteTable('messages', {
   // The sender-name lookup in lib/services/queries.ts walks one sender's
   // messages newest-first, once per row on a page.
   index('messages_sender_sent_idx').on(t.senderExternalId, t.sentAt),
+  index('messages_push_key_idx').on(t.pushKeyId),
 ])
 
 // Downloaded attachment bytes, one row per message that carries one. Queued
@@ -182,6 +230,7 @@ export const mediaAnalysis = sqliteTable('media_analysis', {
 // is the whole of "the user's preferences".
 export const settings = sqliteTable('settings', {
   id: integer('id').primaryKey(),
+  advancedMode: integer('advanced_mode', { mode: 'boolean' }).notNull().default(false),
   openrouterKeyCiphertext: text('openrouter_key_ciphertext'),
   analyzeImages: integer('analyze_images', { mode: 'boolean' }).notNull().default(false),
   analyzeAudio: integer('analyze_audio', { mode: 'boolean' }).notNull().default(false),
@@ -276,3 +325,49 @@ export const dismissedSuggestions = sqliteTable('dismissed_suggestions', {
   whatsappExternalId: text('whatsapp_external_id').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
 }, t => [primaryKey({ columns: [t.telegramExternalId, t.whatsappExternalId] })])
+
+
+// Local owner history. References deliberately survive source/key deletion;
+// these are safe snapshots, not credentials or channel account identifiers.
+export const historyEvents = sqliteTable('events', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),
+  kind: text('kind', { enum: ['push', 'read', 'sync', 'key', 'connection', 'resolution', 'purge'] }).notNull(),
+  operation: text('operation').notNull(),
+  surface: text('surface', { enum: ['portal', 'api', 'mcp', 'worker'] }).notNull(),
+  actorId: text('actor_id'),
+  subjectKeyId: text('subject_key_id'),
+  subjectLabel: text('subject_label'),
+  actorLabel: text('actor_label').notNull(),
+  outcome: text('outcome', { enum: ['completed', 'failed', 'interrupted', 'running'] }).notNull().default('completed'),
+  counts: text('counts', { mode: 'json' }).$type<Record<string, number>>().notNull().default({}),
+  runId: text('run_id'),
+}, t => [uniqueIndex('events_run_idx').on(t.runId), index('events_time_idx').on(t.occurredAt, t.id), index('events_kind_time_idx').on(t.kind, t.occurredAt, t.id), index('events_actor_time_idx').on(t.actorId, t.occurredAt, t.id)])
+
+export const historySources = sqliteTable('event_sources', {
+  eventId: text('event_id').notNull().references(() => historyEvents.id, { onDelete: 'cascade' }),
+  sourceId: text('source_id').notNull(),
+  label: text('label').notNull(),
+  channel: text('channel').notNull(),
+}, t => [primaryKey({ columns: [t.eventId, t.sourceId] }), index('event_sources_source_idx').on(t.sourceId, t.eventId)])
+
+export const historyState = sqliteTable('history_state', {
+  id: integer('id').primaryKey().default(1),
+  enabledAt: integer('enabled_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  trimmedAt: integer('trimmed_at', { mode: 'timestamp_ms' }),
+  readFailures: integer('read_failures').notNull().default(0),
+})
+
+// Only pending alternative text. Never selected by archive/agent queries.
+export const messageDisputes = sqliteTable('message_disputes', {
+  id: text('id').primaryKey().$defaultFn(randomUUID),
+  messageId: text('message_id').notNull().references(() => messages.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull(),
+  incomingKeyId: text('incoming_key_id').notNull().references(() => accessKeys.id, { onDelete: 'cascade' }),
+  incomingText: text('incoming_text'),
+  fingerprint: text('fingerprint').notNull(),
+  firstSeenAt: integer('first_seen_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull().$defaultFn(now),
+  occurrences: integer('occurrences').notNull().default(1),
+}, t => [uniqueIndex('disputes_candidate_idx').on(t.messageId, t.revision, t.incomingKeyId, t.fingerprint), index('disputes_key_idx').on(t.incomingKeyId)])

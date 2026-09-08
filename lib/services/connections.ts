@@ -1,9 +1,10 @@
+import { recordEvent, type HistorySurface } from './history'
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
 import path from 'node:path'
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db/client'
-import { channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
+import { accessKeys, channelContacts, chats, connections, media, messages } from '@/lib/db/schema'
 import { encryptSecret, decryptSecret } from '@/lib/services/crypto'
 import { mediaFilePath } from '@/lib/services/media'
 import { errorShape, log } from '@/lib/log'
@@ -22,7 +23,8 @@ export const PASSWORD_REJECTED = 'password_rejected'
 
 export type ConnectionStatus = {
   id: string
-  channel: Channel
+  // A source type: one of the two live channels, or a pushed source's slug.
+  channel: string
   // 'archive' reads the account; 'recovery' only proves the owner still holds
   // it (lib/services/recovery.ts). The connections page picks its live card
   // from archive rows alone and lists finished recovery attempts as history.
@@ -91,7 +93,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
     const live = tx.select({ id: connections.id, status: connections.status })
       .from(connections)
       .where(and(
-        eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+        eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt),
         inArray(connections.status, ['pending', 'active']),
       )).all()
     if (live.some(r => r.id !== mine)) return { ok: false, reason: 'claimed' }
@@ -101,6 +103,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
       tx.delete(connections).where(eq(connections.id, own.id)).run()
     }
     const row = tx.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id }).get()
+    recordEvent({ kind: 'connection', operation: 'source_created', sourceIds: [row.id] }, tx)
     return { ok: true, id: row.id }
   }, { behavior: 'immediate' })
 }
@@ -110,7 +113,7 @@ export async function createSetupConnection(channel: Channel, mine: string | nul
 export async function otherSetupClaimExists(mine: string | null): Promise<boolean> {
   const rows = await db.select({ id: connections.id }).from(connections)
     .where(and(
-      eq(connections.purpose, 'archive'), isNull(connections.revokedAt),
+      eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt),
       inArray(connections.status, ['pending', 'active']),
     ))
   return rows.some(r => r.id !== mine)
@@ -128,7 +131,7 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
   if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   const live = await db.select({ id: connections.id, status: connections.status })
     .from(connections)
-    .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), isNull(connections.revokedAt)))
+    .where(and(eq(connections.channel, channel), eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNull(connections.revokedAt)))
 
   if (live.some(r => r.status === 'active')) return { ok: false, reason: 'already_connected' }
 
@@ -139,8 +142,11 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
   }
 
   try {
-    const [row] = await db.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id })
-    return { ok: true, id: row.id }
+    return db.transaction(tx => {
+      const row = tx.insert(connections).values({ channel, status: 'pending' }).returning({ id: connections.id }).get()
+      recordEvent({ kind: 'connection', operation: 'source_created', sourceIds: [row.id] }, tx)
+      return { ok: true as const, id: row.id }
+    })
   } catch (err) {
     // A concurrent request won the insert between our pre-check and here:
     // the partial unique index caught what the pre-check could not.
@@ -158,13 +164,43 @@ export async function createConnection(channel: Channel): Promise<{ ok: true; id
 // account id is looked up here and never returned.
 // `id` is this instance's own connection uuid, the one every chat carries as
 // connectionId — never the account identifier (spec invariant: no channel id
-// on an agent surface).
-export type AgentConnection = { id: string; channel: Channel; displayName: string | null; status: ConnectionStatus['status'] }
+// on an agent surface). mode and pushedBy say how the source got here:
+// 'live' is read from a paired account and pushedBy is always empty; 'push'
+// is delivered through the import door and pushedBy names the keys that did
+// — never a key value or prefix, only the label the owner gave it.
+export type AgentConnection = {
+  id: string; channel: string; displayName: string | null; status: ConnectionStatus['status']
+  mode: 'live' | 'push'; pushedBy: string[]
+}
+
+// The distinct labels of every key that has pushed a LIVE message into this
+// source, plus the label of the key that created it (upsertSource's
+// "created by" record) if that key never itself pushed a message — a source
+// created by one key and fed entirely by another still credits both. The
+// creator's credit is unconditional and survives every message it pushed
+// being deleted (it is a "created by" record, not a tally of live rows); a
+// pushing key with no other claim earns its place only while at least one of
+// its messages is still live — deleting the last one it pushed drops it,
+// exactly as ChatSummary.pushers (lib/services/queries.ts) already does, so
+// whoami and the Sources list can never disagree about who is credited.
+async function pushedByLabels(connectionId: string, creatorKeyId: string | null): Promise<string[]> {
+  const rows = await db.selectDistinct({ label: accessKeys.label })
+    .from(messages)
+    .innerJoin(chats, eq(chats.id, messages.chatId))
+    .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
+    .where(and(eq(chats.connectionId, connectionId), isNull(messages.deletedAt)))
+  const labels = new Set(rows.map(r => r.label))
+  if (creatorKeyId) {
+    const [creator] = await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, creatorKeyId))
+    if (creator) labels.add(creator.label)
+  }
+  return [...labels].sort()
+}
 
 export async function agentConnections(): Promise<AgentConnection[]> {
   const rows = await db.select({
-    id: connections.id, channel: connections.channel, status: connections.status,
-    displayName: connections.displayName, externalAccountId: connections.externalAccountId,
+    id: connections.id, channel: connections.channel, status: connections.status, mode: connections.mode,
+    displayName: connections.displayName, externalAccountId: connections.externalAccountId, pushKeyId: connections.pushKeyId,
   }).from(connections)
     .where(eq(connections.purpose, 'archive'))
     .orderBy(desc(connections.createdAt), desc(connections.id))
@@ -196,13 +232,70 @@ export async function agentConnections(): Promise<AgentConnection[]> {
         .limit(1)
       displayName = own?.displayName ?? null
     }
-    out.push({ id: r.id, channel: r.channel, displayName, status: r.status })
+    const pushedBy = r.mode === 'push' ? await pushedByLabels(r.id, r.pushKeyId) : []
+    out.push({ id: r.id, channel: r.channel, displayName, status: r.status, mode: r.mode, pushedBy })
   }
   return out
 }
 
+// What the portal's Sources card shows for one pushed source: not an account
+// the worker reads, but a slug some pusher chose and the keys that have fed
+// it. `createdBy` is the label of the key that first named this source
+// (upsertSource's "created by" record) — never null unless that key has
+// since been hard-deleted, which never happens (keys are only revoked).
+// `pushedBy` reuses pushedByLabels, so a source and its whoami entry always
+// agree on who touched it. `messageCount` is undeleted messages only — a
+// deleted stays deleted, and a count that included tombstones would say more
+// than the reader can actually open.
+export type SourceView = {
+  id: string; channel: string; label: string | null; createdBy: string | null
+  pushedBy: string[]; messageCount: number; lastPushAt: Date | null; lastImportConflicts: number
+  // The label of the key that delivered the most recent accepted batch, null
+  // before this source has ever been pushed to. Says who pushed last without
+  // implying every pusher did — pushedBy is the fuller answer for that.
+  lastPushBy: string | null
+}
+
+export async function listSources(): Promise<SourceView[]> {
+  const rows = await db.select({
+    id: connections.id, channel: connections.channel, label: connections.displayName,
+    pushKeyId: connections.pushKeyId, lastPushAt: connections.lastSyncAt,
+    lastImportConflicts: connections.lastImportConflicts, lastPushKeyId: connections.lastPushKeyId,
+  }).from(connections)
+    .where(and(eq(connections.mode, 'push'), isNull(connections.revokedAt)))
+    .orderBy(desc(connections.createdAt), desc(connections.id))
+
+  const out: SourceView[] = []
+  for (const r of rows) {
+    const [creator] = r.pushKeyId
+      ? await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, r.pushKeyId))
+      : []
+    const [lastPusher] = r.lastPushKeyId
+      ? await db.select({ label: accessKeys.label }).from(accessKeys).where(eq(accessKeys.id, r.lastPushKeyId))
+      : []
+    const pushedBy = await pushedByLabels(r.id, r.pushKeyId)
+    const [{ messageCount }] = await db.select({ messageCount: sql<number>`count(*)` })
+      .from(messages)
+      .innerJoin(chats, eq(chats.id, messages.chatId))
+      .where(and(eq(chats.connectionId, r.id), isNull(messages.deletedAt)))
+    out.push({
+      id: r.id, channel: r.channel, label: r.label, createdBy: creator?.label ?? null,
+      pushedBy, messageCount, lastPushAt: r.lastPushAt, lastImportConflicts: r.lastImportConflicts,
+      lastPushBy: lastPusher?.label ?? null,
+    })
+  }
+  return out
+}
+
+// The connections page is the LIVE list only: a pushed source (mode 'push')
+// is never rendered as a channel card, even when its slug collides with a
+// live channel's name (a pushed 'whatsapp' export must not hijack the real
+// WhatsApp card's Disconnect/Delete controls). Pushed sources get their own
+// Sources card in a later release; until then they are visible only through
+// what they archived, not through this list.
 export async function listConnections(): Promise<ConnectionStatus[]> {
   const rows = await db.select().from(connections)
+    .where(eq(connections.mode, 'live'))
     .orderBy(desc(connections.createdAt), desc(connections.id))
   return rows.map(toStatus)
 }
@@ -233,14 +326,15 @@ export async function submitLoginPassword(id: string, password: string): Promise
 // can never disagree. Called by the portal's Disconnect and by the worker when
 // the phone kills the session. Nothing else in the repo writes status:'revoked'
 // — a structural test enforces that.
-export async function revokeConnection(id: string, reason: string): Promise<boolean> {
-  const res = await db.update(connections).set({
-    status: 'revoked', revokedAt: new Date(), lastError: reason,
-    sessionCiphertext: null, loginQrToken: null, loginQrAt: null,
-    loginNeedsPassword: false, loginSecretCiphertext: null, loginSecretAt: null,
-  }).where(and(eq(connections.id, id), isNull(connections.revokedAt)))
-    .returning({ id: connections.id })
-  return res.length > 0
+export async function revokeConnection(id: string, reason: string, surface: HistorySurface = 'portal'): Promise<boolean> {
+  return db.transaction(tx => {
+    const res = tx.update(connections).set({
+      status: 'revoked', revokedAt: new Date(), lastError: reason, sessionCiphertext: null,
+      loginQrToken: null, loginQrAt: null, loginNeedsPassword: false, loginSecretCiphertext: null, loginSecretAt: null,
+    }).where(and(eq(connections.id, id), isNull(connections.revokedAt))).returning({ id: connections.id }).all()
+    if (res.length) recordEvent({ kind: 'connection', operation: 'source_revoked', sourceIds: [id], surface }, tx)
+    return res.length > 0
+  })
 }
 
 // The auth directory name is deterministic: lib/channels/whatsapp.ts derives
@@ -301,7 +395,7 @@ export async function removeWhatsappAuthDirs(id: string, sessionCiphertext: stri
 // — which is exactly why whatsappDirsFor derives it from the id first.
 export async function revokedWhatsappConnectionIds(): Promise<string[]> {
   const rows = await db.select({ id: connections.id }).from(connections)
-    .where(and(eq(connections.channel, 'whatsapp'), eq(connections.status, 'revoked')))
+    .where(and(eq(connections.channel, 'whatsapp'), eq(connections.status, 'revoked'), eq(connections.mode, 'live')))
   return rows.map(r => r.id)
 }
 
@@ -355,13 +449,16 @@ export async function deleteConnection(id: string): Promise<boolean> {
     log.error({ connectionId: id, unlinkFailures, err: { name, code } }, 'failed to unlink some media files')
   }
 
-  await db.delete(connections).where(eq(connections.id, id))
+  db.transaction(tx => {
+    recordEvent({ kind: 'connection', operation: 'source_deleted', sourceIds: [id], outcome: unlinkFailures ? 'failed' : 'completed' }, tx)
+    tx.delete(connections).where(eq(connections.id, id)).run()
+  })
   if (isWhatsapp) await removeWhatsappAuthDirs(row.id, whatsappCiphertext)
   return true
 }
 
 export async function hasActiveConnection(): Promise<boolean> {
   const [row] = await db.select({ id: connections.id }).from(connections)
-    .where(and(eq(connections.status, 'active'), isNull(connections.revokedAt))).limit(1)
+    .where(and(eq(connections.status, 'active'), eq(connections.mode, 'live'), isNull(connections.revokedAt))).limit(1)
   return row !== undefined
 }

@@ -4,7 +4,10 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { requireSession, endSession, isHttps } from '@/lib/auth'
-import { mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys } from '@/lib/services/access-keys'
+import {
+  mintAccessKey, revealAccessKey, revokeAccessKey, revokeAllAccessKeys, listActiveAccessKeys, revokeAccessKeyAndPurge,
+  renameAccessKey,
+} from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
 import { updateSettings } from '@/lib/services/settings'
 import { track } from '@/lib/services/telemetry'
@@ -13,7 +16,8 @@ import { revokePasskey, revokeAllPasskeys } from '@/lib/services/passkeys'
 export async function mintKeyAction(formData: FormData) {
   await requireSession()
   const label = String(formData.get('label') ?? '').trim() || 'Agent key'
-  const result = await mintAccessKey(label)
+  const caps = { read: formData.get('canRead') === 'on', push: formData.get('canPush') === 'on' }
+  const result = await mintAccessKey(label, caps)
   if (!result.ok) redirect(`/settings?mintError=${result.reason}`)
   const jar = await cookies()
   jar.set(MINTED_KEY_COOKIE, JSON.stringify({ id: result.id, rawKey: result.rawKey }), {
@@ -77,6 +81,17 @@ export async function clearInstructionsKeyAction() {
   redirect('/settings')
 }
 
+// A label is a note to the owner; renaming carries no authority and never
+// touches a flash cookie or the raw key.
+export async function renameKeyAction(formData: FormData) {
+  await requireSession()
+  const keyId = String(formData.get('keyId') ?? '')
+  const label = String(formData.get('label') ?? '')
+  const result = await renameAccessKey(keyId, label)
+  if (!result.ok) redirect(`/settings?renameError=${result.reason}&renameKeyId=${encodeURIComponent(keyId)}`)
+  revalidatePath('/settings')
+}
+
 export async function revokeKeyAction(formData: FormData) {
   const session = await requireSession()
   const keyId = String(formData.get('keyId') ?? '')
@@ -86,6 +101,22 @@ export async function revokeKeyAction(formData: FormData) {
   jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
   jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   // Revoking the key this browser logged in with ends this session too.
+  if (keyId === session.keyId) { await endSession(); redirect('/login') }
+  revalidatePath('/settings')
+}
+
+// Revoke a push key and take what it delivered with it: every message it
+// pushed is hard-deleted, and any source it thereby leaves empty goes with
+// it. Same session-ending rule as revokeKeyAction — revoking this browser's
+// own key must not leave it logged into a session a key no longer backs.
+export async function revokeAndPurgeKeyAction(formData: FormData) {
+  const session = await requireSession()
+  const keyId = String(formData.get('keyId') ?? '')
+  await revokeAccessKeyAndPurge(keyId)
+  const jar = await cookies()
+  jar.delete({ name: REVEALED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: MINTED_KEY_COOKIE, path: '/settings' })
+  jar.delete({ name: INSTRUCTIONS_KEY_COOKIE, path: '/settings' })
   if (keyId === session.keyId) { await endSession(); redirect('/login') }
   revalidatePath('/settings')
 }
@@ -167,4 +198,13 @@ export async function updateEnrichmentAction(formData: FormData) {
     transcriptionModel: String(formData.get('transcriptionModel') ?? ''),
   })
   redirect('/settings')
+}
+
+// This is a presentation preference, not an authorization boundary. Existing
+// push keys and endpoints retain their capabilities in either mode.
+export async function setAdvancedModeAction(enabled: boolean): Promise<void> {
+  await requireSession()
+  if (typeof enabled !== 'boolean') throw new Error('Invalid advanced mode setting')
+  await updateSettings({ advancedMode: enabled })
+  revalidatePath('/', 'layout')
 }

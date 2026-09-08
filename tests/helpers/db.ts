@@ -14,6 +14,8 @@ export function useTempDataDir(): string {
 export async function resetDb(): Promise<void> {
   const { db } = await import('@/lib/db/client')
   const s = await import('@/lib/db/schema')
+  await db.delete(s.historyEvents)
+  await db.delete(s.historyState)
   await db.delete(s.mediaAnalysis)
   await db.delete(s.media)
   await db.delete(s.messages)
@@ -29,6 +31,6 @@ export async function resetDb(): Promise<void> {
   await db.update(s.settings).set({
     openrouterKeyCiphertext: null, analyzeImages: false, analyzeAudio: false,
     visionModel: null, transcriptionModel: null,
-    telemetryEnabled: true, telemetryInstanceId: null,
+    advancedMode: false, telemetryEnabled: true, telemetryInstanceId: null,
   })
 }

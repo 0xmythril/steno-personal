@@ -29,6 +29,16 @@ describe('sessions', () => {
     expect(await resolveSession(id)).toBeNull()
   })
 
+  it('refuses a session bound to a push key, even an unrevoked one', async () => {
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    if (!push.ok) throw new Error(push.reason)
+    const id = await createSession({ keyId: push.id })
+    expect(await resolveSession(id)).toBeNull()
+    const read = await key()
+    const readId = await createSession({ keyId: read.id })
+    expect(await resolveSession(readId)).not.toBeNull()
+  })
+
   it('binds to a passkey and dies with it', async () => {
     const p = await savePasskey({ label: 'phone', credentialId: 'c1', publicKey: 'pk', counter: 0, backedUp: true })
     if (!p.ok) throw new Error(p.reason)

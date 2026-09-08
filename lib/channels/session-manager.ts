@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { recordEvent, finishEvent } from '@/lib/services/history'
 import { decryptSecret } from '@/lib/services/crypto'
 import { log, errorShape } from '@/lib/log'
 import {
@@ -443,9 +445,10 @@ export class SessionManager {
   // The one place a message becomes a row, so the media hook has exactly one
   // call site. enqueueMedia queues the attachment for the download drain; it
   // is idempotent by message, so a history replay never queues one twice.
-  private async ingest(connId: string, channel: Channel, m: IncomingMessage): Promise<void> {
-    const res = await recordMessage(connId, channel, m)
+  private async ingest(connId: string, channel: Channel, m: IncomingMessage, backfill = false): Promise<boolean> {
+    const res = await recordMessage(connId, channel, m, { backfill })
     if (res.inserted && m.media) await enqueueMedia(res.messageId, connId, m.media)
+    return res.inserted
   }
 
   // A heavy account can take tens of minutes. reconcileActive must never await
@@ -474,17 +477,21 @@ export class SessionManager {
   // Retried until it completes. Re-running it is harmless — ingest is
   // first-writer-wins — and the alternative is a permanent, invisible hole.
   private async runBackfill(connId: string, running: Running): Promise<void> {
+    const event = recordEvent({ kind: 'sync', operation: 'backfill', surface: 'worker', sourceIds: [connId], outcome: 'running', runId: randomUUID() })
+    let inserted = 0, duplicates = 0
     const shouldContinue = () => !running.stopped
     try {
       const opts = { sinceDays: running.backfillSinceDays, ...BACKFILL_CAPS }
       for await (const m of running.session.backfill(opts, shouldContinue)) {
-        if (!shouldContinue()) return // aborted: do not mark backfilled, do not recordSync
-        await this.ingest(connId, running.channel, m)
+        if (!shouldContinue()) { finishEvent(event, { inserted, duplicates }, 'interrupted'); return }
+        if (await this.ingest(connId, running.channel, m, true)) inserted++; else duplicates++
       }
-      if (!shouldContinue()) return
+      if (!shouldContinue()) { finishEvent(event, { inserted, duplicates }, 'interrupted'); return }
+      finishEvent(event, { inserted, duplicates }, 'completed')
       running.backfilled = true
       await recordSync(connId)
     } catch (e) {
+      finishEvent(event, { inserted, duplicates }, 'failed')
       // A dead session (killed from the phone) does not throw on its own
       // elsewhere in the middle of a backfill — routing through
       // handleSessionError catches that here too and revokes instead of
@@ -541,10 +548,12 @@ export class SessionManager {
 
   private async runContactSync(connId: string, running: Running): Promise<void> {
     if (running.stopped) return
+    const event = recordEvent({ kind: 'sync', operation: 'contacts', surface: 'worker', sourceIds: [connId], outcome: 'running', runId: randomUUID() })
     let contacts: ChannelContact[]
     try {
       contacts = await withTimeout(running.session.listContacts(), CONTACTS_TIMEOUT_MS, 'listContacts')
     } catch (e) {
+      finishEvent(event, {}, 'failed')
       if (e instanceof ChannelError && e.kind === 'auth_invalidated') {
         await this.handleSessionError(connId, e)
         return
@@ -556,12 +565,14 @@ export class SessionManager {
     // Re-checked after the read: the connection may have been revoked while
     // that RPC was in flight, and writing a torn-down connection's contacts
     // races the cascade that is deleting them.
-    if (running.stopped) return
+    if (running.stopped) { finishEvent(event, {}, 'interrupted'); return }
     try {
       const { upserted } = await syncContacts(connId, running.channel, contacts)
       // A count, never a contact.
+      finishEvent(event, { contacts: upserted }, 'completed')
       log.info({ connectionId: connId, upserted }, 'contacts synced')
     } catch (e) {
+      finishEvent(event, {}, 'failed')
       log.error({ err: errorShape(e), connectionId: connId }, 'contact sync write failed')
       retrySoon(running)
       return
@@ -584,7 +595,7 @@ export class SessionManager {
     if (e instanceof ChannelError && e.kind === 'auth_invalidated') {
       // Killed from the phone. Not a logOut() path: the session is already
       // gone on the channel's side — that is exactly what this error means.
-      await revokeConnection(connId, 'You revoked this session from your phone.')
+      await revokeConnection(connId, 'You revoked this session from your phone.', 'worker')
       const r = this.running.get(connId)
       if (r) { r.stopped = true; await r.session.close().catch(() => {}); this.running.delete(connId) }
       return

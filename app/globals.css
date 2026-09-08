@@ -6,6 +6,7 @@
   --paper:#F3F7F4; --card:#FFFFFF; --well:#E9F0EB; --ink:#14201B; --body:#2A3A33; --muted:#5E6F67;
   --hairline:#D7E1DB; --edge:#7C8C84; --rule:#B9D3C7; --mint:#A7E1D3; --mint-soft:#DDF3EC; --pine:#1E7A63; --pine-ink:#135A49;
   --pencil:#E6F5FA; --btn-bg:#14201B; --btn-fg:#FFFFFF; --ok:#1E7A63; --warn:#9C610D; --bad:#B42318; --bad-soft:#FBE4E1;
+  --scrim:rgba(20,32,27,.45);
   --shadow:0 1px 2px rgba(20,32,27,.06),0 8px 24px rgba(20,32,27,.06);
   --serif:var(--font-serif),Georgia,serif;
   --sans:var(--font-sans),-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;
@@ -15,12 +16,14 @@
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
   --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
+  --scrim:rgba(0,0,0,.6);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 } }
 :root[data-theme="dark"] {
   --paper:#0E1512; --card:#151D19; --well:#1B2521; --ink:#E8EFEA; --body:#C9D5CF; --muted:#93A39B;
   --hairline:#263029; --edge:#607068; --rule:#2F4038; --mint:#A7E1D3; --mint-soft:#1C332C; --pine:#7FD3BC; --pine-ink:#A7E1D3;
   --pencil:#1E2C33; --btn-bg:#A7E1D3; --btn-fg:#0E1512; --ok:#7FD3BC; --warn:#E2B25A; --bad:#F08A7E; --bad-soft:#331B18;
+  --scrim:rgba(0,0,0,.6);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
 }
 
@@ -87,12 +90,21 @@ button:hover:not([disabled]), .btn:hover { background: var(--well); border-color
 button.primary, .btn.primary { background: var(--btn-bg); color: var(--btn-fg); border-color: transparent; }
 button.primary:hover:not([disabled]) { background: var(--btn-bg); border-color: transparent; opacity: 0.92; }
 /* Destructive is a fill, not a text colour: a filled danger button acts on
-   click, an outlined one (details.confirm summary) only opens the question. */
+   click, an outlined one (.confirm-open) only opens the question. */
 button.danger, .btn.danger { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
 button.danger:hover:not([disabled]), .btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); opacity: 0.9; }
 button.small, .btn.small { height: 30px; padding: 0 10px; font-size: 13px; }
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
 td button, td .btn, .attachment .btn { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
+/* The pencil beside a label: transparent until it is pressed or focused, so a
+   table of labels does not read as a table of boxes. It is a real button —
+   tap and keyboard both open it — so nothing here is a hover reveal; the
+   --edge border only appears on focus, which is what tells a keyboard user
+   it is there without giving it a permanent outline the way a static one
+   would. Sized to the row rather than to the 16px glyph inside it. */
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); }
+.icon-btn:focus-visible { border-color: var(--edge); }
+.editable-label { display: inline-flex; align-items: center; gap: 6px; }
 a.btn:hover { text-decoration: none; }
 form.inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 /* A native select sizes to its widest option. Without this an identity picker
@@ -121,6 +133,7 @@ a.chip.filter { background: transparent; border: 1px solid var(--edge); color: v
 a.chip.filter:hover { background: var(--well); }
 a.chip.filter::after { content: ""; position: absolute; inset: -7px 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip-sep { width: 1px; height: 16px; background: var(--hairline); margin: 0 2px; flex: none; align-self: center; }
 
 /* Cards and banners */
 .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
@@ -152,6 +165,7 @@ a.chip.filter::after { content: ""; position: absolute; inset: -7px 0; }
    button that submits it off to the far side of the card. */
 .field { display: flex; flex-direction: column; gap: 6px; max-width: 34rem; }
 .field > span, .field label { font-size: 13px; font-weight: 600; color: var(--ink); }
+fieldset { border: 0; padding: 0; margin: 0; }
 .help { font-size: 12px; color: var(--muted); }
 input:not([type="checkbox"]):not([type="hidden"]), select, textarea { height: 36px; padding: 0 10px; border: 1px solid var(--edge); border-radius: 6px; background: var(--well); color: var(--ink); font: 400 14px var(--sans); }
 /* The native arrow is drawn inside the padding box, so an un-reset select runs
@@ -188,16 +202,45 @@ details.snippet pre { border: 0; border-radius: 6px; }
 .token { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--well); font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .token code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: 0; padding: 0; }
 
-/* Confirm. A destructive action that cannot be undone opens its consequence
-   before it can be pressed. A <details> so it needs no JS and no dialog: the
-   summary is an outlined danger control that only opens, the button inside is
-   the filled one that acts. */
-details.confirm > summary { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: 1px solid var(--bad); border-radius: 8px; color: var(--bad); font: 500 13px var(--sans); cursor: pointer; list-style: none; }
-details.confirm > summary::-webkit-details-marker { display: none; }
-details.confirm > summary:hover { background: var(--bad-soft); }
-details.confirm[open] { flex-basis: 100%; }
-details.confirm .confirm-body { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--bad); border-radius: 8px; background: var(--bad-soft); max-width: 60ch; }
-details.confirm .confirm-body p { font-size: 13px; color: var(--ink); }
+/* Confirm dialog. A destructive action that cannot be undone opens its
+   consequence before it can be pressed: .confirm-open is the outlined
+   trigger that only opens the question, and the filled button inside the
+   native <dialog> is the one that acts. showModal() traps focus and answers
+   Escape for free, so ConfirmDialog needs no focus-trap library and no
+   portal — a dialog is not in document flow, so it never fights the row or
+   cell it opens from. */
+button.confirm-open { border-color: var(--bad); color: var(--bad); }
+button.confirm-open:hover:not([disabled]) { background: var(--bad-soft); border-color: var(--bad); }
+/* showModal() only promotes the dialog to the top layer for painting — the
+   node stays a DOM descendant of wherever it was mounted. Three triggers
+   (revoke a key, remove a passkey, delete a source) sit in `td.end`, whose
+   `text-align: right` and `white-space: nowrap` both inherit into anything
+   mounted there, including a <dialog>. Reset both here for the same reason
+   an earlier fix reset button metrics below and missed these two: nothing
+   in the dialog should inherit from the row or cell it opens from. */
+dialog.confirm { border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; max-width: 520px; width: calc(100% - 32px); background: var(--card); box-shadow: var(--shadow); text-align: left; white-space: normal; }
+dialog.confirm::backdrop { background: var(--scrim); }
+dialog.confirm h3 { margin: 0 0 4px; font-size: 16px; color: var(--ink); text-align: left; }
+/* showModal() only promotes the dialog to the top layer for painting — the
+   node stays a DOM descendant of wherever it was mounted. At a table-cell
+   trigger, `td button` (0,0,0,2) outranks the base `button` rule (0,0,0,1)
+   and would otherwise shrink these to 26px. `dialog.confirm button` carries
+   a class, so it outranks `td button` regardless of source order, and
+   restores the base 36px metrics so the dialog never inherits the row or
+   cell it opens from. */
+dialog.confirm button, dialog.confirm .btn { height: 36px; padding: 0 14px; font-size: 14px; border-radius: 8px; }
+/* The body is plain prose, not a boxed danger callout: inline, that box
+   marks a danger zone inside an ordinary card, but in a dialog the whole
+   surface is already the warning, so a second box only cramps it. */
+dialog.confirm .confirm-body { margin: 8px 0 16px; font-size: 13px; color: var(--body); max-width: 60ch; }
+dialog.confirm .confirm-body p { margin: 0; }
+dialog.confirm .actions { margin-top: 14px; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+/* The push-key row passes two complete forms (Revoke, and Revoke & delete
+   what it pushed) instead of one, wrapped in the ordinary .stack column
+   layout. Inside the actions row they read as one line with Cancel, so the
+   column is overridden back to a row here only — .stack itself stays a
+   column everywhere else it's used. */
+dialog.confirm .actions .stack { flex-direction: row; flex-wrap: wrap; gap: 8px; }
 
 /* Tables */
 .tbl { border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: var(--card); }
@@ -236,8 +279,24 @@ td.end { text-align: right; white-space: nowrap; }
 
 /* Transcript */
 .pad { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
-.pad-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
-.pad-head h1 { font-size: 24px; }
+.pad-head { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+/* The title and the export control, level with each other on the header's
+   top row. `flex-wrap` is the narrow-screen fallback: a long title fills the
+   row on its own line and Export drops to a line beneath it rather than
+   overlapping or forcing the page to scroll sideways. */
+.pad-head-top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 14px; }
+.pad-head h1 { font-size: 24px; min-width: 0; }
+.export-link { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 13px; font-weight: 500; }
+.pad-head-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.pad-head-meta .provenance { font-size: 12px; }
+/* Sits in a message's own body, beside .edited as its sibling — not a link
+   yet, since it will point at that message's own History entry once that
+   exists, so it carries none of a control's affordances: no border, no
+   pointer cursor, no hover state. An inline SVG has no baseline of its own,
+   so the default vertical-align (baseline) synthesises one from the icon's
+   own box and the marker sits off the line; any other value sidesteps that
+   synthesis and puts the marker back on the surrounding text's baseline. */
+.conflict-marker { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); vertical-align: text-bottom; }
 .pager { display: flex; gap: 14px; font-size: 13px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); margin: 0; }
 .pager.foot { border-bottom: 0; border-top: 1px solid var(--hairline); }
 ul.transcript { list-style: none; padding: 0 0 6px; margin: 0; }
@@ -250,6 +309,7 @@ li.msg-run > * { min-width: 0; }
 .msg-who.me { color: var(--pine-ink); }
 .msg-body { color: var(--body); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-body .edited { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: 6px; }
+.msg-body .conflict-marker { font-family: var(--mono); font-size: 11px; margin-left: 6px; }
 .msg-body .kind { font-size: 12.5px; color: var(--muted); }
 .attachment { display: flex; width: fit-content; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--well); font-size: 13px; color: var(--body); max-width: 100%; }
 .attachment img { max-width: min(100%, 22rem); height: auto; border-radius: 6px; display: block; }
@@ -276,3 +336,86 @@ li.msg-run > * { min-width: 0; }
 /* Onboarding: setup, welcome, recovery */
 .onboard { width: 100%; max-width: 720px; margin: 20px auto 0; display: flex; flex-direction: column; gap: 16px; }
 .onboard h1 { font-size: 30px; }
+
+/* Advanced mode is a presentation preference; its switch opens an explanation
+   before the first save. Reuse the page and dialog tokens in both themes. */
+.advanced-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.advanced-mode-row .stack { gap: 7px; min-width: 0; }
+.advanced-mode-row h2, .advanced-mode-row p { margin: 0; }
+button.mode-switch { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; height: 40px; }
+.mode-switch-track { display: inline-flex; align-items: center; width: 36px; height: 22px; padding: 3px; border-radius: 6px; background: var(--well); border: 1px solid var(--edge); }
+.mode-switch-track > span { width: 14px; height: 14px; border-radius: 3px; background: var(--muted); transition: transform 150ms ease-out; }
+.mode-switch[aria-checked="true"] .mode-switch-track { background: var(--pine); border-color: var(--pine); }
+.mode-switch[aria-checked="true"] .mode-switch-track > span { background: var(--card); transform: translateX(14px); }
+dialog.advanced-mode-dialog .confirm-body { display: flex; flex-direction: column; gap: 14px; }
+dialog.advanced-mode-dialog ul { margin: 0; padding-inline-start: 20px; }
+dialog.advanced-mode-dialog li + li { margin-top: 8px; }
+@media (max-width: 480px) {
+  .advanced-mode-row { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-switch-track > span { transition: none; }
+}
+
+/* History uses the existing paper, rule, controls and confirmation grammar. */
+.history-page { gap: 24px; }
+.history-page .page-head p { margin-top: 8px; }
+.history-tabs { display: flex; gap: 28px; border-bottom: 1px solid var(--hairline); }
+.history-tabs a { padding: 12px 0; color: var(--muted); font-weight: 500; }
+.history-tabs a[aria-current="page"] { color: var(--ink); border-bottom: 2px solid var(--pine); }
+.history-count { background: var(--well); padding: 2px 6px; border-radius: 4px; font: 11px var(--mono); }
+.history-attention { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px; background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; }
+.history-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; gap: 14px; padding: 18px; background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; }
+.history-filters .field { min-width: 0; }
+.history-filter-actions { display: flex; align-items: center; gap: 14px; }
+.history-filter-actions > a { display: inline-flex; align-items: center; justify-content: center; height: 36px; min-width: 36px; }
+.history-record { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
+.history-record-head { display: flex; justify-content: space-between; gap: 16px; padding: 14px 18px; font-size: 12px; color: var(--muted); }
+.history-event { display: grid; grid-template-columns: 105px minmax(0,1fr) 170px; gap: 20px; padding: 18px; border-top: 1px solid var(--hairline); }
+.history-event time { display: flex; flex-direction: column; gap: 4px; text-align: right; font: 11px var(--mono); color: var(--muted); }
+.history-event-main { border-left: 1px solid var(--rule); padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+.history-kind { font: 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.history-event-side { display: flex; flex-direction: column; gap: 5px; text-align: right; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.history-warning { color: var(--warn); }
+.history-retention { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.history-summary { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); border: 1px solid var(--hairline); border-radius: 10px; background: var(--card); }
+.history-summary > div { display: flex; flex-direction: column; gap: 8px; padding: 18px; }
+.history-summary strong { font: 26px var(--serif); }
+.history-dispute-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 20px; border-bottom: 1px solid var(--hairline); }
+.history-dispute-row > div { display: flex; flex-direction: column; gap: 7px; }
+.history-dispute-row:last-child { border: 0; }
+.history-section-head { display: flex; flex-direction: column; gap: 8px; }
+.history-comparison-layout { display: grid; grid-template-columns: minmax(0,1fr) 250px; gap: 24px; align-items: start; }
+.history-content { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.history-comparison { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.history-version { border: 1px solid var(--hairline); background: var(--card); border-radius: 10px; overflow: hidden; }
+.history-version-head { padding: 16px 18px; background: var(--well); display: flex; flex-direction: column; gap: 7px; overflow-wrap: anywhere; }
+.history-speech { display: grid; grid-template-columns: 48px minmax(0,1fr); gap: 16px; padding: 24px 18px; }
+.history-speech time { font: 11px var(--mono); color: var(--muted); text-align: right; }
+.history-speech > div { border-left: 1px solid var(--rule); padding-left: 18px; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
+.history-speech p { white-space: pre-wrap; }
+.history-speech mark { background: var(--mint-soft); color: var(--pine-ink); }
+.history-legacy { padding: 18px; }
+.history-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.history-aside p { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.history-last-push { display: block; font: 11px var(--mono); color: var(--muted); margin-top: 5px; }
+@media (max-width: 850px) {
+  .history-comparison-layout { grid-template-columns: 1fr; }
+  .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 580px) {
+  .history-tabs { gap: 20px; }
+  .history-tabs a { font-size: 14px; }
+  .history-event { grid-template-columns: 80px minmax(0,1fr); gap: 12px; padding: 14px 10px; }
+  .history-event time { font-size: 10px; }
+  .history-event-main { padding-left: 12px; }
+  .history-event-side { grid-column: 2; text-align: left; padding-left: 12px; }
+  .history-comparison { grid-template-columns: 1fr; }
+  .history-filters { grid-template-columns: 1fr; }
+  .history-summary { grid-template-columns: 1fr 1fr; }
+  .history-summary strong { font-size: 22px; }
+}
+@media (max-width: 580px) {
+  nav.top .links { flex-wrap: wrap; margin-left: 0; gap: 2px; }
+  nav.top .links a { padding: 6px; font-size: 13px; }
+}

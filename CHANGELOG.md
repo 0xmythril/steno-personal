@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Fix confirmation dialog hydration when a server-rendered form is passed into it.
+- Add an off-by-default Advanced mode in Settings, with an opt-in explanation before revealing agent write setup, push-key creation, source management, chat export, dispute resolution, and contribution removal controls. History activity, CSV export, and dispute comparisons remain available in either mode. Existing keys, imports, and recording keep working when it is off.
+
+- **History for your archive.** Review pushes, authenticated reads, syncs and source/key changes; filter by source, key, kind and UTC date; export matching activity as CSV. Compare disputed messages and keep, accept or delete a version locally. Return to revoked keys later to remove their original contributions while keeping other keys’ messages.
+
+### Changed
+- Live-change history counts repeated deletions once and includes previously unseen Telegram messages received through edits.
+- Keep individual sync runs visible for debugging, with sync-operation and outcome filters shared by Activity, source history, pagination, and CSV. Show precise run timing, retain zero counts, and label live changes as grouped five-minute windows.
+- Align History’s Clear link with Apply and give it a full-height touch target.
+- History labels web-app actions as “You (web app)” and background activity as “System (background sync)”, with both available in the actor filter and CSV exports, including older entries.
+
+- Push batches now commit atomically with their history and conflicting versions. Older retried source edits still leave newer edits unchanged. Chats link to their source history and show the last known pusher for that chat.
+- Activity retains 90 days or 10,000 events. Pending disputes are separate, bounded by 10,000 candidates or 512 MiB of text; a batch exceeding capacity is refused without partial changes.
+
 ### Security
 - **The first-run claim is instance-wide.** Setup bound a pairing to the
   browser that started it, but only per channel: while the owner's Telegram
@@ -16,7 +32,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Documentation
 - **The README is a front page again.** Problem, quick start, connect an agent,
-  in that order; the long-form detail moved to `docs/mcp.md` (the seven MCP
+  in that order; the long-form detail moved to `docs/mcp.md` (the eight MCP
   tools, their filters and the agent safety notes), `docs/people.md` (the
   address book) and `docs/self-hosting.md` (the full environment-variable
   table). No guarantee changed: read-only, the WhatsApp consent sentences, and
@@ -27,6 +43,59 @@ All notable changes to this project are documented here. The format follows
   `docs/railway-template.md`.
 
 ### Added
+- **Push conversations in.** `POST /api/import` accepts a `steno/1` batch —
+  messages and deletes for one named source — under a new kind of access key.
+  Anything an agent or a script can read (a Slack workspace, an exported chat,
+  an agent's own transcript) can now live in your own archive next to Telegram
+  and WhatsApp, searchable in the portal, over `/api` and in every MCP tool's
+  results (the MCP `channel` filter accepts any of them too). Resending is
+  safe; deletes stay deleted. Attachments are not accepted yet. Every pushed
+  message remembers the key that delivered it, two keys may feed one source,
+  and a disagreement between them is counted, never overwritten. See
+  "Pushing conversations in" in `docs/self-hosting.md`.
+- **Keys say what they may do.** Settings mints a key with Read (the portal
+  and the MCP tools, as before), Push (the import door), or both. A push-only
+  key left in a cron job can never read your archive; a read-only agent key
+  can never write to it; a key with both is for an agent that searches and
+  also stores its own conversations, and the page says what that costs if it
+  leaks. Every existing key is read-only.
+- **A key can be renamed.** Its row in Settings is a small form, not static
+  text: change the label and save it without touching what the key can do or
+  minting a new one.
+- **Pushed sources are visible and judgeable.** The chats list filters by
+  source and marks a pushed chat with a note chip naming who pushed it; its
+  transcript names the pusher, when the source was last pushed and how many
+  conflicts that push reported. The Connections page lists every pushed
+  source under **Sources** — label, channel, creator, every key that has
+  pushed to it, message count, last push and conflicts — with a way to
+  delete one and erase everything it carries. Revoking a key in Settings can
+  now take what it pushed with it, not just the key.
+- **Agents get the same provenance, plus a door to push through.**
+  `list_chats`, `recent_messages` and `search_messages` take `source_id` to
+  stay inside one source, and their `channel` filter now accepts any source
+  type, not only `telegram` and `whatsapp`; every chat carries `pushers` and
+  every message carries `pushedBy`, and `whoami`'s `mode` says whether a
+  source is live or pushed. A key minted with Push can deliver a batch as an
+  MCP tool too: `push_messages`, alone on its own endpoint, `/mcp/push`.
+- **Download one chat.** `GET /api/chats/<id>/export`, cookie session only,
+  streams a chat as a `steno/1` file — the same shape `push_messages` accepts,
+  with a `provenance` block per message (who pushed it, whether it conflicted,
+  when it was edited) that import ignores. Strip `provenance` and the file
+  pushes straight back into another instance. A deleted message contributes
+  only its two ids to `deletes`, never its text. The transcript header
+  carries a download-glyph "Export" control top right, level with the title,
+  now — the per-message "· pusher" annotation on the sender line is gone
+  with it — the header already says who pushed last, and anyone who needs
+  it per message downloads the file instead. The explanatory sentence that
+  used to sit under the control is gone from the page; its meaning
+  (`Export this chat as a file with every message and who pushed it`) lives
+  in the link's accessible name instead, since a file named
+  `steno-<chat>-<date>.json` explains itself. `DESIGN.md`'s icon set grows
+  to four glyphs (passkey, pencil, alert, download). `raw` is
+  included only for a message delivered through the push door — a live
+  message's `raw` is a third-party protocol payload we never audited for
+  identifiers — and a chat title longer than a batch entry allows is
+  truncated on export so the file always keeps its own round-trip promise.
 - **Connections** says what comes next once an account is live: connect an
   agent under Settings, one key per agent.
 - **The project ships its own Telegram application pair**, so a fresh deploy — one-click or otherwise — pairs Telegram without a visit to my.telegram.org. It names the software, not the user: you still log in with your own account, exactly as Telegram Desktop's embedded pair works. `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` now override it rather than fill a gap, and `TELEGRAM_API_ID=0` runs without Telegram.
@@ -50,6 +119,10 @@ All notable changes to this project are documented here. The format follows
   yet" from "nothing found".
 
 ### Changed
+- **The team edition is called Steno Team.** The footer link, the hosted card
+  on the login page and Connections, and the WhatsApp "rather not link your
+  own number?" line beside each connect button now read Steno Team instead of
+  Steno Cloud. The destination is unchanged.
 - **`search_messages`** returns `{hits, nextCursor}` and pages fifty at a
   time. Order is relevance for a bare query and newest first when a date
   bound is given; `order: relevance | newest` picks. `GET /api/search` takes
@@ -74,6 +147,24 @@ All notable changes to this project are documented here. The format follows
   own messages when the socket gave none.
 - **Merge suggestions** on the People page now say which row is on Telegram
   and which on WhatsApp, which one is kept, and how many chats each carries.
+- **A key's label is a pencil, not an open box.** The Settings key table used
+  to render every row's label as an always-open text input with a "Label"
+  caption and a Rename button — five stacked boxes in a dense table. The
+  label now reads as plain text with an icon-only pencil button beside it
+  (`aria-label="Rename <label>"`, a visible focus ring, reachable by tap and
+  keyboard); pressing it opens the same rename form in place, `Escape` or
+  Cancel returns to text without posting. `DESIGN.md`'s icon set grows from
+  one glyph to two (passkey, pencil) and is documented as a small, capped,
+  deliberately named set rather than "no icon set is specified."
+- **A transcript header that reads left.** A one-message chat no longer says
+  "1 messages"; the counts line and the provenance line both left-align
+  under the title instead of ragging against the right edge; and the
+  trailing "N conflicts in the last push" prose is now a compact `--warn`
+  marker (an alert glyph plus the count) with a full-sentence `aria-label`.
+  It isn't a link yet — the per-chat History it will point at doesn't exist
+  — so it carries no border and no pointer cursor, and a chat with no
+  conflicts shows no marker. `DESIGN.md`'s icon set grows to three glyphs
+  (passkey, pencil, alert).
 
 ## [0.1.0] — 2026-09-04
 

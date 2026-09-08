@@ -36,3 +36,13 @@ export function formatRelativeTime(d: Date | null, now: Date = new Date()): stri
 }
 
 export const CHANNEL_LABELS = { telegram: 'Telegram', whatsapp: 'WhatsApp' } as const
+
+// What a chat IS, shared by the chats table and a transcript's own header —
+// one label set so the two pages can never drift into saying it differently.
+export const KIND_LABELS = { dm: 'Direct', group: 'Group', channel: 'Channel' } as const
+
+// The human name of a source type: the proper noun for a live channel, the
+// slug itself for anything a pusher chose ("slack", "chatgpt").
+export function sourceLabel(channel: string): string {
+  return Object.hasOwn(CHANNEL_LABELS, channel) ? CHANNEL_LABELS[channel as keyof typeof CHANNEL_LABELS] : channel
+}

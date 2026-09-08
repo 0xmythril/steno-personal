@@ -16,14 +16,16 @@ only read: the code has no path that sends a message, marks a chat read, sets
 your presence, or changes your profile. No bot, no second phone number, no
 account with anyone but Railway.
 
-- **Read-only by construction.** Every MCP tool declares itself read-only;
-  there is no send path to switch off.
+- **Read-only by construction, on `/mcp`.** Every tool there declares itself
+  read-only; there is no send path to switch off.
 - **Yours.** One container, one volume, one file. Two things can leave the
   machine and both are documented: enrichment (off until you add an OpenRouter
   key) and anonymous usage events (off with `DO_NOT_TRACK=1`).
-- **Agent-ready.** Seven tools to list, search and read chats, fetch an
-  attachment, list your address book, and ask which accounts are connected.
-  Works with Claude Code, Claude Desktop, Cursor, and anything that speaks MCP.
+- **Agent-ready.** Eight tools across two endpoints to list, search and read
+  chats, fetch an attachment, list your address book, ask which accounts are
+  connected, and — on a key you choose to give push — deliver messages from
+  somewhere else into the archive. Works with Claude Code, Claude Desktop,
+  Cursor, and anything that speaks MCP.
 
 **What it costs.** Railway's Hobby plan is $5 a month and includes $5 of usage,
 which one instance sitting quietly should stay inside. The free trial and Free

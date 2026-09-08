@@ -23,6 +23,13 @@ describe('MCP bearer auth', () => {
     expect((await POST(mcpRequest('definitely-not-prefixed', body))).status).toBe(401)
   })
 
+  it('401s a push key: the MCP endpoint is a read door', async () => {
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    if (!push.ok) throw new Error(push.reason)
+    const body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }
+    expect((await POST(mcpRequest(push.rawKey, body))).status).toBe(401)
+  })
+
   it('401s the next call after that key is revoked', async () => {
     // The M3 exit criterion, driven end to end: the same key that worked a
     // moment ago is refused once it is revoked. The test above only covers
@@ -60,7 +67,7 @@ describe('whoami', () => {
       .toEqual([['telegram', 'active'], ['whatsapp', 'revoked']])
     // id is this instance's own connection uuid — the one list_chats puts
     // on each chat as connectionId — never the account identifier.
-    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,status')).toBe(true)
+    expect(out.connections.every(c => Object.keys(c).sort().join() === 'channel,displayName,id,mode,pushedBy,status')).toBe(true)
     expect(JSON.stringify(out)).not.toContain('acct-')
   })
 
@@ -98,6 +105,35 @@ describe('whoami display name', () => {
     await seedMessage(chat, { fromOwner: true, senderExternalId: ME, senderName: 'Retracted', sentAt: new Date(4000), deletedAt: new Date() })
     const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as { connections: Array<{ displayName: string | null }> }
     expect(out.connections.map(c => c.displayName)).toEqual(['Casey'])
+  })
+})
+
+describe('whoami mode and pushedBy', () => {
+  beforeEach(resetDb)
+
+  it('a pushed source reports mode push and the labels of the keys that delivered it; a live row reports mode live and no keys', async () => {
+    const live = await seedConnection({ channel: 'telegram' })
+    const { FORMAT, importBatch, parseBatch } = await import('@/lib/services/import')
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    if (!push.ok) throw new Error(push.reason)
+    const batch = parseBatch({
+      format: FORMAT,
+      source: { type: 'slack', id: 'acme', label: 'Slack (Acme)' },
+      messages: [{
+        externalChatId: 'C01', chatKind: 'group', externalMessageId: '1', senderExternalId: 'U01',
+        senderName: 'Ada', fromOwner: false, sentAt: '2026-09-05T10:00:00Z', type: 'text', text: 'hi',
+      }],
+    })
+    if (!batch.ok) throw new Error(JSON.stringify(batch.problems))
+    await importBatch(push.id, batch.batch)
+
+    const out = JSON.parse(await callTool(await agentKey(), 'whoami')) as {
+      connections: Array<{ id: string; mode: 'live' | 'push'; pushedBy: string[] }>
+    }
+    const liveRow = out.connections.find(c => c.id === live)
+    const pushRow = out.connections.find(c => c.id !== live)
+    expect(liveRow).toMatchObject({ mode: 'live', pushedBy: [] })
+    expect(pushRow).toMatchObject({ mode: 'push', pushedBy: ['cron'] })
   })
 })
 
@@ -245,6 +281,80 @@ describe('content tools with an archive', () => {
     expect(transcript).not.toContain('retracted')
     expect(transcript).not.toContain('deletedAt')
     expect(await callTool(key, 'search_messages', { query: 'retracted' })).toBe('{"hits":[],"nextCursor":null}')
+  })
+})
+
+describe('MCP source_id, any channel, and pushedBy', () => {
+  beforeEach(resetDb)
+
+  async function pushOneMessage(): Promise<{ pushKeyId: string; pushChatId: string }> {
+    const push = await mintAccessKey('cron', { read: false, push: true })
+    if (!push.ok) throw new Error(push.reason)
+    const { FORMAT, importBatch, parseBatch } = await import('@/lib/services/import')
+    const batch = parseBatch({
+      format: FORMAT,
+      source: { type: 'slack', id: 'acme', label: 'Slack (Acme)' },
+      messages: [{
+        externalChatId: 'C01', chatKind: 'group', externalMessageId: '1', senderExternalId: 'U01',
+        senderName: 'Ada', fromOwner: false, sentAt: '2026-09-05T10:00:00Z', type: 'text', text: 'hi',
+      }],
+    })
+    if (!batch.ok) throw new Error(JSON.stringify(batch.problems))
+    const result = await importBatch(push.id, batch.batch)
+    return { pushKeyId: push.id, pushChatId: result.source.id }
+  }
+
+  it('list_chats accepts any lowercase slug channel, not only telegram or whatsapp, and reports pushers', async () => {
+    await pushOneMessage()
+    const out = JSON.parse(await callTool(await agentKey(), 'list_chats', { channel: 'slack' })) as {
+      chats: Array<{ pushers: string[] }>
+    }
+    expect(out.chats).toHaveLength(1)
+    expect(out.chats[0].pushers).toEqual(['cron'])
+  })
+
+  it('get_messages reports pushedBy: null on a live message and the pushing key label on a pushed one', async () => {
+    const conn = await seedConnection()
+    const liveChat = await seedChat(conn, { title: 'Mum' })
+    await seedMessage(liveChat, { text: 'hi' })
+    await pushOneMessage()
+    const key = await agentKey()
+
+    const live = JSON.parse(await callTool(key, 'get_messages', { chat_id: liveChat })) as {
+      messages: Array<{ pushedBy: string | null }>
+    }
+    expect(live.messages[0].pushedBy).toBeNull()
+
+    const { chats } = JSON.parse(await callTool(key, 'list_chats', { channel: 'slack' })) as { chats: Array<{ id: string }> }
+    const pushed = JSON.parse(await callTool(key, 'get_messages', { chat_id: chats[0].id })) as {
+      messages: Array<{ pushedBy: string | null }>
+    }
+    expect(pushed.messages[0].pushedBy).toBe('cron')
+  })
+
+  it('source_id scopes list_chats, recent_messages and search_messages to one connection', async () => {
+    const connA = await seedConnection({ channel: 'telegram' })
+    const chatA = await seedChat(connA, { title: 'A' })
+    await seedMessage(chatA, { text: 'from A' })
+    const { pushChatId: connB } = await pushOneMessage()
+    const key = await agentKey()
+
+    const listA = JSON.parse(await callTool(key, 'list_chats', { source_id: connA })) as { chats: Array<{ title: string | null }> }
+    expect(listA.chats.map(c => c.title)).toEqual(['A'])
+
+    const recentA = JSON.parse(await callTool(key, 'recent_messages', { source_id: connA })) as {
+      messages: Array<{ text: string | null }>
+    }
+    expect(recentA.messages.map(m => m.text)).toEqual(['from A'])
+
+    const searchB = JSON.parse(await callTool(key, 'search_messages', { query: 'hi', source_id: connB })) as {
+      hits: Array<{ chatId: string }>
+    }
+    expect(searchB.hits.length).toBeGreaterThan(0)
+    const searchAforB = JSON.parse(await callTool(key, 'search_messages', { query: 'from', source_id: connB })) as {
+      hits: Array<{ chatId: string }>
+    }
+    expect(searchAforB.hits).toEqual([])
   })
 })
 

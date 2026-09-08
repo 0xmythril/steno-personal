@@ -29,7 +29,7 @@ export function BrandLogo({ size = 22 }: { size?: number }) {
 }
 
 // The wordmark beside the mark, with the product label DESIGN.md specifies as
-// the one visible difference between this edition and Steno Cloud.
+// the one visible difference between this edition and Steno Team.
 export function Wordmark({ tag = true }: { tag?: boolean }) {
   return (
     <>

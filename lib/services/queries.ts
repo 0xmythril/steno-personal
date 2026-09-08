@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql, type SQL } from '
 import { QueryBuilder, alias } from 'drizzle-orm/sqlite-core'
 import { db } from '@/lib/db/client'
 import {
-  channelContacts, chats, media, mediaAnalysis, messages, connections, people, personIdentities,
+  accessKeys, channelContacts, chats, media, mediaAnalysis, messages, connections, people, personIdentities,
 } from '@/lib/db/schema'
 import { searchIndex } from '@/lib/db/fts'
 import type { Channel } from '@/lib/channels/port'
@@ -19,13 +19,16 @@ import { getSettings, type Settings } from '@/lib/services/settings'
 // identifier, and never a phone number (people design decision 6).
 export type PersonRef = { id: string; name: string }
 
-export type ChatChannel = 'telegram' | 'whatsapp'
-export const CHAT_CHANNELS: readonly ChatChannel[] = ['telegram', 'whatsapp']
+// Any source type (lib/services/sources.ts), not only the two live channels:
+// a pushed source's chats carry whatever slug its pusher chose.
+export type ChatChannel = string
+// The live channels the portal offers as filter tabs.
+export const CHAT_CHANNELS: readonly Channel[] = ['telegram', 'whatsapp']
 export type ChatKind = 'dm' | 'group' | 'channel'
 export const CHAT_KINDS: readonly ChatKind[] = ['dm', 'group', 'channel']
 
 export type ChatSummary = {
-  id: string; channel: Channel; kind: ChatKind
+  id: string; channel: ChatChannel; kind: ChatKind
   title: string | null; lastMessageAt: Date | null; messageCount: number
   // A re-paired account makes a second row for every chat it re-syncs: same
   // title, different id and count. These two tell such rows apart, and
@@ -39,6 +42,17 @@ export type ChatSummary = {
   // rows and textless unknown rows are walked past; null only when the chat
   // has nothing else.
   snippet: string | null
+  // Live, undeleted messages in this chat with conflictedAt set — a push
+  // that disagreed with a message actually stored here, not a count copied
+  // from the source's last batch (which may have concerned a different
+  // chat of the same source entirely).
+  conflictCount: number
+  // The distinct labels of every key that has delivered a live message into
+  // this chat, sorted. Empty for a chat read live off a paired account — a
+  // chat is only ever pushed as a whole (its connection is either mode
+  // 'live' or 'push'), but a shared push source can be fed by more than one
+  // key, and this is how a reader tells which ones touched this chat.
+  pushers: string[]
 }
 
 // Where an attachment's bytes are. 'ready' is the only state with a url: the
@@ -80,15 +94,22 @@ export type MessageView = {
   // "the name I saw last week" come from.
   channelName: string | null
   type: IncomingMessage['type']; text: string | null; editedAt: Date | null
+  // Set when a push disagreed with the text already stored here; cleared the
+  // moment an explicit edit settles it. Never set on a deleted message —
+  // deleted stays deleted.
+  conflictedAt: Date | null
   person: PersonRef | null
   media: MediaView | null
   replyTo: ReplyRef | null
+  // The label of the key that pushed this message, null for one the worker
+  // read live. Never a key value or prefix — only what the owner called it.
+  pushedBy: string | null
 }
 
 // A message with its chat named on the same line, for the read paths that
 // cross chats: search hits and the inbox.
 export type MessageInChat = MessageView & {
-  chatId: string; chatTitle: string | null; channel: Channel; kind: ChatKind
+  chatId: string; chatTitle: string | null; channel: ChatChannel; kind: ChatKind
 }
 
 const DEFAULT_LIMIT = 50
@@ -117,6 +138,13 @@ export const clampLimit = (limit: number | undefined, fallback: number): number 
 // the build with SQLITE_BUSY; tests/build-time-imports.test.ts guards this.
 const liveMessageCount = sql<number>`(${new QueryBuilder().select({ count: sql<number>`count(*)` }).from(messages)
   .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt)))})`
+
+// Same shape as liveMessageCount, narrowed to the rows a push actually
+// disputed: live and conflictedAt set. A chat's own count, not the source's
+// last-batch tally, so a chat never inherits a disagreement that happened
+// somewhere else in the same source.
+const liveConflictCount = sql<number>`(${new QueryBuilder().select({ count: sql<number>`count(*)` }).from(messages)
+  .where(and(eq(messages.chatId, chats.id), isNull(messages.deletedAt), sql`${messages.conflictedAt} is not null`))})`
 
 // Same rendering rule from the other side. When a select has one table in its
 // FROM, drizzle drops the table prefix from the columns of a selection field —
@@ -196,18 +224,52 @@ const chatSelection = {
   title: displayTitle, lastMessageAt: chats.lastMessageAt, messageCount: liveMessageCount,
   createdAt: chats.createdAt, connectionId: chats.connectionId,
   personId: dmPersonId, personName: dmPersonName,
-  snippet: latestSnippet, activityAt: nested(activityAt),
+  snippet: latestSnippet, conflictCount: liveConflictCount, activityAt: nested(activityAt),
 }
 
 // Exactly what chatSelection returns: the person arrives as two columns and
 // leaves as one nested object, so no caller has to know the join.
-type ChatRow = Omit<ChatSummary, 'person'> & { personId: string | null; personName: string | null; activityAt: number }
+type ChatRow = Omit<ChatSummary, 'person' | 'pushers'> & { personId: string | null; personName: string | null; activityAt: number }
 
 const personRef = (id: string | null, name: string | null): PersonRef | null =>
   id !== null && name !== null ? { id, name } : null
 
-const toSummary = ({ personId, personName, activityAt: _activity, ...row }: ChatRow): ChatSummary =>
-  ({ ...row, person: personRef(personId, personName) })
+const toSummary = ({ personId, personName, activityAt: _activity, ...row }: ChatRow, pushers: string[]): ChatSummary =>
+  ({ ...row, person: personRef(personId, personName), pushers })
+
+// The pushers behind a set of chats, resolved after paging exactly where
+// mediaForMessages is: `select chats.id, access_keys.label from messages
+// join access_keys on push_key_id where chat_id in (...) and deleted_at is
+// null group by chat_id, label`, grouped in JS and sorted so the same chat
+// never reads differently between two calls that happened to return its rows
+// in a different order.
+export async function pushersForChats(chatIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (chatIds.length === 0) return out
+  const rows = await db.selectDistinct({ chatId: messages.chatId, label: accessKeys.label })
+    .from(messages)
+    .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
+    .where(and(inArray(messages.chatId, chatIds), isNull(messages.deletedAt)))
+  for (const r of rows) out.set(r.chatId, [...(out.get(r.chatId) ?? []), r.label])
+  for (const [chatId, labels] of out) out.set(chatId, labels.sort())
+  return out
+}
+
+// The delivering key's label for a set of messages, resolved after paging
+// the same way. A message either has no push_key_id (never joins, stays
+// unset — the caller reads it as null) or was pushed by exactly one key.
+export async function pushersForMessages(messageIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (messageIds.length === 0) return out
+  // Every caller here already pages live rows only, but the guarantee lives
+  // in the query, not in caller discipline — a deleted message names no one.
+  const rows = await db.select({ id: messages.id, label: accessKeys.label })
+    .from(messages)
+    .innerJoin(accessKeys, eq(accessKeys.id, messages.pushKeyId))
+    .where(and(inArray(messages.id, messageIds), isNull(messages.deletedAt)))
+  for (const r of rows) out.set(r.id, r.label)
+  return out
+}
 
 // The chat a message sits in decides its channel and its connection; both are
 // needed to look a sender up by (channel, external id).
@@ -296,6 +358,7 @@ const messageSelection = {
   id: messages.id, externalMessageId: messages.externalMessageId,
   channelName: channelLabel, fromOwner: messages.fromOwner, sentAt: messages.sentAt,
   type: messages.type, text: messages.text, editedAt: messages.editedAt,
+  conflictedAt: messages.conflictedAt,
   personId: senderPersonId, personName: senderPersonName,
   hasMedia: messages.hasMedia,
   replyToId: quoted.id,
@@ -306,7 +369,7 @@ const messageSelection = {
 // Exactly what messageSelection returns: MessageView minus the field the
 // database cannot answer yet, with the person and the reply still in their
 // columns.
-type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo' | 'senderName'> & {
+type MessageRow = Omit<MessageView, 'media' | 'person' | 'replyTo' | 'senderName' | 'pushedBy'> & {
   personId: string | null; personName: string | null; hasMedia: boolean
   replyToId: string | null; replyToSender: string | null; replyToText: string | null
 }
@@ -320,12 +383,16 @@ const unavailableMedia = (): MediaView => ({
   analysis: 'unsupported',
 })
 
-const toView = ({ personId, personName, hasMedia, replyToId, replyToSender, replyToText, ...row }: MessageRow, media?: MediaView): MessageView => ({
+const toView = (
+  { personId, personName, hasMedia, replyToId, replyToSender, replyToText, ...row }: MessageRow,
+  media?: MediaView, pushedBy?: string | null,
+): MessageView => ({
   ...row,
   senderName: personName ?? row.channelName,
   person: personRef(personId, personName),
   media: media ?? (hasMedia ? unavailableMedia() : null),
   replyTo: replyToId !== null ? { id: replyToId, senderName: replyToSender, text: replyToText } : null,
+  pushedBy: pushedBy ?? null,
 })
 
 // base64url of `${sentAt}:${id}` — opaque to the caller, and a URL cursor
@@ -352,11 +419,15 @@ const likePattern = (q: string): string =>
   `%${q.replace(/[\\%_]/g, ch => LIKE_ESCAPE + ch)}%`
 const like = (column: SQL, q: string): SQL => sql`${column} like ${likePattern(q)} escape ${LIKE_ESCAPE}`
 
-export async function listChats(opts: { channel?: ChatChannel } = {}): Promise<ChatSummary[]> {
+export async function listChats(opts: { channel?: ChatChannel; sourceId?: string } = {}): Promise<ChatSummary[]> {
+  const conds: SQL[] = []
+  if (opts.channel) conds.push(eq(chats.channel, opts.channel))
+  if (opts.sourceId) conds.push(eq(chats.connectionId, opts.sourceId))
   const rows = await db.select(chatSelection).from(chats)
-    .where(opts.channel ? eq(chats.channel, opts.channel) : undefined)
+    .where(conds.length > 0 ? and(...conds) : undefined)
     .orderBy(desc(activityAt), desc(chats.id))
-  return rows.map(toSummary)
+  const pushers = await pushersForChats(rows.map(r => r.id))
+  return rows.map(r => toSummary(r, pushers.get(r.id) ?? []))
 }
 
 export type ChatFilters = {
@@ -365,6 +436,9 @@ export type ChatFilters = {
   // Matched against the title the reader sees — the resolved one, so a DM
   // with no stored title is still found by the name of the person in it.
   q?: string
+  // Scopes to one connection — a live channel or a pushed source — the same
+  // id every chat carries as connectionId.
+  sourceId?: string
 }
 
 // The chat list an agent can aim: filtered, one screenful at a time, with the
@@ -377,6 +451,7 @@ export async function pageChats(
   const conds: SQL[] = []
   if (opts.channel) conds.push(eq(chats.channel, opts.channel))
   if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+  if (opts.sourceId) conds.push(eq(chats.connectionId, opts.sourceId))
   const q = opts.q?.trim()
   if (q) conds.push(like(displayTitle, q))
   // How many match the filters — the whole set, not the page — so an agent
@@ -401,12 +476,15 @@ export async function pageChats(
   const nextCursor = rows.length > limit && last
     ? encodeCursor({ sentAt: new Date(last.activityAt), id: last.id })
     : null
-  return { chats: page.map(toSummary), nextCursor, total }
+  const pushers = await pushersForChats(page.map(r => r.id))
+  return { chats: page.map(r => toSummary(r, pushers.get(r.id) ?? [])), nextCursor, total }
 }
 
 async function chatSummary(chatId: string): Promise<ChatSummary | null> {
   const [row] = await db.select(chatSelection).from(chats).where(eq(chats.id, chatId))
-  return row ? toSummary(row) : null
+  if (!row) return null
+  const pushers = await pushersForChats([row.id])
+  return toSummary(row, pushers.get(row.id) ?? [])
 }
 
 // The summaries for a known set of ids, most recently active first. One
@@ -417,7 +495,8 @@ export async function chatSummaries(ids: string[]): Promise<ChatSummary[]> {
   const rows = await db.select(chatSelection).from(chats)
     .where(inArray(chats.id, ids))
     .orderBy(desc(activityAt), desc(chats.id))
-  return rows.map(toSummary)
+  const pushers = await pushersForChats(rows.map(r => r.id))
+  return rows.map(r => toSummary(r, pushers.get(r.id) ?? []))
 }
 
 // Newest first, cut at `limit`, with the keyset condition a cursor implies.
@@ -482,7 +561,7 @@ async function mentionNames(digits: string[]): Promise<Map<string, string>> {
   return out
 }
 
-async function resolveMentions<T extends { text: string | null }>(items: T[], channelOf: (item: T) => Channel): Promise<T[]> {
+async function resolveMentions<T extends { text: string | null }>(items: T[], channelOf: (item: T) => ChatChannel): Promise<T[]> {
   const digits = new Set<string>()
   for (const item of items) {
     if (channelOf(item) !== 'whatsapp' || !item.text) continue
@@ -515,8 +594,11 @@ export async function getMessages(chatId: string, opts: {
 
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
-  const mediaById = await mediaForMessages(page.map(r => r.id))
-  const views = await resolveMentions(page.map(r => toView(r, mediaById.get(r.id))), () => chat.channel)
+  const [mediaById, pushedById] = await Promise.all([
+    mediaForMessages(page.map(r => r.id)),
+    pushersForMessages(page.map(r => r.id)),
+  ])
+  const views = await resolveMentions(page.map(r => toView(r, mediaById.get(r.id), pushedById.get(r.id))), () => chat.channel)
   return { chat, messages: views, nextCursor }
 }
 
@@ -539,7 +621,7 @@ const chatColumns = {
 // announcements is not an inbox. Ask for kind: 'channel' or includeChannels
 // and they are there.
 export async function recentMessages(opts: {
-  channel?: ChatChannel; kind?: ChatKind; includeChannels?: boolean
+  channel?: ChatChannel; kind?: ChatKind; includeChannels?: boolean; sourceId?: string
   limit?: number; cursor?: string; before?: Date; after?: Date
 } = {}): Promise<{ messages: MessageInChat[]; nextCursor: string | null }> {
   const limit = clampLimit(opts.limit, DEFAULT_RECENT_LIMIT)
@@ -547,6 +629,7 @@ export async function recentMessages(opts: {
   if (opts.channel) conds.push(eq(chats.channel, opts.channel))
   if (opts.kind) conds.push(eq(chats.kind, opts.kind))
   else if (!opts.includeChannels) conds.push(sql`${chats.kind} <> 'channel'`)
+  if (opts.sourceId) conds.push(eq(chats.connectionId, opts.sourceId))
 
   const rows = await db.select({ ...messageSelection, ...chatColumns }).from(messages)
     .innerJoin(chats, eq(chats.id, messages.chatId))
@@ -557,9 +640,12 @@ export async function recentMessages(opts: {
 
   const page = rows.slice(0, limit)
   const nextCursor = rows.length > limit && page.length > 0 ? encodeCursor(page[page.length - 1]) : null
-  const mediaById = await mediaForMessages(page.map(r => r.id))
+  const [mediaById, pushedById] = await Promise.all([
+    mediaForMessages(page.map(r => r.id)),
+    pushersForMessages(page.map(r => r.id)),
+  ])
   const views = page.map(({ chatId, chatTitle, channel, kind, ...r }) =>
-    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind }))
+    ({ ...toView(r, mediaById.get(r.id), pushedById.get(r.id)), chatId, chatTitle, channel, kind }))
   return { messages: await resolveMentions(views, m => m.channel), nextCursor }
 }
 
@@ -584,6 +670,8 @@ export type SearchOptions = {
   chatId?: string
   channel?: ChatChannel
   kind?: ChatKind
+  // Scopes to one connection — a live channel or a pushed source.
+  sourceId?: string
   // A substring of any name the sender has been shown under: the channel's
   // push name, the owner's contact-list name, or the address-book name.
   sender?: string
@@ -630,6 +718,7 @@ export async function searchMessages(
   if (opts.chatId) conds.push(eq(messages.chatId, opts.chatId))
   if (opts.channel) conds.push(eq(chats.channel, opts.channel))
   if (opts.kind) conds.push(eq(chats.kind, opts.kind))
+  if (opts.sourceId) conds.push(eq(chats.connectionId, opts.sourceId))
   if (opts.before) conds.push(lt(messages.sentAt, opts.before))
   if (opts.after) conds.push(gt(messages.sentAt, opts.after))
   // The one filter that costs a name lookup per matched row rather than per
@@ -713,9 +802,12 @@ export async function searchMessages(
       ? { order, rank: last.rank, id: last.id }
       : { order, ms: last.sentAt.getTime(), id: last.id })
     : null
-  const mediaById = await mediaForMessages(page.map(r => r.id))
+  const [mediaById, pushedById] = await Promise.all([
+    mediaForMessages(page.map(r => r.id)),
+    pushersForMessages(page.map(r => r.id)),
+  ])
   const hits = await resolveMentions(page.map(({ chatId, chatTitle, channel, kind, rank: _rank, ...r }) =>
-    ({ ...toView(r, mediaById.get(r.id)), chatId, chatTitle, channel, kind })), m => m.channel)
+    ({ ...toView(r, mediaById.get(r.id), pushedById.get(r.id)), chatId, chatTitle, channel, kind })), m => m.channel)
   return { hits, nextCursor }
 }
 

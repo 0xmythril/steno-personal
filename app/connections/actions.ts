@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireSession } from '@/lib/auth'
 import {
-  createConnection, submitLoginPassword, revokeConnection, deleteConnection,
+  createConnection, submitLoginPassword, revokeConnection, deleteConnection, listSources,
 } from '@/lib/services/connections'
 import type { Channel } from '@/lib/channels/port'
 
@@ -69,6 +69,22 @@ export async function deleteEverythingAction(formData: FormData): Promise<void> 
   await requireSession()
   const id = String(formData.get('connectionId') ?? '')
   if (id) await deleteConnection(id)
+  revalidatePath('/connections')
+  revalidatePath('/')
+}
+
+// Deletes one pushed source: every chat and message it carries, gone through
+// the same authority as "Delete everything" on a live account. Scoped to
+// listSources (mode 'push', unrevoked) rather than trusting the posted id
+// blind — a stray or forged id for a live channel row must never reach
+// deleteConnection from here, since that path belongs to deleteEverythingAction.
+export async function deleteSourceAction(formData: FormData): Promise<void> {
+  await requireSession()
+  const id = String(formData.get('sourceId') ?? '')
+  if (id) {
+    const sources = await listSources()
+    if (sources.some(s => s.id === id)) await deleteConnection(id)
+  }
   revalidatePath('/connections')
   revalidatePath('/')
 }

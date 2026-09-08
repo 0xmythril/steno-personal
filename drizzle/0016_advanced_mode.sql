@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `advanced_mode` integer DEFAULT false NOT NULL;

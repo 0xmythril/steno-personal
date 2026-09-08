@@ -14,7 +14,7 @@ export function SiteFooter() {
         <a href={GITHUB_URL}><GitHubMark /> GitHub</a>
         <a href={X_URL}><XMark /> Follow on X</a>
       </span>
-      <a href={HOSTED_URL}>Steno Cloud for teams &rarr;</a>
+      <a href={HOSTED_URL}>Steno Team &rarr;</a>
     </footer>
   )
 }

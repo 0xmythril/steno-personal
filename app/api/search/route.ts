@@ -1,9 +1,10 @@
+import { withHistoryRead } from '@/lib/services/history-reads'
 import { authenticateRequest } from '@/lib/auth'
 import { badRequest, parseLimit, unauthorized, withErrorBoundary } from '@/lib/api'
 import { SEARCH_ORDERS, searchMessages, type SearchOrder } from '@/lib/services/queries'
 import { track } from '@/lib/services/telemetry'
 
-export const GET = withErrorBoundary(async (request: Request): Promise<Response> => {
+export const GET = withHistoryRead('search_messages', withErrorBoundary(async (request: Request): Promise<Response> => {
   if (!(await authenticateRequest(request))) return unauthorized()
 
   const { searchParams } = new URL(request.url)
@@ -19,9 +20,10 @@ export const GET = withErrorBoundary(async (request: Request): Promise<Response>
   track('search', { surface: 'portal' })
   const { hits, nextCursor } = await searchMessages(q, {
     chatId: searchParams.get('chat_id') ?? undefined,
+    sourceId: searchParams.get('source') ?? undefined,
     limit: limit.value,
     order: (orderRaw as SearchOrder | null) ?? undefined,
     cursor: searchParams.get('cursor') ?? undefined,
   })
   return Response.json({ results: hits, nextCursor })
-})
+}))

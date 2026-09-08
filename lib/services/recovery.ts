@@ -4,7 +4,8 @@ import { db } from '@/lib/db/client'
 import { connections } from '@/lib/db/schema'
 import { mintAccessKey, revokeAccessKey } from './access-keys'
 import { getConnection, revokeConnection, type ConnectionStatus } from './connections'
-import { CHANNEL_LABELS } from '@/lib/format'
+import { sourceLabel } from '@/lib/format'
+import { isLiveChannel } from '@/lib/services/sources'
 import type { Channel, ChannelAccount } from '@/lib/channels/port'
 
 // Lost-key recovery: the owner pairs the same account a second time, on a
@@ -28,7 +29,7 @@ const CHANNEL_ORDER: Channel[] = ['telegram', 'whatsapp']
 // has ever reported an account id.
 export async function knownAccountChannels(): Promise<Channel[]> {
   const rows = await db.selectDistinct({ channel: connections.channel }).from(connections)
-    .where(and(eq(connections.purpose, 'archive'), isNotNull(connections.externalAccountId)))
+    .where(and(eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNotNull(connections.externalAccountId)))
   const found = new Set(rows.map(r => r.channel))
   return CHANNEL_ORDER.filter(c => found.has(c))
 }
@@ -63,11 +64,13 @@ export type RecoveryStatus = {
 // served behind the recovery cookie instead.
 export async function getRecoveryAttempt(id: string): Promise<RecoveryStatus | null> {
   const status = await getConnection(id)
-  if (!status || status.purpose !== 'recovery') return null
+  // A recovery row is always a live channel (startRecovery takes one); the
+  // guard narrows the loosely typed ConnectionStatus back to a port channel.
+  if (!status || status.purpose !== 'recovery' || !isLiveChannel(status.channel)) return null
   const [row] = await db.select({ outcome: connections.recoveryOutcome, keyId: connections.recoveryKeyId })
     .from(connections).where(eq(connections.id, id))
   return {
-    id: status.id, channel: status.channel, status: status.status,
+    id: status.id, channel: status.channel as Channel, status: status.status,
     outcome: row?.outcome ?? null, hasKey: (row?.keyId ?? null) !== null,
     lastError: status.lastError, login: status.login,
   }
@@ -76,8 +79,8 @@ export async function getRecoveryAttempt(id: string): Promise<RecoveryStatus | n
 // Dated in the instance's own timezone, like every other date it renders
 // (lib/format.ts): a UTC date can be yesterday to the person reading it.
 const LABEL_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-export function recoveryKeyLabel(channel: Channel, now: Date = new Date()): string {
-  return `Recovered via ${CHANNEL_LABELS[channel]}, ${LABEL_DATE.format(now)}`
+export function recoveryKeyLabel(channel: string, now: Date = new Date()): string {
+  return `Recovered via ${sourceLabel(channel)}, ${LABEL_DATE.format(now)}`
 }
 
 // Worker-side verdict. Guarded like completeLogin: only a live pending

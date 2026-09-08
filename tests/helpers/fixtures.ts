@@ -30,7 +30,7 @@ export async function makeConnection(opts: {
   return row
 }
 
-export async function makeChat(connection: { id: string; channel: 'telegram' | 'whatsapp' }, opts: {
+export async function makeChat(connection: { id: string; channel: string }, opts: {
   kind?: 'dm' | 'group' | 'channel'; title?: string | null; externalChatId?: string; lastMessageAt?: Date
 } = {}) {
   const [row] = await db.insert(chats).values({

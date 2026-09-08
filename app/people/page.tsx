@@ -1,3 +1,4 @@
+import { recordPortalRead } from '@/lib/services/history-reads'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
@@ -25,6 +26,8 @@ export default async function PeoplePage({ searchParams }: {
   // about who is allowed to be here.
   const isAuto = (p: PersonView): boolean =>
     p.nameSource === 'channel' && p.identities.some(i => i.source === 'auto')
+
+  await recordPortalRead(session, 'portal_people', people)
 
   return (
     <>

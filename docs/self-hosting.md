@@ -224,6 +224,110 @@ devtools. `sp_session` must show `Secure` and `HttpOnly`.
 The long `proxy_read_timeout` is for the MCP transport, which holds a response
 open. A 60-second default will make an agent's connection drop mid-conversation.
 
+## Pushing conversations in
+
+Telegram and WhatsApp arrive live. Anything else — a Slack workspace an agent
+can already read, an exported chat, an agent's own transcript — is pushed:
+something you run posts a batch to your instance under a **push key**.
+
+In **Settings**, turn on **Advanced mode** and confirm the explanation.
+Then mint a key and tick **Push**. Leave **Read** unticked for a
+cron job — a key that only pushes cannot log in or read anything — and tick
+both for an agent that searches and also stores its own transcript. Keep
+the key out of the command line — a key on argv shows up in `ps` for any
+other user on the box and sits in plain text in your shell history or
+crontab. Put it in a curl config file instead:
+
+```
+# ~/.steno-push.curlrc, mode 0600
+header = "Authorization: Bearer sp_YOUR_PUSH_KEY"
+```
+
+```bash
+chmod 600 ~/.steno-push.curlrc
+curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" \
+  -H "Content-Type: application/json" \
+  --data @batch.json
+```
+
+`batch.json`:
+
+```json
+{
+  "format": "steno/1",
+  "source": { "type": "slack", "id": "acme", "label": "Slack (Acme)" },
+  "messages": [
+    {
+      "externalChatId": "C0123ABC",
+      "chatKind": "group",
+      "chatTitle": "#eng",
+      "externalMessageId": "1725500000.000100",
+      "senderExternalId": "U0AB12",
+      "senderName": "Ada",
+      "fromOwner": false,
+      "sentAt": "2026-09-05T10:00:00Z",
+      "type": "text",
+      "text": "the vendor agreed to net 30"
+    }
+  ],
+  "deletes": []
+}
+```
+
+- `source.type` and `source.id` are lowercase slugs (`^[a-z][a-z0-9-]{1,31}$`);
+  together they name the source, and every later batch for the same pair
+  lands in the same place. `label` is what the portal shows.
+- Message identity is `externalChatId` plus `externalMessageId`. Resending is
+  safe: a message already stored is counted as a duplicate and left alone, so
+  a cron job can post the last hour every ten minutes. Set `editedAt` on a
+  resent message to update its text. Steno stores the source's edit timestamp
+  and only accepts a strictly newer edit; older or equal timestamps count as
+  duplicates without changing the message. A `deletes` entry removes a message from
+  every read for good.
+  Any push key may push to any source, and every message remembers which key
+  delivered it. If two keys push the same message with different text, the
+  first version stays and the response counts the disagreement under
+  `conflicts`, naming up to twenty. A pushed source may not call itself
+  `telegram` or `whatsapp`; those names mean a paired account. Use
+  `whatsapp-export` or similar.
+- `replyToExternalId` names the message this one answers, in the same chat.
+  `type` is `text` unless you say otherwise; `raw` is any object you want kept
+  with the message (64 KiB).
+- Limits: 1 000 messages and 1 000 deletes per batch, 8 MiB per request,
+  64 KiB of text per message. Attachments are not accepted yet; steno never
+  fetches a URL on your behalf.
+- The response counts `inserted`, `duplicates`, `edited`, `deleted` and
+  `conflicts`, and returns the source's id. `400` lists what was wrong;
+  nothing is written from a batch that fails validation.
+
+A cron line that pushes whatever an agent left in `~/slack/latest.json`, using
+the same `~/.steno-push.curlrc` — a key in the crontab itself is just as
+readable (by anyone who can run `crontab -l` for that user) as one on argv:
+
+```
+*/10 * * * * curl -sS -K "$HOME/.steno-push.curlrc" -X POST "https://<your-host>/api/import" -H "Content-Type: application/json" --data @"$HOME/slack/latest.json" >/dev/null
+```
+
+Everything pushed is read back exactly like the live channels: in the portal,
+over `/api` and in every MCP tool's results, including their own `channel`
+filter (any source type now, not only the two live channels) and a
+`source_id` filter — the source's id, the same one `whoami` reports — to
+stay inside one source.
+
+Running from an agent rather than a cron job? `push_messages` takes the same
+batch, minus `format`, as an MCP tool on its own endpoint, `/mcp/push`; a key
+minted with Push authenticates there the same way, as a bearer token. See
+[docs/mcp.md](mcp.md).
+
+The Connections page lists every pushed source under **Sources**: its label,
+who created it, every key that has pushed to it, how many messages it holds,
+when it was last pushed and how many conflicts that push reported. Deleting
+one there erases everything it carries; the keys that pushed it keep
+working. In Settings, revoking a key stops it without touching what it
+already pushed — **Revoke and delete what it pushed** removes both, key and
+messages, in the same step, and takes with it any pushed source that key fed
+alone; a source another key also feeds stays.
+
 ## Backups
 
 Everything is `DATA_DIR`. Copy it and you have copied the instance.
@@ -372,3 +476,26 @@ not writable) or a `SECRET_KEY` shorter than 32 characters.
 offline for a long stretch, and it ends immediately if you unlink from the
 phone. Re-pair from Connections. Repeated forced logouts can also be the first
 sign of a restriction — see the WhatsApp paragraph in the README.
+
+### Advanced mode
+
+Settings starts with Advanced mode off. Turn it on and confirm the explanation
+to show push-key creation, agent write configuration, source management, chat
+export, dispute resolution, and contribution removal controls. The preference is saved for this instance.
+Turning it off hides those controls without revoking keys, stopping imports, or
+removing archived conversations. Existing keys can still be revoked in Settings.
+History, its filters and CSV export, and disputed-version comparisons remain
+available in either mode. Resolving disputes and removing contributions requires
+revealing the controls with Advanced mode. Recording continues while it is off.
+Advanced mode is a UI preference, not an API permission or a write kill switch.
+
+
+## Reviewing archive History
+
+Open **History** for Activity, Disputes and Revoked keys. Activity filters and CSV dates use UTC. Source summaries describe retained events in the chosen period; they are not lifetime totals. Metadata recording begins on the first boot with History enabled; previous activity and previously discarded conflicting text cannot be reconstructed. The worker maintains retention even when no channel is connected. Run one worker per archive, as the supplied supervisor does: on worker startup unfinished sync runs are marked interrupted.
+
+The last pusher shown in Chats is recorded by future pushes affecting that chat; older unknown values are left blank. A source creator is distinct from its subsequent pushers.
+
+Push ingestion is now atomic, retaining the existing `steno/1` counts and timestamp ordering. `duplicates` includes conflicts and edited existing rows; do not add those counts as disjoint totals. An HTTP `409` with `dispute_capacity` means pending review storage is full and nothing from that batch was saved. Review disputes, then retry. MCP push reports the same condition in its tool error. Limits: 10,000 pending candidates and 512 MiB of incoming text, independent of activity’s 90-day/10,000-event retention. No extra service, credential or environment variable is required.
+
+History and its CSV export require an owner portal session. API/MCP keys continue to read only normal archive content. See [Privacy](../PRIVACY.md#local-history) for recording coverage, retained deletion metadata and key-cleanup semantics.
