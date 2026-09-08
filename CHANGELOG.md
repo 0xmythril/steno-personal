@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Docker-only upgrade setup: copy `sh scripts/enable-upgrades.sh` from Settings,
+  then use the upgrade button for future releases. Setup preserves environment
+  values, makes ordinary Compose commands follow the selected release, and can
+  be rerun without resetting an installation. No host Node.js is required.
 - Optional Docker companion and Settings controls for owner-initiated upgrades,
   with complete archive backups, pinned release images, readiness checks and
   recovery after failed or interrupted upgrades. Railway retains its existing

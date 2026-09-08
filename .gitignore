@@ -22,3 +22,4 @@ docs/superpowers/
 # public in docs/releasing.md, the specifics are not
 docs/*.local.md
 .steno-updater/
+.steno-updater-*/

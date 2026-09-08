@@ -73,8 +73,16 @@ the log; the first visit sets the instance up.
 account gets you a new one. Every other path — no phone, start over — is in
 [Lost access](docs/self-hosting.md#lost-access).
 
+**Enable upgrades from Settings.** Once Steno is running, run
+`sh scripts/enable-upgrades.sh` in this checkout, then refresh Settings. You only
+need Docker and a shell. Future upgrades back up your archive before installing,
+and ordinary `docker compose` commands keep the selected release.
+[Setup and recovery details](docs/upgrades.md).
+
 Stop with `docker compose down`; your data stays in the `data` volume. Throw
-everything away with `docker compose down -v`.
+the live archive away with `docker compose down -v`. If upgrades are enabled,
+retained backups and control files in `.steno-updater/` remain; remove those
+separately when you intend to discard the entire installation.
 
 More ways to run it — bare Node, reverse proxy, upgrades, every environment
 variable: [docs/self-hosting.md](docs/self-hosting.md).
