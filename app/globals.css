@@ -337,6 +337,26 @@ li.msg-run > * { min-width: 0; }
 .onboard { width: 100%; max-width: 720px; margin: 20px auto 0; display: flex; flex-direction: column; gap: 16px; }
 .onboard h1 { font-size: 30px; }
 
+/* Advanced mode is a presentation preference; its switch opens an explanation
+   before the first save. Reuse the page and dialog tokens in both themes. */
+.advanced-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.advanced-mode-row .stack { gap: 7px; min-width: 0; }
+.advanced-mode-row h2, .advanced-mode-row p { margin: 0; }
+button.mode-switch { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; height: 40px; }
+.mode-switch-track { display: inline-flex; align-items: center; width: 36px; height: 22px; padding: 3px; border-radius: 6px; background: var(--well); border: 1px solid var(--edge); }
+.mode-switch-track > span { width: 14px; height: 14px; border-radius: 3px; background: var(--muted); transition: transform 150ms ease-out; }
+.mode-switch[aria-checked="true"] .mode-switch-track { background: var(--pine); border-color: var(--pine); }
+.mode-switch[aria-checked="true"] .mode-switch-track > span { background: var(--card); transform: translateX(14px); }
+dialog.advanced-mode-dialog .confirm-body { display: flex; flex-direction: column; gap: 14px; }
+dialog.advanced-mode-dialog ul { margin: 0; padding-inline-start: 20px; }
+dialog.advanced-mode-dialog li + li { margin-top: 8px; }
+@media (max-width: 480px) {
+  .advanced-mode-row { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-switch-track > span { transition: none; }
+}
+
 /* History uses the existing paper, rule, controls and confirmation grammar. */
 .history-page { gap: 24px; }
 .history-page .page-head p { margin-top: 8px; }

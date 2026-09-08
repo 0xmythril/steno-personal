@@ -44,12 +44,11 @@ describe('settings keys page', () => {
     expect(actions).toMatch(/formData\.get\('canRead'\) === 'on'/)
     expect(actions).toMatch(/mintAccessKey\(label, caps\)/)
   })
-  it('offers every readable or pushable key to the connect-an-agent snippets, each carrying its own canRead and canPush', () => {
-    // A push-only key used to be left off this list entirely; now it needs to
-    // be, so its own push snippet can show — ConnectAgent decides per key,
-    // per snippet, using the canRead and canPush this passes through.
+  it('offers readable keys normally and includes push-only keys in Advanced mode', () => {
     const page = readFileSync('app/settings/page.tsx', 'utf8')
-    expect(page).toMatch(/keys=\{keys\.filter\(k => k\.canRead \|\| k\.canPush\)\.map\(k => \(\{ id: k\.id, label: k\.label, canRead: k\.canRead, canPush: k\.canPush \}\)\)\}/)
+    expect(page).toContain('keys.filter(k => advancedMode ? (k.canRead || k.canPush) : k.canRead)')
+    expect(page).toContain('keys={instructionKeys.map(k => ({ id: k.id, label: k.label, canRead: k.canRead, canPush: k.canPush }))}')
+    expect(page).toContain('advancedMode={advancedMode}')
   })
   it('renaming a key is guarded and posts through renameKeyAction', () => {
     const actions = readFileSync('app/settings/actions.ts', 'utf8')

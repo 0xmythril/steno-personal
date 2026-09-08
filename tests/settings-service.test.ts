@@ -14,7 +14,7 @@ describe('settings service', () => {
       visionModel: DEFAULT_VISION_MODEL, transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
       // The one setting that starts on. It still sends nothing unless the host
       // sets STENO_TELEMETRY_URL — see tests/telemetry.test.ts.
-      telemetryEnabled: true,
+      advancedMode: false, telemetryEnabled: true,
     })
     expect(await getOpenrouterKey()).toBeNull()
   })
@@ -72,4 +72,17 @@ describe('settings service', () => {
     await updateSettings({ analyzeAudio: true })
     expect(await db.select().from(settings)).toHaveLength(1)
   })
+})
+
+ it('persists Advanced mode independently and defaults off when the settings row is absent', async () => {
+  await resetDb()
+  await updateSettings({ advancedMode: true, analyzeAudio: true })
+  await updateSettings({ telemetryEnabled: false })
+  expect(await getSettings()).toMatchObject({ advancedMode: true, analyzeAudio: true, telemetryEnabled: false })
+  await updateSettings({ advancedMode: false })
+  expect(await getSettings()).toMatchObject({ advancedMode: false, analyzeAudio: true, telemetryEnabled: false })
+  await db.delete(settings)
+  expect(await getSettings()).toMatchObject({ advancedMode: false })
+  await updateSettings({ advancedMode: true })
+  expect(await getSettings()).toMatchObject({ advancedMode: true })
 })

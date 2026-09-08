@@ -1,3 +1,5 @@
+import { getSettings } from '@/lib/services/settings'
+
 import { lastPushesForChats } from '@/lib/services/history'
 import { recordPortalRead } from '@/lib/services/history-reads'
 import Link from 'next/link'
@@ -13,6 +15,7 @@ const isChannel = (v: unknown): v is Channel => typeof v === 'string' && (CHAT_C
 
 export default async function ChatsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
+  const { advancedMode } = await getSettings()
   const sp = await searchParams
   const sources = await listSources()
   // Anything but a known channel means "all" — the value comes from a URL.
@@ -21,7 +24,7 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
   const source = typeof sp.source === 'string' ? sources.find(s => s.id === sp.source) : undefined
   const [chats, connected] = await Promise.all([listChats({ channel, sourceId: source?.id }), hasActiveConnection()])
 
-  const lastPushes = lastPushesForChats(chats.map(c => c.id))
+  const lastPushes = advancedMode ? lastPushesForChats(chats.map(c => c.id)) : new Map()
   await recordPortalRead(session, 'portal_chats', chats)
 
   return (
@@ -78,12 +81,12 @@ export default async function ChatsPage({ searchParams }: { searchParams: Promis
                 {chats.map(c => (
                   <tr key={c.id}>
                     <td className="name"><Link href={`/chats/${c.id}`}>{c.title ?? 'Untitled chat'}</Link></td>
-                    <td>{sourceLabel(c.channel)}{c.pushers.length > 0 && (
+                    <td>{sourceLabel(c.channel)}{advancedMode && c.pushers.length > 0 && (
                       <> <span className="chip note">pushed by {c.pushers.length === 1 ? c.pushers[0] : `${c.pushers.length} keys`}</span></>
                     )}</td>
                     <td className="muted">{KIND_LABELS[c.kind]}</td>
                     <td className="num">{c.messageCount.toLocaleString('en')}</td>
-                    <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}{lastPushes.has(c.id) && <Link className="history-last-push" href={`/history/sources/${c.connectionId}`} aria-label={`Last pushed by ${lastPushes.get(c.id)!.label}`}><span aria-hidden="true">↑</span> {lastPushes.get(c.id)!.label}</Link>}</td>
+                    <td className="muted mono">{formatRelativeTime(c.lastMessageAt)}{advancedMode && lastPushes.has(c.id) && <Link className="history-last-push" href={`/history/sources/${c.connectionId}`} aria-label={`Last pushed by ${lastPushes.get(c.id)!.label}`}><span aria-hidden="true">↑</span> {lastPushes.get(c.id)!.label}</Link>}</td>
                   </tr>
                 ))}
               </tbody>

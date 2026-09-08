@@ -11,7 +11,8 @@ import { AutoSubmit } from './auto-submit'
 // from the list below; both arrive through an httpOnly flash cookie the
 // settings page reads. Nothing here fetches or stores a secret: the render
 // after the action is the one chance to hand the user a filled-in config.
-export async function ConnectAgent({ rawKey, selectedId, keys, error }: {
+export async function ConnectAgent({ rawKey, selectedId, keys, error, advancedMode = false }: {
+  advancedMode?: boolean
   rawKey: string | null
   selectedId: string | null
   keys: { id: string; label: string; canRead: boolean; canPush: boolean }[]
@@ -37,7 +38,7 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error }: {
   const canPush = rawKey ? (selected?.canPush ?? false) : true
   const command = claudeCodeCommand(mcpUrl, key)
   const json = mcpServersJson(mcpUrl, key)
-  const pushUrl = canPush ? mcpPushUrlFrom(headerFields) : null
+  const pushUrl = advancedMode && canPush ? mcpPushUrlFrom(headerFields) : null
   const prompt = agentSetupPrompt(mcpUrl, key, pushUrl ?? undefined)
   const pushCommand = pushUrl ? claudeCodeCommand(pushUrl, key, PUSH_SERVER_NAME) : null
   const pushJson = pushUrl ? pushServersJson(pushUrl, key) : null

@@ -1,3 +1,4 @@
+import { getSettings } from '@/lib/services/settings'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
 import { Nav } from '@/app/nav'
@@ -111,7 +112,8 @@ function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStat
 export default async function ConnectionsPage() {
   const session = await requireSession()
   const all = await listConnections()
-  const sources = await listSources()
+  const { advancedMode } = await getSettings()
+  const sources = advancedMode ? await listSources() : []
   // Newest first, so the first ARCHIVE row per channel with no revoked_at is
   // the live one; revoked rows stay in the list below as history. A live
   // recovery row is someone proving ownership on /login/recover — it is not a

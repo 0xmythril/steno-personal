@@ -291,6 +291,21 @@ Theme mechanics: the full light palette is defined on `:root`; only the tokens a
 - Print styles are not designed.
 - Chat titles for unnamed WhatsApp direct chats still show the full phone number. Masking to the last four digits is a copy rule for a later change.
 
+## Advanced mode
+
+Settings opens with an off-by-default Advanced mode switch. Enabling it opens a
+native explanatory dialog with Cancel focused first and a primary "Turn on
+Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
+Disabling it saves immediately and hides push-key creation, agent write setup,
+source management, transcript export, detailed push attribution in chats, dispute
+resolution controls, and contribution removal. Existing
+keys remain visible with their actual permissions and ordinary revoke controls;
+conversations, source filters, and conflict warnings remain readable. History, its
+filters and CSV export, source activity, and dispute comparisons stay available in
+either mode. Comparison and contribution previews link to Settings when their
+mutation controls are hidden. The mode is a UI preference only: it does not
+revoke keys, stop imports, or stop History recording.
+
 
 ## History
 

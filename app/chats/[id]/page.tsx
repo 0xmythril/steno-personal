@@ -1,5 +1,6 @@
 import { recordPortalRead } from '@/lib/services/history-reads'
 import { Fragment } from 'react'
+import { getSettings } from '@/lib/services/settings'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { requireSession } from '@/lib/auth'
@@ -29,7 +30,8 @@ export default async function ChatPage({ params, searchParams }: {
   const sp = await searchParams
   const cursor = typeof sp.cursor === 'string' ? sp.cursor : undefined
 
-  const [page, sources] = await Promise.all([getMessages(id, { limit: PAGE_SIZE, cursor }), listSources()])
+  const { advancedMode } = await getSettings()
+  const [page, sources] = await Promise.all([getMessages(id, { limit: PAGE_SIZE, cursor }), advancedMode ? listSources() : Promise.resolve([])])
   if (!page) notFound()
   // That a transcript was opened. Not which one, and not which page of it.
   track('transcript_viewed', {})
@@ -75,14 +77,14 @@ export default async function ChatPage({ params, searchParams }: {
                   instead of navigating to it. The explanatory sentence this
                   used to carry lives in the accessible name now; the file it
                   downloads, named steno-<chat>-<date>.json, explains itself. */}
-              <a
+              {advancedMode && <a
                 className="export-link"
                 href={`/api/chats/${page.chat.id}/export`}
                 download
                 aria-label="Export this chat as a file with every message and who pushed it"
               >
                 <DownloadIcon /> Export
-              </a>
+              </a>}
             </div>
             <div className="pad-head-meta">
               <span className="muted mono">
@@ -99,7 +101,7 @@ export default async function ChatPage({ params, searchParams }: {
                   fallback outlives a revoked source; only the last-push time
                   and who pushed last live on the source row, so only that
                   half is gated on it. */}
-              {(source || page.chat.pushers.length > 0) && (
+              {advancedMode && (source || page.chat.pushers.length > 0) && (
                 <span className="muted mono provenance">
                   {source ? (
                     <>

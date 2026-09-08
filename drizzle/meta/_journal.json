@@ -113,6 +113,13 @@
       "when": 1788807826269,
       "tag": "0015_history_subjects",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1788865254648,
+      "tag": "0016_advanced_mode",
+      "breakpoints": true
     }
   ]
 }

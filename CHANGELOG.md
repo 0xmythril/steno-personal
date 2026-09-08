@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Fix confirmation dialog hydration when a server-rendered form is passed into it.
+- Add an off-by-default Advanced mode in Settings, with an opt-in explanation before revealing agent write setup, push-key creation, source management, chat export, dispute resolution, and contribution removal controls. History activity, CSV export, and dispute comparisons remain available in either mode. Existing keys, imports, and recording keep working when it is off.
+
 - **History for your archive.** Review pushes, authenticated reads, syncs and source/key changes; filter by source, key, kind and UTC date; export matching activity as CSV. Compare disputed messages and keep, accept or delete a version locally. Return to revoked keys later to remove their original contributions while keeping other keys’ messages.
 
 ### Changed
