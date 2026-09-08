@@ -3,79 +3,54 @@ import { TRANSCRIPTION_CATALOG, VISION_CATALOG, DEFAULT_VISION_MODEL, DEFAULT_TR
 import { ModelField } from './model-field'
 import { clearOpenrouterKeyAction, saveOpenrouterKeyAction, updateEnrichmentAction } from './actions'
 
-// Off by default and off without a key: the toggles are disabled until one is
-// saved, so the page can never claim a feature it cannot run.
-//
-// Two cards, not one. The key and the settings are separate forms with separate
-// submits, and inside a single card the gap between them was the same gap that
-// separates a heading from its own sentence — nothing said where one form ended
-// and the next began, or which button saved what.
+// Separate forms share one card; numbered sections make their save actions clear.
 export async function EnrichmentSection() {
   const s = await getSettings()
   return (
-    <>
-      <section className="card">
-        <h2>OpenRouter key</h2>
-        <p className="muted">
-          Enrichment needs a key, and nothing in the next card runs without one. It is stored
-          encrypted on this volume and never shown again once saved.
-        </p>
+    <section className="card" id="enrichment">
+      <h2>Enrichment</h2>
+      <p className="muted">Make text in images and voice notes searchable. Requires an OpenRouter key.</p>
+      <p className="help">Off by default. When enabled, files are sent through OpenRouter to the provider shown below.</p>
 
+      <div className="settings-subsection">
+        <h3>1. Add an OpenRouter key</h3>
+        <p className="help">Stored encrypted on this instance and never displayed after saving.</p>
         {s.hasOpenrouterKey ? (
           <>
-            <span className="token"><code>OpenRouter key: saved</code></span>
+            <span className="token"><code>OpenRouter key saved</code></span>
             <form action={clearOpenrouterKeyAction}>
               <button type="submit" className="small danger">Clear key</button>
             </form>
-            <p className="help">Clearing the key also turns both toggles off.</p>
+            <p className="help">Clearing the key also turns enrichment off.</p>
           </>
         ) : (
           <form action={saveOpenrouterKeyAction} className="row">
             <label className="field">
               <span>OpenRouter key</span>
-              <input
-                type="password" name="openrouterKey" autoComplete="off" spellCheck={false}
-                placeholder="sk-or-…" required
-              />
+              <input type="password" name="openrouterKey" autoComplete="off" spellCheck={false} placeholder="sk-or-…" required />
             </label>
             <button type="submit" className="primary">Save key</button>
           </form>
         )}
-      </section>
+      </div>
 
-      <section className="card">
-        <h2>Enrichment</h2>
-        <p className="muted">
-          With an OpenRouter key saved, images are read for the text in them and voice notes are
-          transcribed, and both become searchable. This is the only thing that ever sends your archive
-          anywhere: the file goes to the provider named beside the model you pick, and nothing else
-          does. Leave it off and no chat of yours leaves this machine — the usage counts below carry
-          no archive content at all.
-        </p>
-
-        <form action={updateEnrichmentAction} className="stack" style={{ gap: 14 }}>
+      <div className="settings-subsection">
+        <h3>2. Choose what to process</h3>
+        {!s.hasOpenrouterKey && <p className="help">Save a key above to enable these features.</p>}
+        <form action={updateEnrichmentAction} className="stack">
           <label className="check">
-            <input type="checkbox" name="analyzeImages" defaultChecked={s.analyzeImages} disabled={!s.hasOpenrouterKey} />
+            <input key={`images:${s.hasOpenrouterKey}:${s.analyzeImages}`} type="checkbox" name="analyzeImages" defaultChecked={s.analyzeImages} disabled={!s.hasOpenrouterKey} />
             Read text from images
           </label>
           <label className="check">
-            <input type="checkbox" name="analyzeAudio" defaultChecked={s.analyzeAudio} disabled={!s.hasOpenrouterKey} />
+            <input key={`audio:${s.hasOpenrouterKey}:${s.analyzeAudio}`} type="checkbox" name="analyzeAudio" defaultChecked={s.analyzeAudio} disabled={!s.hasOpenrouterKey} />
             Transcribe voice notes
           </label>
-          <ModelField
-            label="Vision model" name="visionModel"
-            options={VISION_CATALOG} selected={s.visionModel ?? DEFAULT_VISION_MODEL}
-          />
-          <ModelField
-            label="Transcription model" name="transcriptionModel"
-            options={TRANSCRIPTION_CATALOG} selected={s.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL}
-          />
-          {/* Primary, because this is what the card is for. It was a 30px
-              secondary while the key form carried the primary — the emphasis
-              sat on the form you fill in once and never see again. */}
-          <div className="actions"><button type="submit" className="primary">Save enrichment settings</button></div>
+          <ModelField label="Image model" name="visionModel" options={VISION_CATALOG} selected={s.visionModel ?? DEFAULT_VISION_MODEL} />
+          <ModelField label="Transcription model" name="transcriptionModel" options={TRANSCRIPTION_CATALOG} selected={s.transcriptionModel ?? DEFAULT_TRANSCRIPTION_MODEL} />
+          <div className="actions"><button type="submit" className="primary" disabled={!s.hasOpenrouterKey}>Save enrichment settings</button></div>
         </form>
-      </section>
-    </>
+      </div>
+    </section>
   )
 }

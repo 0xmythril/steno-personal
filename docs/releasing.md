@@ -145,6 +145,16 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
 
 ## After tagging
 
+- Publishing a stable GitHub release starts `release-images.yml`. It validates
+  the version and main-branch ancestry, runs the full gate and the Docker startup, upgrade, and setup
+  smoke tests, then publishes `linux/amd64` and `linux/arm64` images to GHCR as
+  `ghcr.io/0xmythril/steno-personal:vX.Y.Z` and the corresponding
+  `steno-personal-updater:vX.Y.Z`. Make both GHCR packages public on first
+  publication so self-hosters can pull without registry credentials. Wait for
+  image publication before announcing availability. Do not overwrite release
+  tags; installed upgrades record immutable image digests. Pre-releases are
+  not offered by the updater. Forks must review the fixed repository constants
+  in `updater/releases.mjs` before offering upgrades from their own images.
 - Bring `staging` back in line with `main` so the next branch starts from the
   released commit. After a clean promotion they are already equal; a merge
   commit made on `main` is the usual reason they are not:
@@ -165,8 +175,9 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
 
 - **Patch**: a fix with no change to configuration, schema, or the MCP tools.
 - **Minor**: a new feature, a new environment variable, or a new migration.
-  Migrations apply forward at boot; a minor release never requires the user
-  to do anything beyond `git pull` and a restart.
+  Migrations apply forward at boot; a minor release does not require manual
+  data or configuration changes. Users follow their deployment's upgrade path,
+  including a backup; the optional Docker companion performs those steps.
 - **Major**: anything that needs manual action on the volume, changes the
   meaning of an existing environment variable, or removes an MCP tool.
 

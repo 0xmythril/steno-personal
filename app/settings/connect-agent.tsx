@@ -48,8 +48,7 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error, advancedMo
     <section className="card">
       <h2>Connect your agent</h2>
       <p className="muted">
-        Your agent reads this archive over MCP with an access key as its bearer token. It can list your
-        chats, read a transcript, and search — nothing else; the archive is read-only.
+        Connect an agent over MCP to read and search your archive. This endpoint is read-only.
       </p>
       <span className="token"><code>{mcpUrl}</code> <CopyButton value={mcpUrl} label="Copy URL" /></span>
       {keys.length > 0 && (
@@ -71,14 +70,14 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error, advancedMo
         </form>
       )}
       {rawKey
-        ? <p className="help">The snippets below carry the selected key. They are filled in for a few minutes only; use Clear to blank them sooner.</p>
-        : <p className="help">Create a key above, or choose one, and these snippets come back with it already in place. Until then, replace <code>{KEY_PLACEHOLDER}</code> yourself.</p>}
+        ? <p className="help">These snippets include your key for a few minutes. Clear removes it from view.</p>
+        : <p className="help">Choose a key to fill in the snippets, or replace <code>{KEY_PLACEHOLDER}</code> manually.</p>}
 
       {canRead && (
         <details className="snippet" open>
           <summary><span className="sum">Let the agent set itself up</span><span className="hint">{hint}</span><CopyButton value={prompt} label="Copy instructions" /></summary>
           <div className="snippet-body">
-            <p className="muted">Paste this into any agent that can edit its own MCP config: Claude Code, Cursor, and most others. It names the server, gives it the URL and key, and tells it how to verify.</p>
+            <p className="muted">Paste these instructions into an agent that can configure MCP, such as Claude Code or Cursor.</p>
             <pre>{prompt}</pre>
           </div>
         </details>
@@ -104,8 +103,7 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error, advancedMo
           <summary><span className="sum">Let this agent store conversations</span><span className="hint">{hint}</span><CopyButton value={pushJson} label="Copy config" /></summary>
           <div className="snippet-body">
             <p className="muted">
-              This key can also push: a second server, at a different URL, with one tool — push_messages. Use it to
-              deliver a conversation you are having elsewhere into this archive; it never reads anything back.
+              Use this separate endpoint to import conversations with <code>push_messages</code>. It accepts writes and cannot read your archive.
             </p>
             <span className="token"><code>{pushUrl}</code> <CopyButton value={pushUrl} label="Copy URL" /></span>
             <pre>{pushJson}</pre>
@@ -117,7 +115,7 @@ export async function ConnectAgent({ rawKey, selectedId, keys, error, advancedMo
       )}
 
       <p className="help">
-        Revoking the key above disconnects every agent using it, immediately.
+        Revoking a key disconnects every agent using it.
       </p>
     </section>
   )

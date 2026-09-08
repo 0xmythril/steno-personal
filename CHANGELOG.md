@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-09
+
+### Added
+
+- Docker-only upgrade setup: copy `sh scripts/enable-upgrades.sh` from Settings,
+  then use the upgrade button for future releases. Setup preserves environment
+  values, makes ordinary Compose commands follow the selected release, and can
+  be rerun without resetting an installation. No host Node.js is required.
+- Optional Docker companion and Settings controls for owner-initiated upgrades,
+  with complete archive backups, pinned release images, readiness checks and
+  recovery after failed or interrupted upgrades. Railway retains its existing
+  deployment path with guided instructions. Release checks contact GitHub only
+  on request; image downloads use GHCR. See `docs/upgrades.md`.
+- Refuse startup when the database contains unknown or changed migrations,
+  guarding against accidental schema downgrades.
+
+### Changed
+
+- Place Advanced mode between Enrichment and Anonymous usage. Combine OpenRouter setup with Enrichment and shorten Settings explanations, including compact usage-reporting bullets and a separate controls area. Clearing the OpenRouter key immediately resets the visible enrichment checkboxes.
+
+### Upgrade notes
+
+- Existing installations need one manual update to v0.3.0 before enabling managed upgrades. For supported Docker Compose installations, run `sh scripts/enable-upgrades.sh` after updating; future stable releases can then be installed from Settings → Software updates. See [the upgrade guide](docs/upgrades.md) for prerequisites and recovery instructions.
+- Railway deployments continue to use their hosting deployment controls; Settings provides manual upgrade guidance.
+
 ## [0.2.0] — 2026-09-08
 
 ### Added
@@ -285,6 +310,7 @@ First release. Everything below is new.
 - At 0.1.0 the project shipped no Telegram application pair, so Telegram
   needed one from my.telegram.org. Lifted in the next release, above.
 
-[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.3.0
 [0.2.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.2.0
 [0.1.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.1.0

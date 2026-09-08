@@ -19,13 +19,15 @@ fails CI rather than a reviewer's memory.
    `@mtcute/*`; only `lib/channels/whatsapp.ts` imports Baileys. Everything
    else talks to the `ChannelPort` / `ChannelSession` interfaces in
    `lib/channels/port.ts`.
-3. **Two things can leave the machine, both listed and both switchable.** The
+3. **Outbound traffic is listed and controlled by the owner.** The
    OpenRouter enrichment call a user turns on, and anonymous usage events the
    user can turn off in Settings or with `DO_NOT_TRACK`. An event is a name
    from the fixed list in `lib/services/telemetry.ts` plus enum-valued
    properties — never a message, a name, a number, a title, a query, a chat id
    or a key — posted to PostHog as one plain HTTP request with no vendor SDK in
-   the process. Nothing else: no crash reporting, no update checks.
+   the process. No crash reporting or background update checks. The optional
+   Docker companion contacts GitHub and GHCR only when the owner requests an
+   update check or upgrade; see [docs/upgrades.md](docs/upgrades.md).
    `tests/telemetry.test.ts` and `tests/launch-invariants.test.ts` check every
    call site, and the sweep still bans the analytics SDKs by name.
 4. **Secrets never reach a URL, a log, or a response body.** Access keys and

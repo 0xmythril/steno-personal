@@ -19,10 +19,11 @@ Mac mini, or a Raspberry Pi at home — or on Railway in one click.
 
 - **Read-only by construction** — the code has no way to send a message, mark a
   chat read, set your presence, or change your profile. See [PRIVACY.md](PRIVACY.md).
-- **Yours** — one container, one volume, one SQLite file. No sign-up. Two
-  things can leave the machine and both are listed in [PRIVACY.md](PRIVACY.md): enrichment,
+- **Yours** — one container, one volume, one SQLite file. No sign-up. Outbound
+  traffic is listed in [PRIVACY.md](PRIVACY.md): enrichment,
   off until you turn it on, and anonymous usage events — that a feature was
-  used, never what it was used on — which you can turn off.
+  used, never what it was used on — which you can turn off. The optional
+  [updater](docs/upgrades.md) checks releases and downloads images only when you ask.
 - **One person, not two accounts** — the [address book](docs/people.md) links
   the same human across both apps, so a chat and a transcript say *Ada* whether
   she wrote from Telegram or from WhatsApp.
@@ -72,8 +73,16 @@ the log; the first visit sets the instance up.
 account gets you a new one. Every other path — no phone, start over — is in
 [Lost access](docs/self-hosting.md#lost-access).
 
+**Enable upgrades from Settings.** Once Steno is running, run
+`sh scripts/enable-upgrades.sh` in this checkout, then refresh Settings. You only
+need Docker and a shell. Future upgrades back up your archive before installing,
+and ordinary `docker compose` commands keep the selected release.
+[Setup and recovery details](docs/upgrades.md).
+
 Stop with `docker compose down`; your data stays in the `data` volume. Throw
-everything away with `docker compose down -v`.
+the live archive away with `docker compose down -v`. If upgrades are enabled,
+retained backups and control files in `.steno-updater/` remain; remove those
+separately when you intend to discard the entire installation.
 
 More ways to run it — bare Node, reverse proxy, upgrades, every environment
 variable: [docs/self-hosting.md](docs/self-hosting.md).
