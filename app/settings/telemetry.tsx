@@ -26,7 +26,7 @@ export async function TelemetrySection() {
         </p>
       )}
 
-      <form action={updateTelemetryAction} className="stack" style={{ gap: 10 }}>
+      <form action={updateTelemetryAction} className="usage-settings-form">
         <label className="check">
           <input type="checkbox" name="telemetryEnabled" defaultChecked={s.telemetryEnabled} />
           Send anonymous usage events
