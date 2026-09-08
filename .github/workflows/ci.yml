@@ -36,3 +36,4 @@ jobs:
       - uses: actions/setup-node@v7
         with: { node-version-file: .nvmrc }
       - run: bash scripts/smoke-upgrades.sh
+      - run: node scripts/smoke-upgrade-setup.mjs

@@ -13,59 +13,88 @@ image. Until a newer stable image is available, no upgrade can be completed.
 
 ## Enable on Docker
 
-Requirements: a local Docker Engine with a Unix socket, Docker Compose v2,
-Node 24 on the host, the repository checkout, one running `app` service, and a
-named volume mounted at `/data`. Both web and worker must be enabled. Remote
-Docker contexts, nested mounts under `/data`, and split web/worker installations
-are not supported. Docker
-Desktop needs file sharing enabled for the repository directory.
-
-First deploy a version containing this feature using the existing Docker
-instructions, preserving your existing volume and `SECRET_KEY`. Back up first.
-Wait for `/api/ready` to return HTTP 200, then run from the checkout:
+Run this once from your Steno checkout on the Docker host:
 
 ```bash
-node scripts/upgrades.mjs enable
+sh scripts/enable-upgrades.sh
 ```
 
-The command builds and pins the companion image, captures your resolved Compose
-configuration and environment in `.steno-updater/`, and recreates the app with
-a private socket mount. It keeps the existing Compose project and data volume.
-If enablement is interrupted after that directory is created, inspect it and
-use the managed Compose command below to finish starting the services.
+Then refresh **Settings → Software updates** and choose **Check for updates**.
+From then on, choose the offered version in Settings and confirm when you are
+ready for a maintenance window. No host command is needed for each upgrade.
 
-**After enabling, use the managed Compose command for lifecycle operations.**
-The original compose file still points at your source build; using it directly
-could reinstall older code against an upgraded database.
-Builds containing this feature refuse to boot if the database journal contains
-unknown or changed migrations. This guards schema downgrades, but it does not
-make arbitrary application downgrades safe; retain the matching backup.
+You need Docker with Compose v2 and a shell on Linux, macOS, or WSL. **Node.js is
+not required on the host.** The script builds and runs its setup tools inside
+Docker. Docker Desktop needs file sharing enabled for the checkout directory.
+Use a local Unix-socket Docker context. Remote daemons and exported Docker or
+Compose connection/file overrides are not supported by this setup command.
+
+The running app must already be a release with **Software updates** in Settings,
+using one named volume at `/data`, with both web and worker enabled. If your
+installation predates this feature, follow [the existing upgrade instructions](self-hosting.md#upgrading)
+once, preserving the volume and encryption key, before enabling it. Refresh the
+checkout to that release too, so the setup script is available. Split services
+and nested mounts below `/data` need a manual deployment.
+
+Setup pins the running application image and the companion image, captures the
+actual application environment, and briefly recreates the app to connect the
+private updater socket. It does not change the application version, apply a new
+schema, or replace your data volume. It waits for the app and companion to
+respond before reporting success.
+
+### Ordinary Docker commands keep working
+
+After setup, keep using the commands you already know:
 
 ```bash
-node scripts/upgrades.mjs compose ps
-node scripts/upgrades.mjs compose logs --tail 100 updater
-node scripts/upgrades.mjs compose stop
-node scripts/upgrades.mjs compose up -d --no-build --pull never
+docker compose ps
+docker compose logs --tail 100 updater
+docker compose stop
+docker compose up -d
 ```
 
-The selected image digest lives in `.steno-updater/release.json`. Configuration
-is a snapshot: later edits to the original compose file or `.env` do not apply
-to the managed deployment. Host operators edit `.steno-updater/compose.json`
-and run the managed command. Keep `DATA_DIR`, volume mounts, project name,
-the updater mounts and the encryption key unchanged. Back up the control
-directory before editing it. It contains secrets and must remain private.
-Environment values in the snapshot escape literal dollar signs as `$$`, as
-required by Compose. Preserve that escaping when editing a value.
+A marked block in `.env` sets `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME` so these
+commands use the managed configuration and selected release. Existing `.env`
+values are preserved, and the original file is copied privately to
+`.steno-updater/env.before-upgrades`. Setup refuses symlinked environment/control
+paths instead of replacing them. The control directory and any setup scratch
+files are excluded from git and Docker build contexts.
 
-Do not run another app or worker against this volume, prune retained images,
-or run Compose operations while an upgrade is active. The updater refuses to
-proceed when another running container mounts the data volume. It cannot detect
-an unrelated host process writing to Docker's volume storage.
+Do not override `COMPOSE_FILE`, use `docker compose -f docker-compose.yml`, or
+change the project name after setup: that bypasses the selected release. Builds
+containing this feature refuse unknown or changed database migrations, but this
+is not a guarantee that arbitrary application downgrades are safe.
 
-The companion itself is pinned and does not upgrade itself. Updating it is a
-host operation: build a reviewed updater version, update only the updater's
-image in the managed configuration, and recreate that service while no app
-upgrade is active.
+**Already enabled upgrades with the old Node command?** Run the shell command
+above once. It adds the normal Compose routing while retaining your selected
+release, companion, backups, and data. The old `node scripts/upgrades.mjs compose`
+commands remain supported as a compatibility path.
+
+**Setup interrupted?** Run the same command again. Complete setup files are
+published together; a retry keeps an existing release and the first environment
+backup. If an upgrade or recovery is unfinished, setup refuses to proceed until
+that operation finishes or the host operator recovers it. Do not run setup or
+other Compose operations while an upgrade is active.
+
+### Configuration and the companion
+
+The selected image digest lives in `.steno-updater/release.json`. Application
+configuration is captured in `.steno-updater/compose.json`. Later edits to the
+original compose file or application variables in `.env` do not change that
+snapshot: host operators edit the managed JSON and run `docker compose up -d`.
+Environment values there escape literal dollar signs as `$$`, as required by
+Compose. Preserve that escaping, the encryption key, volume mounts, and project
+name. Back up the control directory before editing it; it contains secrets.
+
+Do not run another app or worker against this volume or prune retained images.
+The updater refuses to proceed when another running container mounts the data
+volume. It cannot detect unrelated host processes writing directly to Docker's
+volume storage.
+
+The companion itself stays pinned. Updating it is a host operation: build a
+reviewed companion version, update only the updater's image in the managed
+configuration, and recreate that service while no upgrade is active. Repeating
+setup does not silently upgrade or downgrade the installed companion.
 
 ## What happens after clicking Upgrade
 
@@ -102,14 +131,15 @@ blocks further upgrades until the host operator restores the installation.
 Backups live in `.steno-updater/backups/<upgrade-id>/`, separate from the app
 volume. Each contains `archive.tar.gz` and `manifest.json`. Keep copies off the
 machine for disaster recovery; these local backups do not protect against disk
-loss. They are never automatically deleted. Allow space for the archive and
+loss. They are never automatically deleted. Deleting the live data volume or
+resetting Steno does not delete these backups. Allow space for the archive and
 backup, and prune old backup directories yourself only after verifying the
 current release and retaining a known good recovery point. Some backup files
 are owned by root; use host administrator access to inspect or copy them.
 
 The journal is `.steno-updater/journal.json`. If automatic recovery failed:
 
-1. Stop both services with the managed Compose command. Preserve the journal,
+1. Stop both services with `docker compose stop`. Preserve the journal,
    backup, and the current data volume for diagnosis.
 2. Choose the backup recorded by the journal. Verify its tar archive can be
    read before modifying the volume. Restore the **entire** archived directory
@@ -120,7 +150,7 @@ The journal is `.steno-updater/journal.json`. If automatic recovery failed:
    manifest's `previous.image`. Preserve the original `SECRET_KEY`. The
    previous local image must still exist; record a retrievable release digest
    before relying on off-machine recovery of a locally built image.
-4. Start only `app` using the managed command and verify `/api/ready`, login,
+4. Start only `app` with `docker compose up -d --no-deps app` and verify `/api/ready`, login,
    archive searches and connections. Once verified, archive the failed journal
    outside the control directory, remove the active `journal.json`, and start
    the companion. Never clear a journal to bypass an unfinished recovery.
@@ -164,5 +194,8 @@ There are no scheduled update checks. Clicking **Check for updates** contacts
 GitHub; clicking **Upgrade** checks again and downloads images through Docker
 from GHCR and its delivery infrastructure. Those services see the host IP and
 request timing, and the registry sees the selected image. No chats, account
-identifiers, access keys or instance identifier are sent. Disable the companion
-and remove `STENO_UPDATER_SOCKET` and its mount to remove this capability.
+identifiers, access keys or instance identifier are sent. To disable this capability, stop the companion and remove its service,
+`STENO_UPDATER_SOCKET`, and the socket mount from the managed configuration.
+Keep the `.env` routing block so future Compose commands retain the selected
+application image. Reverting to the original compose file can reinstall older
+code against a newer archive.

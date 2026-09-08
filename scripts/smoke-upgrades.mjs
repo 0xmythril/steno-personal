@@ -36,7 +36,8 @@ try {
   await mkdir(path.join(directory, 'backups'))
   const deployment = { project, volume, hostStateDir: directory }
   await writeJson(path.join(directory, 'compose.json'), {
-    services: { app: { image: images[0], environment: composeEnvironment({ DATA_DIR: '/data', SECRET_KEY: 'synthetic-$key-not-used-by-fixture' }), volumes: ['data:/data'] } },
+    // Reap/signals for the synthetic Node server, which has no supervisor.
+    services: { app: { init: true, image: images[0], environment: composeEnvironment({ DATA_DIR: '/data', SECRET_KEY: 'synthetic-$key-not-used-by-fixture' }), volumes: ['data:/data'] } },
     volumes: { data: { name: volume } },
   })
   await writeJson(path.join(directory, 'release.json'), { services: { app: { image: images[0] } } })

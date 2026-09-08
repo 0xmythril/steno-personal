@@ -366,8 +366,9 @@ accordingly.
 ## Upgrading
 
 For the optional **Upgrade** button in Settings, see [upgrades.md](upgrades.md).
-Once enabled, use its managed Compose commands instead of the source-build
-commands below. Railway continues to use its existing Docker deployment.
+Enable it once with `sh scripts/enable-upgrades.sh` (Docker and a shell only).
+After setup, ordinary `docker compose` commands use the selected release; use
+Settings for future upgrades instead of the source-build commands below. Railway continues to use its existing Docker deployment.
 
 Back up the complete data directory and preserve `SECRET_KEY` before every
 upgrade, including minor releases with migrations.

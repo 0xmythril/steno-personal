@@ -4,6 +4,9 @@ import { useEffect, useState, useTransition } from 'react'
 import { checkUpdateAction, startUpgradeAction } from './updates/actions'
 import type { AvailableRelease, UpgradeStatus } from '@/lib/services/upgrades'
 import { newerVersion } from '@/updater/releases.mjs'
+import { CopyButton } from '@/app/copy-button'
+
+const enableCommand = 'sh scripts/enable-upgrades.sh'
 
 const messages: Record<string, string> = {
   idle: 'Ready to check for updates.',
@@ -54,11 +57,17 @@ export function UpdatesSection({ currentVersion, configured }: { currentVersion:
   return <section className="card">
     <h2>Software updates</h2>
     <p className="muted">Installed version: <code>{currentVersion}</code>. Updates start only when you choose.</p>
-    {!configured ? <p>
-      Automatic upgrades are not configured. On Docker, the host operator can enable the companion updater.
-      On Railway, back up the volume and deploy the selected release through Railway.
-      {' '}<a href="https://github.com/0xmythril/steno-personal/blob/main/docs/upgrades.md" target="_blank" rel="noreferrer">Upgrade guide</a>.
-    </p> : <>
+    {!configured ? <div className="stack">
+      <h3>Enable upgrades on Docker</h3>
+      <p>Run this once in your Steno checkout on the machine running Docker. You only need Docker and a shell; Node.js is not required.</p>
+      <div className="row"><code>{enableCommand}</code><CopyButton value={enableCommand} label="Copy setup command" /></div>
+      <p>Setup briefly restarts Steno and preserves your archive, connections, and keys. It installs a companion with Docker control so future upgrades can run from this page.</p>
+      <p>After setup, ordinary <code>docker compose</code> commands keep your selected release. Refresh this page, then choose <strong>Check for updates</strong>.</p>
+      <div><button type="button" onClick={() => window.location.reload()}>Refresh after setup</button></div>
+      <h3>Running on Railway?</h3>
+      <p>Back up your volume and deploy the selected release through Railway. Automatic cloud upgrades are not configured by the Docker setup command.</p>
+      <p><a href="https://github.com/0xmythril/steno-personal/blob/main/docs/upgrades.md" target="_blank" rel="noreferrer">Setup and recovery guide</a></p>
+    </div> : <>
       <p role="status" aria-live="polite">{messages[status.phase] ?? 'Checking upgrade status…'}</p>
       <p className="muted">Checking contacts GitHub for release information. Upgrading downloads the release image; no archive contents are sent.</p>
       <button type="button" disabled={busy} onClick={() => startTransition(async () => {

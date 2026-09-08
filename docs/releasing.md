@@ -146,7 +146,7 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
 ## After tagging
 
 - Publishing a stable GitHub release starts `release-images.yml`. It validates
-  the version and main-branch ancestry, runs the full gate and both Docker
+  the version and main-branch ancestry, runs the full gate and the Docker startup, upgrade, and setup
   smoke tests, then publishes `linux/amd64` and `linux/arm64` images to GHCR as
   `ghcr.io/0xmythril/steno-personal:vX.Y.Z` and the corresponding
   `steno-personal-updater:vX.Y.Z`. Make both GHCR packages public on first
