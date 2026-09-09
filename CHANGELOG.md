@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Published application and updater images now include OCI source, documentation, license, version, and revision metadata so registries can identify and link them to the project.
+
 ## [0.3.0] — 2026-09-09
 
 ### Added

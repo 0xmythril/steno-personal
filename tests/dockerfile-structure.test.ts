@@ -18,4 +18,15 @@ describe('Dockerfile', () => {
     expect(instructions).toContain('EXPOSE 3000')
     expect(instructions.some(l => /^CMD\b.*scripts\/start\.mjs/.test(l))).toBe(true)
   })
+
+  it('publishes OCI metadata that links both images to this repository', () => {
+    const app = readFileSync('Dockerfile', 'utf8')
+    const updater = readFileSync('updater/Dockerfile', 'utf8')
+    for (const dockerfile of [app, updater]) {
+      expect(dockerfile).toContain('org.opencontainers.image.source="https://github.com/0xmythril/steno-personal"')
+      expect(dockerfile).toContain('org.opencontainers.image.licenses="AGPL-3.0-only"')
+      expect(dockerfile).toContain('org.opencontainers.image.version="$VERSION"')
+      expect(dockerfile).toContain('org.opencontainers.image.revision="$REVISION"')
+    }
+  })
 })
