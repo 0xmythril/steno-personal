@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-09
+
+### Changed
+
+- Published application and updater images now include OCI source, documentation, license, version, and revision metadata so registries can identify and link them to the project.
+
 ## [0.3.0] — 2026-09-09
 
 ### Added
@@ -310,7 +316,8 @@ First release. Everything below is new.
 - At 0.1.0 the project shipped no Telegram application pair, so Telegram
   needed one from my.telegram.org. Lifted in the next release, above.
 
-[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/0xmythril/steno-personal/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/0xmythril/steno-personal/releases/tag/v0.3.1
 [0.3.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.3.0
 [0.2.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.2.0
 [0.1.0]: https://github.com/0xmythril/steno-personal/releases/tag/v0.1.0
