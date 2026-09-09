@@ -57,6 +57,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.images.outputs.base }}:${{ github.event.release.tag_name }}
+          build-args: |
+            VERSION=${{ github.event.release.tag_name }}
+            REVISION=${{ github.sha }}
           provenance: true
           sbom: true
       - uses: docker/build-push-action@v6
@@ -66,5 +69,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.images.outputs.base }}-updater:${{ github.event.release.tag_name }}
+          build-args: |
+            VERSION=${{ github.event.release.tag_name }}
+            REVISION=${{ github.sha }}
           provenance: true
           sbom: true
