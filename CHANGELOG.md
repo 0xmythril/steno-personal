@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Mirror signed AMD64 and ARM64 release images to Docker Hub with immutable
+  version tags and stable `X.Y` and `latest` aliases.
+
 ## [0.3.1] — 2026-09-09
 
 ### Changed

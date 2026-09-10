@@ -22,6 +22,12 @@ docker compose up -d
 docker compose logs -f app
 ```
 
+The same stable release images are mirrored to Docker Hub for environments
+that consume prebuilt images. See [Docker Hub images](docker-hub.md) for tags,
+architectures, and signature verification. Keep the Compose checkout when you
+want the in-app upgrade setup; it supplies the deployment metadata and
+persistent volume configuration the companion needs.
+
 The shipped `docker-compose.yml` binds to `127.0.0.1:3000` on purpose: on a home
 machine the portal should not be reachable from the network until you decide it
 should be. Change the port mapping to `3000:3000` only together with a reverse

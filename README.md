@@ -54,6 +54,12 @@ cd steno-personal
 docker compose up
 ```
 
+Prefer a prebuilt image? Stable `linux/amd64` and `linux/arm64` releases are
+also mirrored to [Docker Hub](docs/docker-hub.md), with versioned tags,
+provenance, SBOMs, and signature verification instructions. The Compose path
+above remains the recommended setup because it also supports enabling upgrades
+from Settings.
+
 The first boot creates the volume and applies migrations. No key is printed to
 the log; the first visit sets the instance up.
 
