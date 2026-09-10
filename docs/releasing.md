@@ -146,15 +146,15 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
 ## After tagging
 
 - Publishing a stable GitHub release starts `release-images.yml`. It validates
-  the version and main-branch ancestry, runs the full gate and the Docker startup, upgrade, and setup
-  smoke tests, then publishes `linux/amd64` and `linux/arm64` images to GHCR as
-  `ghcr.io/0xmythril/steno-personal:vX.Y.Z` and the corresponding
-  `steno-personal-updater:vX.Y.Z`. Make both GHCR packages public on first
-  publication so self-hosters can pull without registry credentials. Wait for
-  image publication before announcing availability. Do not overwrite release
-  tags; installed upgrades record immutable image digests. Pre-releases are
-  not offered by the updater. Forks must review the fixed repository constants
-  in `updater/releases.mjs` before offering upgrades from their own images.
+  the version and main-branch ancestry, runs the full gate and Docker smoke
+  tests, then publishes signed `linux/amd64` and `linux/arm64` application and
+  updater images to GHCR and Docker Hub. GHCR keeps the `vX.Y.Z` tags consumed
+  by the updater. Docker Hub receives `vX.Y.Z`, `X.Y.Z`, `X.Y`, and `latest`.
+  Wait for both registries before announcing availability. Do not overwrite
+  release tags; installed upgrades record immutable image digests. Pre-releases
+  are not published. Forks must review the fixed repository constants in
+  `updater/releases.mjs` and replace the Docker Hub image names before offering
+  releases from their own registries.
 - Bring `staging` back in line with `main` so the next branch starts from the
   released commit. After a clean promotion they are already equal; a merge
   commit made on `main` is the usual reason they are not:
@@ -170,6 +170,42 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
   see [The Railway template](#the-railway-template) below.
 - If the release fixes a reported vulnerability, publish the advisory from
   the repository's Security tab and credit the reporter if they asked to be.
+
+## Docker Hub setup and backfill
+
+This is a one-time maintainer setup for the `0xmythril` namespace:
+
+1. Create public Docker Hub repositories named `steno-personal` and
+   `steno-personal-updater`.
+2. In Docker Hub, create a personal access token with **Read & Write** access.
+   Do not put the token in the repository, an issue, or a pull request.
+3. In GitHub, open **Settings → Secrets and variables → Actions** and add:
+   `DOCKERHUB_USERNAME` with the Docker Hub username and `DOCKERHUB_TOKEN` with
+   the access token. The same can be done from an authenticated terminal; each
+   command prompts without placing the value in shell history:
+
+   ```bash
+   gh secret set DOCKERHUB_USERNAME --repo 0xmythril/steno-personal
+   gh secret set DOCKERHUB_TOKEN --repo 0xmythril/steno-personal
+   ```
+
+4. After this workflow is on `main`, copy the current release to Docker Hub
+   without rebuilding or changing its GHCR digest:
+
+   ```bash
+   gh workflow run release-images.yml --repo 0xmythril/steno-personal \
+     -f tag=v0.3.1 -f promote_aliases=true
+   ```
+
+5. Wait for the workflow to pass, make both Docker Hub repositories public,
+   and use [docker-hub.md](docker-hub.md) as their overview. Verify that the
+   application and updater each show AMD64 and ARM64 for `0.3.1`.
+
+Manual backfills accept only a published, stable GitHub release whose tag and
+package version agree and whose commit belongs to `main`. They always create
+the two immutable version tags. `promote_aliases` must be explicitly enabled
+before a backfill moves `X.Y` and `latest`, which prevents an older backfill
+from silently becoming the recommended release.
 
 ## Versioning
 
