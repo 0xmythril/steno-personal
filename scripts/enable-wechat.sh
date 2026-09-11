@@ -25,7 +25,7 @@ docker compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is required.'
 [ "$(docker info --format '{{.OSType}}')" = linux ] || fail 'The WeChat sidecar runs Linux containers only.'
 case "$(docker info --format '{{.Architecture}}')" in x86_64|amd64) ;; *) fail 'The WeChat sidecar needs a Linux amd64 Docker host; Stele builds Tencent'\''s official client for that platform only.' ;; esac
 [ -d .steno-updater ] && fail 'Upgrades from Settings are enabled, and they snapshot the Compose configuration. Enable WeChat before enabling upgrades, or add the services in compose.wechat.yaml to .steno-updater/compose.json by hand; see docs/self-hosting.md.'
-if [ -f .env ] && grep -v -x -F -e "$BEGIN" -e "$END" .env | grep -q '^COMPOSE_FILE='; then
+if [ -f .env ] && awk -v b="$BEGIN" -v e="$END" '$0==b{skip=1} !skip{print} $0==e{skip=0}' .env | grep -q '^COMPOSE_FILE='; then
   fail '.env already sets COMPOSE_FILE. Remove that line or add compose.wechat.yaml to it yourself, then rerun.'
 fi
 # -f is resolved inside a git context but against the working directory for a
