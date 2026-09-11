@@ -1,6 +1,9 @@
-import { GITHUB_URL, HOSTED_URL, X_URL } from './links'
+import { GITHUB_URL, HOSTED_URL, LICENSE_URL, NOTICE_URL, X_URL } from './links'
 import { BrandLogo, Wordmark } from './brand-logo'
 
+// Copyright (C) 2026 0xmythril. AGPL-3.0-only; the section 7(b)
+// attribution term in ../NOTICE applies to this file.
+//
 // One line at the foot of every page, signed in or not: the mark, the licence,
 // the source and where updates are announced, and the hosted edition. This and
 // the HostedCta card are the only two cross-promotion placements. Icons are
@@ -10,8 +13,9 @@ export function SiteFooter() {
     <footer className="site-footer">
       <span className="brand"><BrandLogo size={16} /><Wordmark tag={false} /></span>
       <span className="links">
-        <span>Open source &middot; AGPL-3.0 &middot; Running on this machine</span>
-        <a href={GITHUB_URL}><GitHubMark /> GitHub</a>
+        <span>Based on <a href={NOTICE_URL}>steno-personal by 0xmythril</a></span>
+        <span><a href={LICENSE_URL}>AGPL-3.0-only</a> &middot; Share and modify &middot; No warranty</span>
+        <a href={GITHUB_URL}><GitHubMark /> Original source</a>
         <a href={X_URL}><XMark /> Follow on X</a>
       </span>
       <a href={HOSTED_URL}>Steno Team &rarr;</a>

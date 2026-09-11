@@ -17,6 +17,21 @@ describe('node_modules', () => {
   })
 })
 
+describe('downstream attribution', () => {
+  it('keeps the section 7(b) notice and shows its credit in the application', () => {
+    const notice = readFileSync('NOTICE', 'utf8')
+    const footer = readFileSync('app/site-footer.tsx', 'utf8')
+    const layout = readFileSync('app/layout.tsx', 'utf8')
+
+    expect(notice).toContain('Copyright (C) 2026 0xmythril')
+    expect(notice).toContain('Under section 7(b) of the AGPL-3.0')
+    expect(notice).toContain('Based on steno-personal by 0xmythril')
+    expect(footer).toContain('Based on <a href={NOTICE_URL}>steno-personal by 0xmythril</a>')
+    expect(footer).toContain('Share and modify &middot; No warranty')
+    expect(layout).toContain('the section 7(b)')
+  })
+})
+
 // lib/version.ts is what the usage ping reports, so a release that bumped
 // package.json alone would silently attribute every ping to the old version.
 describe('the shipped version', () => {
