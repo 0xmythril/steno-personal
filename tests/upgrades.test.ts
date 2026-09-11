@@ -8,7 +8,6 @@ import { composeEnvironment } from '../updater/config.mjs'
 
 // Each stage fsyncs a real journal. Slow/contended disks must not turn a
 // durability test into a timing assertion about the development machine.
-vi.setConfig({ testTimeout: 30_000 })
 
 async function fixture(fail?: string) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'steno-upgrade-'))
