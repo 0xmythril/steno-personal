@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - Optional private Stele WeChat integration: owner-only ephemeral QR pairing and
   resumable text imports with atomic checkpoints and terminal deletion handling.
   Configure independent server-side read/login credentials; see self-hosting.
+- **WeChat in one command on Docker.** `sh scripts/enable-wechat.sh` builds the
+  Stele sidecar from a pinned revision, runs it inside the app's network
+  namespace, mints and installs Steno's two Stele credentials, and routes
+  Compose through `compose.wechat.yaml`. Linux amd64 hosts only. Upgrades from
+  Settings recreate the sidecar after installing a release.
 
 ### Changed
 

@@ -109,7 +109,11 @@ setup does not silently upgrade or downgrade the installed companion.
    previous image, deployment configuration and environment, including an
    externally supplied encryption key. A failed backup never installs the
    candidate release.
-4. It starts the new image against the same volume. The existing boot script
+4. It starts the new image against the same volume, then recreates any
+   service that shares the app container's network namespace (the WeChat
+   sidecar from `compose.wechat.yaml`), since that service lost its network
+   with the old container. A sidecar that fails to start does not roll the
+   upgrade back. The existing boot script
    runs migrations first. Readiness requires database access and a recent
    heartbeat from the installed worker; channel pairing is not a requirement.
 5. After repeated readiness checks succeed, it records success. If checks do

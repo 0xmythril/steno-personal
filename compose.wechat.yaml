@@ -1,0 +1,40 @@
+# WeChat through a Stele sidecar. Activated by scripts/enable-wechat.sh, which
+# adds this file to COMPOSE_FILE in .env; a plain `docker compose up` never
+# reads it. Linux amd64 hosts only: the sidecar runs Tencent's official client
+# and needs SYS_PTRACE to read its memory.
+#
+# Stele binds its API to 127.0.0.1:6175 and refuses to listen anywhere else,
+# so the sidecar joins the app container's network namespace instead of the
+# host's. Steno then reaches it at loopback with the plain-HTTP-on-loopback
+# rule intact, and nothing is exposed on the host or the LAN. The cost: when
+# `app` is recreated (an upgrade, a config change) the sidecar must be
+# recreated too; `docker compose up -d` does that, and the updater does it
+# itself after installing a release.
+services:
+  app:
+    environment:
+      STELE_WECHAT_URL: http://127.0.0.1:6175
+      STELE_WECHAT_READ_TOKEN_FILE: /run/steno-wechat/reader.token
+      STELE_WECHAT_LOGIN_TOKEN_FILE: /run/steno-wechat/login.token
+    volumes:
+      - ./.steno-wechat:/run/steno-wechat:ro
+  stele:
+    image: stele-wechat:local
+    pull_policy: never
+    init: true
+    network_mode: "service:app"
+    cap_add: [SYS_PTRACE]
+    shm_size: 512m
+    # Stele disables automatic restart on purpose: an operator should look at
+    # why the official client died before it runs again.
+    restart: "no"
+    stop_grace_period: 60s
+    volumes:
+      - stele-collector:/data
+      - stele-client:/home/client
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "2" }
+volumes:
+  stele-collector:
+  stele-client:
