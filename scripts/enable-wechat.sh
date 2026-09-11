@@ -28,17 +28,19 @@ case "$(docker info --format '{{.Architecture}}')" in x86_64|amd64) ;; *) fail '
 if [ -f .env ] && grep -v -x -F -e "$BEGIN" -e "$END" .env | grep -q '^COMPOSE_FILE='; then
   fail '.env already sets COMPOSE_FILE. Remove that line or add compose.wechat.yaml to it yourself, then rerun.'
 fi
+# -f is resolved inside a git context but against the working directory for a
+# local one, so name the Dockerfile through the checkout in that case.
 if [ -n "$STELE_SOURCE" ]; then
   [ -f "$STELE_SOURCE/channels/wechat/container/runtime.Dockerfile" ] || fail "STELE_SOURCE=$STELE_SOURCE is not a Stele checkout."
-  context=$STELE_SOURCE
+  context=$STELE_SOURCE; dockerfiles=$STELE_SOURCE/channels/wechat/container; release=local
 else
-  context="$STELE_REPO#$STELE_REF"
+  context="$STELE_REPO#$STELE_REF"; dockerfiles=channels/wechat/container; release=$STELE_REF
 fi
 
 echo 'Building the Stele sidecar. The first build downloads and verifies the official WeChat client; allow several minutes.'
-docker build -f channels/wechat/container/client.Dockerfile -t stele-client:local "$context"
-docker build -f channels/wechat/container/runtime.Dockerfile \
-  --build-arg STELE_CLIENT_IMAGE=stele-client:local --build-arg "STELE_RELEASE=$STELE_REF" \
+docker build -f "$dockerfiles/client.Dockerfile" -t stele-client:local "$context"
+docker build -f "$dockerfiles/runtime.Dockerfile" \
+  --build-arg STELE_CLIENT_IMAGE=stele-client:local --build-arg "STELE_RELEASE=$release" \
   -t stele-wechat:local "$context"
 
 umask 077
