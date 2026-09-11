@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Old upgrade backups can be pruned.** `sh scripts/prune-backups.sh <keep>`
+  removes all but the newest backups under `.steno-updater/backups/`, always
+  keeping the one the journal names as the current rollback point, and refuses
+  to run during an upgrade. `--dry-run` lists what would go. Nothing is still
+  deleted automatically.
+
 ### Changed
 
 - Mirror signed AMD64 and ARM64 release images to Docker Hub with immutable
