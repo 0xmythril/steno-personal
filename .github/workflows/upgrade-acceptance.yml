@@ -1,0 +1,250 @@
+name: Upgrade acceptance
+
+# Drives a real published upgrade: start the `from` release image from GHCR,
+# enable the companion with that release's own scripts/enable-upgrades.sh,
+# click Check for updates and Upgrade in a headless browser, and verify the
+# `to` release comes up on the same volume with the original key, a backup
+# and a digest-pinned image. The smoke tests use local fixture images; this
+# is the only check that exercises the images self-hosters actually pull.
+# Run it by hand after release-images.yml has published `to`. The companion
+# only ever offers the latest stable release, so `to` must be that release.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: Published stable tag to start from, for example v0.3.0
+        required: true
+        type: string
+      to:
+        description: Latest published stable tag to upgrade to, for example v0.3.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FROM_TAG: ${{ inputs.from }}
+  TO_TAG: ${{ inputs.to }}
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.from }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Resolve versions
+        run: |
+          for tag in "$FROM_TAG" "$TO_TAG"; do
+            echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "$tag is not a stable tag" >&2; exit 1; }
+          done
+          echo "FROM_VERSION=${FROM_TAG#v}" >> "$GITHUB_ENV"
+          echo "TO_VERSION=${TO_TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Start the published baseline
+        run: |
+          cat > docker-compose.yml <<YAML
+          services:
+            app:
+              image: ghcr.io/0xmythril/steno-personal:${FROM_TAG}
+              init: true
+              ports: ["127.0.0.1:3000:3000"]
+              environment:
+                DATA_DIR: /data
+                SECRET_KEY: upgrade-acceptance-fixture-secret-key-0123456789
+                STENO_MINT_KEY: acceptance
+                DO_NOT_TRACK: "1"
+              volumes: [data:/data]
+          volumes:
+            data:
+          YAML
+          docker compose pull
+          docker compose up -d
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3000/api/ready | jq -e --arg v "$FROM_VERSION" '.ok and .version == $v' >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 90 ]; then
+              docker compose logs --tail 100 app | sed -E 's/sp_[A-Za-z0-9_-]+/sp_<redacted>/g'
+              exit 1
+            fi
+            sleep 2
+          done
+          # The boot log prints the minted key once; it is a throwaway on a
+          # throwaway volume, masked so it never appears in the job output.
+          access_key=$(docker compose logs app 2>&1 | grep -o 'sp_[A-Za-z0-9_-]\{20,\}' | head -n 1)
+          test -n "$access_key"
+          echo "::add-mask::$access_key"
+          echo "ACCESS_KEY=$access_key" >> "$GITHUB_ENV"
+
+      - name: Enable the updater companion
+        run: |
+          sh scripts/enable-upgrades.sh
+          docker compose ps
+          curl -fsS -c /tmp/steno-cookies.txt -X POST http://127.0.0.1:3000/api/login \
+            -H 'content-type: application/json' --data "{\"key\":\"$ACCESS_KEY\"}"
+          curl -fsS -b /tmp/steno-cookies.txt http://127.0.0.1:3000/api/upgrades \
+            | jq -e '.phase == "idle"' >/dev/null
+          sudo curl --fail-with-body --unix-socket "$PWD/.steno-updater/run/updater.sock" \
+            -X POST http://localhost/check | jq -e --arg v "$TO_VERSION" '.version == $v' >/dev/null
+
+      - name: Click Check for updates and Upgrade in a real browser
+        run: |
+          chrome_path=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          test -n "$chrome_path"
+          npm install --prefix /tmp/steno-browser --no-save --ignore-scripts puppeteer-core@24
+          cat > /tmp/steno-browser/acceptance.cjs <<'JS'
+          const puppeteer = require('/tmp/steno-browser/node_modules/puppeteer-core')
+          const { FROM_VERSION, TO_VERSION } = process.env
+
+          const section = () => [...document.querySelectorAll('section')]
+            .find((candidate) => candidate.innerText.includes('Software updates'))?.innerText ?? ''
+
+          const button = async (page, text) => {
+            for (const candidate of await page.$$('button')) {
+              const state = await candidate.evaluate((element) => ({
+                text: element.textContent.trim(),
+                disabled: element.disabled,
+              }))
+              if (state.text !== text) continue
+              if (state.disabled) throw new Error(`${text} is disabled`)
+              await candidate.click()
+              return
+            }
+            throw new Error(`Could not find ${text}`)
+          }
+
+          ;(async () => {
+            const browser = await puppeteer.launch({
+              executablePath: process.env.CHROME_PATH,
+              headless: true,
+              args: ['--no-sandbox', '--disable-dev-shm-usage'],
+            })
+            try {
+              const page = await browser.newPage()
+              let resolveUpgradePoll
+              const upgradePoll = new Promise((resolve) => { resolveUpgradePoll = resolve })
+              page.on('console', (message) => console.log(`browser console ${message.type()}: ${message.text()}`))
+              page.on('pageerror', (error) => console.log(`browser page error: ${error.message}`))
+              page.on('requestfailed', (request) => console.log(`browser request failed: ${request.url()} ${request.failure()?.errorText}`))
+              page.on('response', (response) => {
+                if (response.url().endsWith('/api/upgrades')) resolveUpgradePoll()
+                if (response.request().method() === 'POST') {
+                  console.log(`browser POST response: ${response.status()} ${response.url()}`)
+                }
+              })
+              await page.goto('http://127.0.0.1:3000/login', { waitUntil: 'domcontentloaded' })
+              const login = await page.evaluate(async (key) => {
+                const response = await fetch('/api/login', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ key }),
+                })
+                return response.status
+              }, process.env.ACCESS_KEY)
+              if (login !== 204) throw new Error(`Login returned ${login}`)
+
+              await page.goto('http://127.0.0.1:3000/settings', { waitUntil: 'networkidle0' })
+              await page.waitForFunction((v) => document.body.innerText.includes(`Installed version: ${v}`), {}, FROM_VERSION)
+              await Promise.race([
+                upgradePoll,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Upgrade component did not hydrate')), 15_000)),
+              ])
+              await button(page, 'Check for updates')
+              try {
+                await page.waitForFunction(
+                  (v) => document.body.innerText.includes(`Version ${v} is available.`) ||
+                    document.querySelector('[role="alert"]'),
+                  { timeout: 30_000 }, TO_VERSION,
+                )
+              } catch {
+                throw new Error(`Update check produced no result: ${await page.evaluate(section)}`)
+              }
+              const completedText = await page.evaluate(section)
+              if (!completedText.includes(`Version ${TO_VERSION} is available.`)) {
+                throw new Error(`Update check did not offer ${TO_VERSION}: ${completedText}`)
+              }
+              const checked = await page.evaluate(() => {
+                const updates = [...document.querySelectorAll('section')]
+                  .find((candidate) => candidate.innerText.includes('Software updates'))
+                const input = updates?.querySelector('input[type="checkbox"]')
+                if (!input) return false
+                input.click()
+                return input.checked
+              })
+              if (!checked) throw new Error('Could not confirm the upgrade')
+              await button(page, `Upgrade to ${TO_VERSION}`)
+              await page.waitForFunction(
+                () => document.body.innerText.includes('Downloading and checking the release.'),
+                { timeout: 30_000 },
+              )
+            } finally {
+              await browser.close()
+            }
+          })().catch((error) => {
+            console.error(error)
+            process.exit(1)
+          })
+          JS
+          CHROME_PATH="$chrome_path" node /tmp/steno-browser/acceptance.cjs
+
+      - name: Verify the upgrade landed
+        run: |
+          phase=unknown
+          for attempt in $(seq 1 150); do
+            phase=$(sudo curl -fsS --unix-socket "$PWD/.steno-updater/run/updater.sock" \
+              http://localhost/status | jq -r .phase)
+            case "$phase" in
+              succeeded) break ;;
+              rolled-back|failed|recovery-required) echo "updater phase: $phase" >&2; exit 1 ;;
+            esac
+            sleep 4
+          done
+          test "$phase" = succeeded
+          echo "Updater reported success"
+
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3000/api/ready | jq -e --arg v "$TO_VERSION" '.ok and .version == $v' >/dev/null; then
+              break
+            fi
+            if [ "$attempt" = 90 ]; then exit 1; fi
+            sleep 2
+          done
+
+          test "$(docker compose exec -T app node -p "require('./package.json').version")" = "$TO_VERSION"
+          echo "Published $TO_TAG container is ready"
+          curl -fsS -H "Authorization: Bearer $ACCESS_KEY" http://127.0.0.1:3000/api/chats >/dev/null
+          curl -fsS -c /tmp/steno-after-cookies.txt -X POST http://127.0.0.1:3000/api/login \
+            -H 'content-type: application/json' --data "{\"key\":\"$ACCESS_KEY\"}"
+          curl -fsS -b /tmp/steno-after-cookies.txt http://127.0.0.1:3000/api/upgrades \
+            | jq -e --arg v "$TO_VERSION" '.phase == "succeeded" and .version == $v' >/dev/null
+          echo "Original access key and authenticated upgrade status survived"
+
+          manifest=$(sudo find .steno-updater/backups -name manifest.json -print -quit)
+          test -n "$manifest"
+          sudo jq -e --arg f "$FROM_VERSION" --arg t "$TO_VERSION" '.previous.version == $f and .target == $t' "$manifest" >/dev/null
+          sudo test -s "$(dirname "$manifest")/archive.tar.gz"
+          echo "Backup of $FROM_TAG is present"
+          jq -e '.services.app.image | startswith("ghcr.io/0xmythril/steno-personal@sha256:")' \
+            .steno-updater/release.json >/dev/null
+          echo "$TO_TAG is pinned by immutable GHCR digest"
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --tail 120 2>&1 \
+            | sed -E 's/sp_[A-Za-z0-9_-]+/sp_<redacted>/g' || true
+          sudo test ! -S .steno-updater/run/updater.sock || \
+            sudo curl -fsS --unix-socket "$PWD/.steno-updater/run/updater.sock" http://localhost/status || true
+
+      - name: Clean up
+        if: always()
+        run: docker compose down -v || true
