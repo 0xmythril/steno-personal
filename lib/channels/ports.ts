@@ -1,4 +1,6 @@
 import path from 'node:path'
+import { SteleWechatPort } from './stele'
+import { steleConfigured } from './stele-config'
 import { env } from '@/lib/env'
 import { hasTelegramCredentials } from './telegram-credentials'
 import { log } from '@/lib/log'
@@ -27,5 +29,6 @@ export function buildPorts(
   // DATA_DIR/whatsapp/wa-<connectionId> (spec decision 9). The port is always
   // registered, so it sits outside the credential guard above.
   ports.set('whatsapp', new BaileysWhatsAppPort({ authRoot: path.join(env.DATA_DIR, 'whatsapp') }))
+  if (steleConfigured()) ports.set('wechat', new SteleWechatPort())
   return ports
 }

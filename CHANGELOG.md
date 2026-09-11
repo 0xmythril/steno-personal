@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Optional private Stele WeChat integration: owner-only ephemeral QR pairing and
+  resumable text imports with atomic checkpoints and terminal deletion handling.
+  Configure independent server-side read/login credentials; see self-hosting.
+
 ### Changed
 
 - Mirror signed AMD64 and ARM64 release images to Docker Hub with immutable

@@ -35,7 +35,7 @@ export function formatRelativeTime(d: Date | null, now: Date = new Date()): stri
   return formatDateHeading(d)
 }
 
-export const CHANNEL_LABELS = { telegram: 'Telegram', whatsapp: 'WhatsApp' } as const
+export const CHANNEL_LABELS = { telegram: 'Telegram', whatsapp: 'WhatsApp', wechat: 'WeChat' } as const
 
 // What a chat IS, shared by the chats table and a transcript's own header —
 // one label set so the two pages can never drift into saying it differently.

@@ -1,3 +1,4 @@
+import { WechatConnection } from './wechat'
 import { getSettings } from '@/lib/services/settings'
 import Link from 'next/link'
 import { requireSession } from '@/lib/auth'
@@ -25,7 +26,7 @@ function errorText(c: ConnectionStatus): string | null {
   return c.lastError
 }
 
-function ChannelCard({ channel, live }: { channel: Channel; live: ConnectionStatus | undefined }) {
+function ChannelCard({ channel, live }: { channel: 'telegram' | 'whatsapp'; live: ConnectionStatus | undefined }) {
   if (live?.status === 'active') {
     return (
       <section className="card">
@@ -121,7 +122,7 @@ export default async function ConnectionsPage() {
   // the owner can see one happened.
   const liveOf = (channel: Channel) => all.find(c => c.channel === channel && c.purpose === 'archive' && c.revokedAt === null)
   const history = all.filter(c => c.revokedAt !== null)
-  const anyLive = (['telegram', 'whatsapp'] as const).some(ch => liveOf(ch)?.status === 'active')
+  const anyLive = (['telegram', 'whatsapp', 'wechat'] as const).some(ch => liveOf(ch)?.status === 'active')
 
   return (
     <>
@@ -133,6 +134,8 @@ export default async function ConnectionsPage() {
           <ChannelCard channel="telegram" live={liveOf('telegram')} />
           <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
         </div>
+
+        <WechatConnection />
 
         {sources.length > 0 && (
           <section className="card">

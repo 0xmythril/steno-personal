@@ -219,7 +219,7 @@ export class SessionManager {
       // No port for this channel (Telegram credentials unset, or WhatsApp
       // before M2): leave the row alone. Its own login timeout ends it, and
       // the portal already says a code needs a running worker.
-      if (!port) continue
+      if (!port || port.loginManagedExternally) continue
       const age = Date.now() - conn.createdAt.getTime()
       if (age > LOGIN_TIMEOUT_MS) {
         await failLogin(conn.id, 'Login timed out — please try again.')
@@ -320,6 +320,7 @@ export class SessionManager {
     for (const conn of active) {
       try {
         const existing = this.running.get(conn.id)
+        if (existing?.session.sync) { this.startCheckpointedSync(conn.id, existing); continue }
         if (existing) {
           if (!existing.backfilled) {
             // Same liveness reasoning as the backfilled branch below, but no
@@ -398,7 +399,8 @@ export class SessionManager {
           }
           this.running.set(conn.id, running)
           this.wireHandlers(conn.id, conn.channel, session)
-          this.maybeStartBackfill(conn.id, running)
+          if (session.sync) this.startCheckpointedSync(conn.id, running)
+          else this.maybeStartBackfill(conn.id, running)
         } catch (e) {
           await this.handleSessionError(conn.id, e)
         }
@@ -476,6 +478,19 @@ export class SessionManager {
 
   // Retried until it completes. Re-running it is harmless — ingest is
   // first-writer-wins — and the alternative is a permanent, invisible hole.
+  private startCheckpointedSync(connId: string, running: Running): void {
+    if (running.stopped || this.backfillsInFlight.has(connId) || Date.now() - running.lastBackfillAttempt < 3000) return
+    running.lastBackfillAttempt = Date.now()
+    const task = running.session.sync!(() => !running.stopped)
+      .catch(async error => {
+        running.lastBackfillAttempt = Date.now() + BACKFILL_RETRY_BACKOFF_MS
+        await this.handleSessionError(connId, error)
+      })
+      .finally(() => this.backfillsInFlight.delete(connId))
+      .catch(error => log.error({ err: errorShape(error) }, 'checkpointed sync failed'))
+    this.backfillsInFlight.set(connId, task)
+  }
+
   private async runBackfill(connId: string, running: Running): Promise<void> {
     const event = recordEvent({ kind: 'sync', operation: 'backfill', surface: 'worker', sourceIds: [connId], outcome: 'running', runId: randomUUID() })
     let inserted = 0, duplicates = 0

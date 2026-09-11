@@ -19,7 +19,10 @@ fails CI rather than a reviewer's memory.
    `@mtcute/*`; only `lib/channels/whatsapp.ts` imports Baileys. Everything
    else talks to the `ChannelPort` / `ChannelSession` interfaces in
    `lib/channels/port.ts`.
-3. **Outbound traffic is listed and controlled by the owner.** The
+3. **Outbound traffic is listed and controlled by the owner.** Optional
+   operator-configured Stele traffic is account-source traffic, like Telegram
+   and WhatsApp; only `lib/channels/stele-client.ts` contacts that origin, with
+   backend credentials. The
    OpenRouter enrichment call a user turns on, and anonymous usage events the
    user can turn off in Settings or with `DO_NOT_TRACK`. An event is a name
    from the fixed list in `lib/services/telemetry.ts` plus enum-valued
