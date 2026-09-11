@@ -85,6 +85,21 @@ describe('Docker-only setup', () => {
     expect(await readFile(path.join(root, '.steno-updater/env.before-upgrades'), 'utf8')).toBe(originalEnv)
     expect((await readFile(path.join(root, '.env'), 'utf8')).split(SETUP_START)).toHaveLength(2)
   })
+  it('keeps the pinned companion on a rerun, whatever image the rerun was built with', async () => {
+    const { root, docker, options } = await fixture()
+    await installUpgrades(options, docker)
+    const compose = path.join(root, '.steno-updater/compose.json')
+    expect(JSON.parse(await readFile(compose, 'utf8')).services.updater.image).toBe(updaterImage)
+    const rerun = { ...options, updaterImage: `sha256:${'e'.repeat(64)}` }
+    expect(await installUpgrades(rerun, docker)).toHaveProperty('resumed', true)
+    expect(JSON.parse(await readFile(compose, 'utf8')).services.updater.image).toBe(updaterImage)
+  })
+  it('says so when the pinned companion image has been rebuilt away', async () => {
+    const { docker, options } = await fixture()
+    await installUpgrades(options, docker)
+    const gone = async (args: string[]) => { if (args[0] === 'image') throw new Error('No such image'); return docker(args) }
+    await expect(installUpgrades(options, gone)).rejects.toThrow('pinned companion image is no longer present')
+  })
   it('refuses setup during an unfinished upgrade or recovery', async () => {
     const { root, docker, options, calls } = await fixture()
     await installUpgrades(options, docker)
