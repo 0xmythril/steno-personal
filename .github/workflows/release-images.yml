@@ -92,7 +92,7 @@ jobs:
         run: echo "base=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - name: Publish application image
         id: app
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -105,7 +105,7 @@ jobs:
           sbom: true
       - name: Publish updater image
         id: updater
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: updater/Dockerfile
