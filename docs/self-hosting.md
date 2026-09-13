@@ -520,47 +520,131 @@ History and its CSV export require an owner portal session. API/MCP keys continu
 
 ## WeChat through Stele
 
-This experimental integration uses the private Stele v1 API, including its scoped
-read/login credentials and pre-login status support. Stele owns the official
-WeChat client and its login lifecycle; Steno consumes text and displays its QR.
-No additional WeChat library runs inside Steno.
+WeChat is read through [Stele](https://github.com/0xmythril/stele), a separate
+service that runs Tencent's official Linux client and exposes what it captures
+over a private API. Steno never runs a WeChat library itself; the only file that
+contacts Stele is `lib/channels/stele-client.ts`. This is experimental: text
+only, history coverage depends on what the official client exposes, and Stele
+itself notes that ordinary DMs and incoming group messages are still gated.
 
-1. Run Stele separately and configure its independent read and login credentials.
-   Keep its API private. Do not reuse Steno access keys for these credentials.
-2. Copy each credential into a separate regular file accessible to the Steno
-   service user. Use permissions `0600`, absolute paths, and no symlinks or hard
-   links. Credentials must be at least 32 characters. Never commit these files.
-3. Set the three `STELE_WECHAT_*` variables above and restart web and worker.
-   Mount the read file into both processes and the login file into the web
-   process. The worker does not use the login credential.
-4. Sign into an existing Steno instance, open Connections, and choose Connect
-   WeChat. Scan the QR and inspect the phone's history-sync choice before
-   confirming. Linking succeeds before capture is necessarily ready.
+**It needs a Linux amd64 Docker host.** Stele builds the official client for
+that platform and reads its memory with `SYS_PTRACE`, so Railway and most
+managed container platforms cannot run it. Linking WeChat to an unofficial
+reader can affect your account; only link your own.
 
-The URL is an origin without a path, query, or embedded credentials. Use HTTPS
-for a remote host or container network. `http://127.0.0.1:PORT` works only when
-Stele shares Steno's network namespace, or a local tunnel forwards that port.
-Container loopback does not reach a sibling container. No redirect is followed.
+### From the browser, once upgrades are enabled
+
+If you have enabled upgrades from Settings, the companion that does upgrades
+can also install WeChat, and no terminal is involved. Open **Connections**;
+the WeChat card explains what the integration is and is not, then offers
+**Enable WeChat** behind a consent checkbox. The companion builds the Stele
+sidecar from the revision this release was tested with (ten minutes the first
+time, while it downloads and verifies the WeChat client), attaches it to the
+managed deployment, restarts Steno for a moment, issues Steno's two Stele
+credentials, and the card comes back ready to **Connect WeChat**. The card
+shows which step is running, and which step failed if one does; a failed
+attempt can be tried again and resumes what was done. The credentials live in
+`.steno-updater/wechat/`. If `stele-wechat:local` already exists on the host,
+the companion uses it instead of building, which is the way in for a host
+without access to the Stele repository.
+
+### One command, on the Docker Compose deployment without upgrades
+
+From the checkout, with Steno already running and set up:
+
+```bash
+sh scripts/enable-wechat.sh
+```
+
+It builds the Stele sidecar from a pinned revision (the first build downloads
+and checksum-verifies the WeChat client and takes several minutes), starts it
+inside the app container's network namespace, mints Steno a read credential
+and a separate read-and-login credential inside Stele, copies them into
+`.steno-wechat/` with mode 0600, and routes Compose through
+`compose.wechat.yaml` by writing a marked block into `.env`. Rerunning it is
+safe. Then open **Connections**, choose **Connect WeChat**, scan the QR with
+your phone, and read the history-sync prompt on the phone before confirming:
+what you choose there bounds what Steno can ever import.
+
+Two consequences of the sidecar design:
+
+- The sidecar shares the app container's loopback, so Stele's API is reachable
+  only from inside Steno. Nothing is exposed on the host or your network.
+  Stele's own recipe uses host networking and an SSH tunnel instead; its
+  preflight script expects that and is not used here.
+- When the app container is recreated, the sidecar loses its network until it
+  is recreated too. `docker compose up -d` does that, and upgrades started
+  from Settings do it themselves. If the WeChat card says capture is
+  unavailable after a restart, run `docker compose up -d`.
+
+The script is for installations without the companion. Once upgrades are
+enabled, upgrade setup has snapshotted the Compose configuration and the
+script refuses to run; use **Enable WeChat** on the Connections card instead,
+which edits that snapshot itself.
+
+Stele's operator commands work through Compose, for example:
+
+```bash
+docker compose exec stele node channels/wechat/src/cli.ts status /data/collector/config.json
+docker compose logs --tail 100 stele
+```
+
+Stele deliberately does not restart itself after the official client dies;
+look at its log, then `docker compose up -d stele`. Its two volumes,
+`stele-collector` and `stele-client`, hold the WeChat session and Stele's
+own state. Steno's upgrade backups do not include them; back them up with
+the same care as `DATA_DIR` if you want to survive a disk loss without
+re-linking. The pinned Stele revision is `STELE_REF` at the top of the
+script; set `STELE_SOURCE=/path/to/stele` to build from a local checkout.
+
+### Stele somewhere else
+
+If Stele runs on another host or outside Compose, configure Steno by hand:
+
+1. Run Stele following its own guides and mint two credentials there:
+   `steno-reader` with scope `read` and `steno-login` with `read,login`. Keep
+   its API private; do not reuse Steno access keys for these credentials.
+2. Copy each credential into a separate regular file readable by the Steno
+   service user: mode `0600`, absolute path, no symlinks or hard links, at
+   least 32 characters. Never commit these files.
+3. Give Steno a private route. Steno accepts `https://` anywhere, or `http://`
+   only on loopback (`127.0.0.1`, `localhost`, `[::1]`). A Steno container's
+   loopback is not the host's: run an SSH tunnel in Steno's network namespace,
+   or put a private HTTPS proxy in front of Stele. No redirect is followed.
+4. Set the three `STELE_WECHAT_*` variables from the Configuration table and
+   restart web and worker. Mount the read file into both processes and the
+   login file into the web process; the worker does not use the login
+   credential.
+
+| Variable | What it is |
+|---|---|
+| `STELE_WECHAT_URL` | Origin only: no path, query or embedded credentials. |
+| `STELE_WECHAT_READ_TOKEN_FILE` | Absolute path to the read credential file, for web and worker. |
+| `STELE_WECHAT_LOGIN_TOKEN_FILE` | Absolute path to the login credential file; enables the QR button. |
+
+### What happens after you scan
+
 The browser receives only temporary PNG QR frames over its authenticated Steno
-connection; it never receives the Stele bearer credentials or endpoint.
+connection, each valid for at most ten seconds; it never receives the Stele
+credentials or endpoint. Login success arrives before capture is ready: the
+WeChat card moves from *starting* to *scanning* to *Stele can read messages*.
 
-The worker bootstraps through a checkpoint, replays changes, and commits message
-changes and the resume cursor together. Restarts resume from the encrypted
-connection state. An expired cursor triggers a baseline rebuild scoped to this
-connection. Known deletions remain terminal, including during rebuilding. Initial
-baselines are bounded to 50,000 messages and 10,000 pages; larger sources fail
-without publishing a partial baseline. Last imported indicates the last completed
-checkpoint, not a guarantee that disconnected capture is current.
+The worker then bootstraps through a checkpoint, replays changes, and commits
+message changes and the resume cursor together in one transaction. Restarts
+resume from the encrypted connection state. An expired cursor triggers a
+baseline rebuild scoped to this connection. Known deletions remain terminal,
+including during rebuilding. Initial baselines are bounded to 50,000 messages
+and 10,000 pages; larger sources fail without publishing a partial baseline.
+*Last imported* is the last completed checkpoint, not a guarantee that capture
+is current; the card warns when it is more than two minutes old.
 
-Current scope is text only. Contacts/person matching, media, and upstream recall
-capture are unavailable; a recall in WeChat may remain in the archive. History
-coverage depends on what the official client exposes. WeChat cannot establish
-Steno's first owner or recover lost Steno access. Disconnecting the importer
-retains archived messages and does not unlink the shared Stele device. Manage
-that device in WeChat. A different account/dataset requires deliberately
-disconnecting and reconnecting; existing archives are not silently repurposed.
+Current scope is text only. Contacts and person matching, media, and upstream
+recall capture are unavailable; a recall in WeChat may remain in the archive.
+WeChat cannot establish Steno's first owner or recover lost Steno access.
+Disconnecting the importer keeps archived messages and does not unlink the
+shared Stele device; manage that device in WeChat. A different account or
+dataset requires deliberately disconnecting and reconnecting; existing archives
+are not silently repurposed.
 
-No live pairing or production deployment is part of the integration checks.
-Next work: validate pairing and restart with an owner-controlled account, then
-add contact metadata/person matching and deployment examples. Media support
-depends on Stele exposing it first.
+No live pairing is part of the integration checks yet. The first real run
+should validate pairing, a restart, and an upgrade with the sidecar attached.

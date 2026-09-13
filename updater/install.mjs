@@ -70,7 +70,17 @@ export async function installUpgrades({ root, config, containerId, updaterImage,
     resumed = true
     report('Keeping the existing release, volume, and backups.')
   } else {
-    if (!config?.services || Object.keys(config.services).join(',') !== 'app') throw new SetupError('Setup supports the single-service Steno Compose deployment. See the manual guide for custom deployments.')
+    if (!config?.services?.app) throw new SetupError('Setup supports the Steno Compose deployment with an app service. See the manual guide for custom deployments.')
+    // Other services are fine as long as none of them can write the archive:
+    // the WeChat sidecar has its own volumes. A second writer would make the
+    // pre-upgrade backup a lie.
+    const archive = (config.services.app.volumes ?? []).find(v => (typeof v === 'string' ? v.split(':')[1] : v?.target) === '/data')
+    const archiveSource = typeof archive === 'string' ? archive.split(':')[0] : archive?.source
+    for (const [name, service] of Object.entries(config.services)) {
+      if (name === 'app') continue
+      const mounts = (service?.volumes ?? []).map(v => typeof v === 'string' ? v.split(':')[0] : v?.source)
+      if (archiveSource && mounts.includes(archiveSource)) throw new SetupError(`Service ${name} mounts the archive volume. Only app may; see the manual guide.`)
+    }
     if (!/^[a-f0-9]{12,64}$/.test(containerId ?? '') || !/^sha256:[a-f0-9]{64}$/.test(updaterImage ?? '')) throw new SetupError('Start the app with docker compose up -d before enabling upgrades.')
     const container = JSON.parse(await docker(['inspect', containerId]))[0]
     project = container.Config.Labels?.['com.docker.compose.project']

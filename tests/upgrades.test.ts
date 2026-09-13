@@ -4,7 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { UpgradeEngine, writeJson } from '../updater/engine.mjs'
 import { newerVersion, latestRelease } from '../updater/releases.mjs'
-import { composeEnvironment } from '../updater/config.mjs'
+import { composeEnvironment, dependentServices } from '../updater/config.mjs'
 
 // Each stage fsyncs a real journal. Slow/contended disks must not turn a
 // durability test into a timing assertion about the development machine.
@@ -125,5 +125,19 @@ describe('release information', () => {
       expect(await latestRelease()).toEqual({ version: '0.2.0', url: 'https://github.com/0xmythril/steno-personal/releases/tag/v0.2.0' })
       expect(fetcher.mock.calls[0][0]).toBe('https://api.github.com/repos/0xmythril/steno-personal/releases/latest')
     } finally { fetcher.mockRestore() }
+  })
+})
+
+describe('sidecars in the app namespace', () => {
+  it('names only services that share network with app, so install can recreate them', () => {
+    const compose = { services: {
+      app: { image: 'a' },
+      updater: { image: 'u' },
+      stele: { image: 's', network_mode: 'service:app' },
+      other: { image: 'o', network_mode: 'host' },
+    } }
+    expect(dependentServices(compose)).toEqual(['stele'])
+    expect(dependentServices({})).toEqual([])
+    expect(dependentServices({ services: { app: { network_mode: 'service:app' } } })).toEqual([])
   })
 })

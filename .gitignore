@@ -23,3 +23,4 @@ docs/superpowers/
 docs/*.local.md
 .steno-updater/
 .steno-updater-*/
+.steno-wechat/

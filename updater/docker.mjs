@@ -4,6 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { IMAGE, latestRelease } from './releases.mjs'
 import { writeJson } from './engine.mjs'
+import { dependentServices } from './config.mjs'
 
 const exec = promisify(execFile)
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -107,6 +108,11 @@ export class DockerDriver {
   async install(image) {
     await writeJson(path.join(this.directory, 'release.json'), { services: { app: { image } } })
     await this.compose(['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'app'])
+    // A sidecar in the app's namespace lost its network with the old
+    // container. Bring it back; if it cannot start, that is the sidecar's
+    // problem and not a reason to roll the archive back.
+    const dependents = dependentServices(JSON.parse(await readFile(path.join(this.directory, 'compose.json'), 'utf8')))
+    if (dependents.length) await this.compose(['up', '-d', '--no-deps', '--no-build', '--pull', 'never', '--force-recreate', ...dependents]).catch(() => {})
   }
 
   async verify(version, timeoutMs = 5 * 60_000) {

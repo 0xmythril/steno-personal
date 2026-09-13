@@ -51,6 +51,15 @@ export class UpgradeEngine {
     }
   }
 
+  // Another host operation that recreates the app container (the WeChat
+  // sidecar install) must not overlap an upgrade, nor an upgrade it. Same
+  // predicate as start(); the holder releases when it is done.
+  hold() {
+    if (this.busy || !terminal(this.state.phase) || this.state.phase === 'recovery-required') throw new Error('Upgrade unavailable')
+    this.busy = true
+    return () => { this.busy = false }
+  }
+
   async start(version) {
     if (this.busy || !terminal(this.state.phase) || this.state.phase === 'recovery-required') throw new Error('Upgrade unavailable')
     this.busy = true

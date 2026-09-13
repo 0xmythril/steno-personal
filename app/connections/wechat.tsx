@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { disconnectAction } from './actions'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { disconnectAction, enableWechatAction } from './actions'
 import { formatRelativeTime } from '@/lib/format'
 
-type Status = { configured: boolean; loginConfigured?: boolean; id?: string | null; connected?: boolean; readable?: boolean; capture?: string; reason?: string | null; lastSyncAt?: string | null }
+const GUIDE = 'https://github.com/0xmythril/steno-personal/blob/main/docs/self-hosting.md#wechat-through-stele'
+type Installer = { available: boolean; unreachable?: boolean; phase?: string; error?: string }
+type Status = { configured: boolean; installer?: Installer; loginConfigured?: boolean; id?: string | null; connected?: boolean; readable?: boolean; capture?: string; reason?: string | null; lastSyncAt?: string | null }
 const reasonText: Record<string, string> = {
   unauthorized: 'Stele rejected the credential. Update its private token file.',
   forbidden: 'The Stele credential does not permit this operation.',
@@ -16,11 +18,31 @@ const reasonText: Record<string, string> = {
   not_logged_in: 'Confirm the linked session on your phone or show its login QR.',
   session_revoked: 'The WeChat session was revoked. Link it again to resume.',
 }
+// The companion reports which step it is on, or which step failed. Neither
+// carries Docker output, so these are the whole story the owner gets.
+const installText: Record<string, string> = {
+  building: 'Building the WeChat sidecar. The first time, this downloads and verifies the official WeChat client and can take ten minutes.',
+  starting: 'Starting the sidecar. Steno restarts for a moment; this page reconnects on its own.',
+  credentials: 'Issuing Steno its credentials inside the sidecar.',
+  installed: 'The sidecar is installed. Waiting for Steno to pick it up.',
+}
+const installFailed: Record<string, string> = {
+  build: 'The sidecar image could not be built. The host needs Linux amd64 Docker and access to the Stele repository; check the updater log.',
+  start: 'The sidecar could not be started. Check the stele and updater logs.',
+  stele: 'The sidecar started but its API did not answer in time. Check the stele log, then try again.',
+  credentials: 'Steno could not be issued credentials inside the sidecar. Check the updater log, then try again.',
+  interrupted: 'The previous attempt was interrupted. Trying again resumes safely.',
+}
+const installActive = new Set(['building', 'starting', 'credentials', 'installed'])
+
 export function WechatConnection() {
   const [status, setStatus] = useState<Status | null>(null)
   const [qr, setQr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [pending, startTransition] = useTransition()
   const request = useRef<AbortController | null>(null)
   const expiry = useRef<ReturnType<typeof setTimeout> | null>(null)
   function clearQr() { if (expiry.current) clearTimeout(expiry.current); expiry.current = null; setQr(null) }
@@ -64,11 +86,38 @@ export function WechatConnection() {
     finally { abort.abort(); request.current = null; clearQr(); setBusy(false) }
   }
   const stale = Boolean(status?.connected && (!status.lastSyncAt || Date.now() - Date.parse(status.lastSyncAt) > 120_000))
+  const installer = status?.installer
+  const installing = Boolean(installer?.phase && installActive.has(installer.phase))
   return <section className="card">
-    <div className="card-head"><h2>WeChat</h2><span className={`chip ${status?.connected && status.readable && !stale ? 'ok' : 'warn'}`}>{status?.connected && status.readable ? 'Capture available' : 'Experimental'}</span></div>
-    <p className="muted">WeChat is read through your own Stele instance. Text and history coverage are limited. Media and upstream recall propagation are unavailable; recalled messages may remain in this archive.</p>
-    <p className="muted">This unsupported integration can affect account access. Only link your own account. Stele credentials stay on this server.</p>
-    {status?.configured === false ? <p className="help">Configure the private Stele connection on this server to enable WeChat. See the self-hosting guide.</p> : <>
+    <div className="card-head"><h2>WeChat</h2><span className={`chip ${status?.connected && status.readable && !stale ? 'ok' : 'warn'}`}>{status?.connected && status.readable ? 'Capture available' : 'Unofficial'}</span></div>
+    <p><strong>Not built in.</strong> Telegram and WhatsApp are read by Steno itself. WeChat is read through
+      Stele, a separate experimental sidecar that runs Tencent’s desktop client on this machine. It is unofficial,
+      text only, Linux amd64 only, and linking an unofficial reader can affect your WeChat account. Only link your own.</p>
+    <p className="muted">Media and upstream recall propagation are unavailable; recalled messages may remain in this archive. Stele credentials stay on this server.</p>
+    {status?.configured === false ? <div className="stack">
+      {installer?.available ? <>
+        <p aria-live="polite">{installing ? installText[installer.phase!]
+          : installer.phase === 'failed' ? (installFailed[installer.error ?? ''] ?? 'The last attempt failed. You can try again.')
+          : 'Not set up on this machine yet.'}</p>
+        {!installing && <>
+          <p className="muted">Enabling builds and runs the sidecar here, with permission to read the WeChat client’s memory,
+            from the fixed Stele revision this release was tested with. Steno pauses for a moment while it restarts with the sidecar attached.</p>
+          <label className="row"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} />
+            I understand WeChat is an unofficial, experimental integration and I will only link my own account.</label>
+          <div className="actions">
+            <button type="button" className="primary" disabled={pending || !confirmed} onClick={() => startTransition(async () => {
+              setError('')
+              const result = await enableWechatAction()
+              if (result.error) setError(result.error)
+              setConfirmed(false)
+            })}>{pending ? 'Please wait…' : installer.phase === 'failed' ? 'Try again' : 'Enable WeChat'}</button>
+          </div>
+        </>}
+      </> : <p className="help">{installer?.unreachable
+        ? 'The updater is not answering, so WeChat cannot be enabled from here right now.'
+        : 'To enable WeChat from here, first enable upgrades from Settings; the companion that installs does the work. On a host with a terminal, sh scripts/enable-wechat.sh does the same.'}
+        {' '}<a href={GUIDE} target="_blank" rel="noreferrer">Guide</a>.</p>}
+    </div> : <>
       <p aria-live="polite">{status?.reason ? reasonText[status.reason] ?? 'Capture is unavailable. Check Stele and the private connection.' : status?.readable ? 'Stele can read messages.' : 'Checking the private connection…'}</p>
       {stale && <p className="help">Import is pending or stale. The archive may be behind WeChat; check that the worker is running and review its sync errors.</p>}
       {status?.connected && <p className="muted">Last imported <span className="mono">{formatRelativeTime(status.lastSyncAt ? new Date(status.lastSyncAt) : null)}</span>. A running worker is required.</p>}
@@ -84,5 +133,6 @@ export function WechatConnection() {
       </div>
       <p className="help">Disconnecting stops Steno importing and keeps this archive. Manage the shared linked device in WeChat itself.</p>
     </>}
+    {error && <p className="danger" role="alert">{error}</p>}
   </section>
 }
