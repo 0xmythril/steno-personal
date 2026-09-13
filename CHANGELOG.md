@@ -16,6 +16,12 @@ All notable changes to this project are documented here. The format follows
   namespace, mints and installs Steno's two Stele credentials, and routes
   Compose through `compose.wechat.yaml`. Linux amd64 hosts only. Upgrades from
   Settings recreate the sidecar after installing a release.
+- **Experimental features.** A new last card on Settings, separate from
+  Advanced mode, with one switch per unfinished feature. WeChat through Stele
+  is the first: off by default, and off means no WeChat card, 404 from its
+  routes and no importing. Switching a feature is reported as
+  `experimental_toggled` when anonymous usage events are on, so the project
+  can see which experiments are worth keeping.
 - **WeChat from the browser.** With upgrades enabled, the Connections card
   offers **Enable WeChat** behind a consent checkbox; the companion builds and
   attaches the sidecar and issues the credentials, and the card shows each

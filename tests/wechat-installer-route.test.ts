@@ -16,6 +16,7 @@ vi.mock('next/headers', () => ({
 vi.mock('next/navigation', () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`) } }))
 
 import { resetDb } from './helpers/db'
+import { updateSettings } from '@/lib/services/settings'
 import { mintAccessKey } from '@/lib/services/access-keys'
 import { startSession } from '@/lib/auth'
 import { _resetEnvCacheForTests } from '@/lib/env'
@@ -31,6 +32,7 @@ const original = { ...process.env }
 beforeEach(async () => {
   jar.clear(); operations = []
   await resetDb()
+  await updateSettings({ experimentalWechat: true })
   for (const key of ['STENO_UPDATER_SOCKET', 'STELE_WECHAT_URL', 'STELE_WECHAT_READ_TOKEN_FILE', 'STELE_WECHAT_LOGIN_TOKEN_FILE']) delete process.env[key]
   _resetEnvCacheForTests()
 })
@@ -64,6 +66,14 @@ async function companion(phase = 'idle') {
 const status = () => GET(new Request('http://localhost:3000/api/stele/wechat/status'))
 
 describe('the WeChat card before Stele is configured', () => {
+  it('is switched off under Experimental features until the owner turns it on', async () => {
+    await companion(); await owner()
+    await updateSettings({ experimentalWechat: false })
+    expect((await status()).status).toBe(404)
+    expect(await enableWechatAction()).toEqual({ error: 'Turn on WeChat under Experimental features in Settings first.' })
+    expect(operations).toEqual([])
+  })
+
   it('says the companion can install when there is one, and what state it is in', async () => {
     await companion('failed'); await owner()
     expect(await (await status()).json()).toEqual({ configured: false, installer: { available: true, phase: 'failed', error: 'build' } })

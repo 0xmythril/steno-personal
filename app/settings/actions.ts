@@ -9,7 +9,7 @@ import {
   renameAccessKey,
 } from '@/lib/services/access-keys'
 import { MINTED_KEY_COOKIE, REVEALED_KEY_COOKIE, INSTRUCTIONS_KEY_COOKIE } from '@/lib/services/keys-flash'
-import { updateSettings } from '@/lib/services/settings'
+import { updateSettings, EXPERIMENTAL_FEATURES, type ExperimentalFeature } from '@/lib/services/settings'
 import { track } from '@/lib/services/telemetry'
 import { revokePasskey, revokeAllPasskeys } from '@/lib/services/passkeys'
 
@@ -206,5 +206,16 @@ export async function setAdvancedModeAction(enabled: boolean): Promise<void> {
   await requireSession()
   if (typeof enabled !== 'boolean') throw new Error('Invalid advanced mode setting')
   await updateSettings({ advancedMode: enabled })
+  revalidatePath('/', 'layout')
+}
+
+// Experimental features: off by default, switchable here, and reported as a
+// usage event so the project can see whether one is worth keeping. Only the
+// feature name and the direction are sent; never anything about the account.
+export async function setExperimentalAction(feature: ExperimentalFeature, enabled: boolean): Promise<void> {
+  await requireSession()
+  if (!(EXPERIMENTAL_FEATURES as readonly string[]).includes(feature) || typeof enabled !== 'boolean') throw new Error('Invalid experimental feature setting')
+  track('experimental_toggled', { feature, enabled })
+  await updateSettings({ experimentalWechat: enabled })
   revalidatePath('/', 'layout')
 }

@@ -41,6 +41,9 @@ export type Events = {
   channel_connected: { channel: 'telegram' | 'whatsapp' }
   access_key_minted: Record<never, never>
   enrichment_toggled: { images: boolean; audio: boolean }
+  // An experimental feature was switched on or off. Which one, and which
+  // way: enough to see whether a feature is worth keeping, nothing more.
+  experimental_toggled: { feature: 'wechat'; enabled: boolean }
   // A batch reached the push door. Which door, never which source: a source
   // type is text the pusher chose.
   source_pushed: { surface: 'api' | 'mcp' }
@@ -48,12 +51,12 @@ export type Events = {
 export type EventName = keyof Events
 export const EVENTS = [
   'search', 'mcp_tool_call', 'transcript_viewed', 'person_linked',
-  'channel_connected', 'access_key_minted', 'enrichment_toggled', 'source_pushed',
+  'channel_connected', 'access_key_minted', 'enrichment_toggled', 'source_pushed', 'experimental_toggled',
 ] as const satisfies readonly EventName[]
 
 // Property keys any event may carry, for the structural test. `version` is
 // added by the sender, never by a call site.
-export const ALLOWED_PROPERTY_KEYS = ['surface', 'tool', 'source', 'channel', 'images', 'audio', 'version'] as const
+export const ALLOWED_PROPERTY_KEYS = ['surface', 'tool', 'source', 'channel', 'images', 'audio', 'feature', 'enabled', 'version'] as const
 
 export type TelemetryOutcome = 'sent' | 'disabled' | 'no_key' | 'failed'
 

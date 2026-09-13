@@ -532,6 +532,15 @@ that platform and reads its memory with `SYS_PTRACE`, so Railway and most
 managed container platforms cannot run it. Linking WeChat to an unofficial
 reader can affect your account; only link your own.
 
+**Turn it on first.** WeChat is an experimental feature: open **Settings**,
+scroll to **Experimental features** at the bottom, and switch on **WeChat
+through Stele**. Until then the WeChat card is not shown, its routes answer
+404, and the worker leaves any WeChat connection alone. Switching it off
+later hides the card and stops importing; what was archived stays, and
+switching it back on resumes. The switch is reported as an anonymous usage
+event when those are on, so the project can see whether the feature is
+worth keeping.
+
 ### From the browser, once upgrades are enabled
 
 If you have enabled upgrades from Settings, the companion that does upgrades

@@ -4,11 +4,15 @@ import { SteleClient, steleError } from '@/lib/channels/stele-client'
 import { steleConfigured, steleLoginConfigured } from '@/lib/channels/stele-config'
 import { steleState } from '@/lib/services/stele'
 import { listConnections } from '@/lib/services/connections'
+import { getSettings } from '@/lib/services/settings'
 import { updaterRequest, upgradesConfigured, type SidecarStatus } from '@/lib/services/upgrades'
 
 export const GET = withErrorBoundary(async (req: Request) => {
   const denied = await requireCookieAuth(req); if (denied) return denied
   const headers = { 'Cache-Control': 'no-store' }
+  // Off under Settings → Experimental features: the card is not rendered and
+  // this answers as if the route did not exist.
+  if (!(await getSettings()).experimentalWechat) return Response.json({ error: 'experimental_off' }, { status: 404, headers })
   if (!steleConfigured()) {
     // Not configured. Say whether the companion can install the sidecar from
     // here, so the card can offer a button instead of a shell command.

@@ -8,6 +8,7 @@ import {
 } from '@/lib/services/login'
 import { removeWhatsappAuthDirs, revokedWhatsappConnectionIds, revokeConnection } from '@/lib/services/connections'
 import { completeRecovery } from '@/lib/services/recovery'
+import { getSettings } from '@/lib/services/settings'
 import { recordMessage, applyEdit, applyDelete } from '@/lib/services/ingest'
 import { populatePeople, syncContacts } from '@/lib/services/people'
 import { enqueueMedia, type Downloader } from '@/lib/services/media'
@@ -293,8 +294,18 @@ export class SessionManager {
     }
   }
 
+  // An experimental channel runs only while its switch in Settings is on.
+  // Off, its connections are treated as inactive: the sweep below closes a
+  // running session, and nothing reopens it until the switch is on again.
+  // The row itself is untouched, so turning it back on resumes.
+  private async experimentalOnly<T extends { channel: string }>(all: T[]): Promise<T[]> {
+    if (!all.some(c => c.channel === 'wechat')) return all
+    const { experimentalWechat } = await getSettings()
+    return experimentalWechat ? all : all.filter(c => c.channel !== 'wechat')
+  }
+
   private async reconcileActive(): Promise<void> {
-    const active = await activeConnections()
+    const active = await this.experimentalOnly(await activeConnections())
     const activeIds = new Set(active.map(a => a.id))
 
     // Close sessions no longer active in the database — the owner

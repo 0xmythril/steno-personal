@@ -3,6 +3,7 @@ import { withErrorBoundary } from '@/lib/api'
 import { createConnection, listConnections, getConnection } from '@/lib/services/connections'
 import { completeLogin } from '@/lib/services/login'
 import { steleState } from '@/lib/services/stele'
+import { getSettings } from '@/lib/services/settings'
 import { SteleClient, steleError } from '@/lib/channels/stele-client'
 import { steleLoginConfigured } from '@/lib/channels/stele-config'
 import { loginSchema } from '@/lib/channels/stele-wire'
@@ -11,6 +12,7 @@ export const runtime = 'nodejs'
 const streams = new Set<SteleClient>()
 export const POST = withErrorBoundary(async (req: Request) => {
   const denied = await requireCookieAuth(req); if (denied) return denied
+  if (!(await getSettings()).experimentalWechat) return Response.json({ error: 'experimental_off' }, { status: 404 })
   try {
     const origin = new URL(req.headers.get('origin') ?? '')
     if (!['http:', 'https:'].includes(origin.protocol) || origin.host !== (req.headers.get('host') ?? new URL(req.url).host)) throw new Error()

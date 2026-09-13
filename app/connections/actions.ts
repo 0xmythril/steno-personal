@@ -7,6 +7,7 @@ import {
 } from '@/lib/services/connections'
 import type { Channel } from '@/lib/channels/port'
 import { updaterRequest, type SidecarStatus } from '@/lib/services/upgrades'
+import { getSettings } from '@/lib/services/settings'
 
 // Every action re-runs the guard. A layout protects rendering, not the server
 // actions its pages post to, which are directly callable.
@@ -95,6 +96,7 @@ export async function deleteSourceAction(formData: FormData): Promise<void> {
 export type EnableWechatResult = { status?: SidecarStatus; error?: string }
 export async function enableWechatAction(): Promise<EnableWechatResult> {
   await requireSession()
+  if (!(await getSettings()).experimentalWechat) return { error: 'Turn on WeChat under Experimental features in Settings first.' }
   try { return { status: await updaterRequest<SidecarStatus>('wechat-enable') } }
   catch { return { error: 'WeChat could not be enabled. Check that the updater is running and no upgrade is in progress, then try again.' } }
 }

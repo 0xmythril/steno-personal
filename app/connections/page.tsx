@@ -113,7 +113,7 @@ function ChannelCard({ channel, live }: { channel: 'telegram' | 'whatsapp'; live
 export default async function ConnectionsPage() {
   const session = await requireSession()
   const all = await listConnections()
-  const { advancedMode } = await getSettings()
+  const { advancedMode, experimentalWechat } = await getSettings()
   const sources = advancedMode ? await listSources() : []
   // Newest first, so the first ARCHIVE row per channel with no revoked_at is
   // the live one; revoked rows stay in the list below as history. A live
@@ -135,7 +135,7 @@ export default async function ConnectionsPage() {
           <ChannelCard channel="whatsapp" live={liveOf('whatsapp')} />
         </div>
 
-        <WechatConnection />
+        {experimentalWechat && <WechatConnection />}
 
         {sources.length > 0 && (
           <section className="card">

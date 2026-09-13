@@ -14,6 +14,7 @@ import { ConnectAgent } from './connect-agent'
 import { EnrichmentSection } from './enrichment'
 import { TelemetrySection } from './telemetry'
 import { UpdatesSection } from './updates'
+import { ExperimentalFeatures } from './experimental'
 import { upgradesConfigured } from '@/lib/services/upgrades'
 import { version } from '@/package.json'
 import {
@@ -31,7 +32,7 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireSession()
-  const { advancedMode } = await getSettings()
+  const { advancedMode, experimentalWechat } = await getSettings()
   const keys = await listActiveAccessKeys()
   const passkeyRows = await listActivePasskeys()
   // Only push-capable keys need the count: it feeds the revoke-and-purge
@@ -279,6 +280,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <TelemetrySection />
         <UpdatesSection currentVersion={version} configured={upgradesConfigured()} />
+        <ExperimentalFeatures wechat={experimentalWechat} />
       </main>
     </>
   )

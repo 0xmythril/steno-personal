@@ -15,9 +15,10 @@ import { SteleClient } from '@/lib/channels/stele-client'
 import { POST } from '@/app/api/stele/wechat/login/route'
 import { GET } from '@/app/api/stele/wechat/status/route'
 import { resetDb } from './helpers/db'
+import { updateSettings } from '@/lib/services/settings'
 const original = { ...process.env }
 beforeEach(async () => {
-  await resetDb(); jar.clear()
+  await resetDb(); jar.clear(); await updateSettings({ experimentalWechat: true })
   process.env.STELE_WECHAT_URL = 'https://private.example'; process.env.STELE_WECHAT_READ_TOKEN_FILE = '/private/read'; process.env.STELE_WECHAT_LOGIN_TOKEN_FILE = '/private/login'; _resetEnvCacheForTests()
 })
 afterEach(() => { vi.restoreAllMocks(); process.env = { ...original }; _resetEnvCacheForTests() })
@@ -64,4 +65,15 @@ it('does not complete login after owner access is revoked mid-stream', async () 
   const text = await (await POST(req())).text()
   expect(text).not.toContain('login_success')
   expect(db.select().from(connections).get()?.status).toBe('pending')
+})
+
+it('answers 404 on both routes while the experimental switch is off, without touching Stele', async () => {
+  await signedIn()
+  await updateSettings({ experimentalWechat: false })
+  const stream = vi.spyOn(SteleClient.prototype, 'stream')
+  const status = vi.spyOn(SteleClient.prototype, 'status')
+  expect((await GET(new Request('http://localhost:3000/api/stele/wechat/status'))).status).toBe(404)
+  expect((await POST(req())).status).toBe(404)
+  expect(stream).not.toHaveBeenCalled()
+  expect(status).not.toHaveBeenCalled()
 })
