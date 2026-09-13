@@ -175,6 +175,8 @@ check every call site against it:
 - `access_key_minted` — that a key was made. Never its label or value.
 - `enrichment_toggled` — the two enrichment booleans. Never the key, never the
   model.
+- `experimental_toggled` — which experimental feature was switched under
+  Settings, and whether on or off. Never the account it reads.
 
 Every event also carries the version of this software and a random id minted
 on this instance with `randomUUID()` at the first event. The id is not derived

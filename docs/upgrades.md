@@ -109,7 +109,11 @@ setup does not silently upgrade or downgrade the installed companion.
    previous image, deployment configuration and environment, including an
    externally supplied encryption key. A failed backup never installs the
    candidate release.
-4. It starts the new image against the same volume. The existing boot script
+4. It starts the new image against the same volume, then recreates any
+   service that shares the app container's network namespace (the WeChat
+   sidecar from `compose.wechat.yaml`), since that service lost its network
+   with the old container. A sidecar that fails to start does not roll the
+   upgrade back. The existing boot script
    runs migrations first. Readiness requires database access and a recent
    heartbeat from the installed worker; channel pairing is not a requirement.
 5. After repeated readiness checks succeed, it records success. If checks do
@@ -174,6 +178,19 @@ release; a deployment rollback alone does not roll back SQLite.
 There is no Railway API integration in this implementation. No Railway token
 is requested or stored. Platform backup and deployment automation can be added
 as a separate integration.
+
+## Enable WeChat from the companion
+
+The companion also installs the optional WeChat sidecar when the owner asks
+from Connections. That adds two requests to its socket, status and enable,
+and one more thing it does with its Docker access: build the Stele images from
+the fixed repository and revision in `updater/wechat.mjs`, add the `stele`
+service to the managed `compose.json` beside `app`, recreate `app` with the
+token mount and variables, start the sidecar with `SYS_PTRACE` in the app's
+network namespace, and issue Steno's two credentials inside it. An install
+never overlaps an upgrade in either direction. Progress and failure are
+recorded in `.steno-updater/wechat.json` as a step name only, never Docker
+output. See [WeChat through Stele](self-hosting.md#wechat-through-stele).
 
 ## Authority and network access
 

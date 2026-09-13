@@ -231,6 +231,10 @@ export const mediaAnalysis = sqliteTable('media_analysis', {
 export const settings = sqliteTable('settings', {
   id: integer('id').primaryKey(),
   advancedMode: integer('advanced_mode', { mode: 'boolean' }).notNull().default(false),
+  // Experimental features are off until the owner turns them on under
+  // Settings. One column per feature, so the switch is a plain boolean the
+  // worker can read on every tick.
+  experimentalWechat: integer('experimental_wechat', { mode: 'boolean' }).notNull().default(false),
   openrouterKeyCiphertext: text('openrouter_key_ciphertext'),
   analyzeImages: integer('analyze_images', { mode: 'boolean' }).notNull().default(false),
   analyzeAudio: integer('analyze_audio', { mode: 'boolean' }).notNull().default(false),

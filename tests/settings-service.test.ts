@@ -14,9 +14,18 @@ describe('settings service', () => {
       visionModel: DEFAULT_VISION_MODEL, transcriptionModel: DEFAULT_TRANSCRIPTION_MODEL,
       // The one setting that starts on. It still sends nothing unless the host
       // sets STENO_TELEMETRY_URL — see tests/telemetry.test.ts.
-      advancedMode: false, telemetryEnabled: true,
+      advancedMode: false, experimentalWechat: false, telemetryEnabled: true,
     })
     expect(await getOpenrouterKey()).toBeNull()
+  })
+
+  it('experimental features are off until switched, and each switch is its own boolean', async () => {
+    await updateSettings({ experimentalWechat: true })
+    expect(await getSettings()).toMatchObject({ experimentalWechat: true, advancedMode: false })
+    await updateSettings({ advancedMode: true })
+    expect(await getSettings()).toMatchObject({ experimentalWechat: true, advancedMode: true })
+    await updateSettings({ experimentalWechat: false })
+    expect(await getSettings()).toMatchObject({ experimentalWechat: false, advancedMode: true })
   })
 
   it('stores the OpenRouter key encrypted and reads it back', async () => {

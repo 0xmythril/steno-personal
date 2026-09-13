@@ -10,6 +10,7 @@ import { SessionManager } from '@/lib/channels/session-manager'
 import { validSteleUrl } from '@/lib/channels/stele-url'
 import { type SteleChange } from '@/lib/channels/stele-wire'
 import { resetDb } from './helpers/db'
+import { updateSettings } from '@/lib/services/settings'
 
 const initial = { sourceId: 'source', accountId: 'owner', cursor: null }
 const chat = { id: 'chat', revision: 1, kind: 'dm' as const, title: 'Friend' }
@@ -34,7 +35,7 @@ function network(events: unknown[]) {
   const stream = vi.spyOn(SteleClient.prototype, 'stream').mockImplementation(async function* () { yield* events })
   return { get, stream }
 }
-beforeEach(resetDb)
+beforeEach(async () => { await resetDb(); await updateSettings({ experimentalWechat: true }) })
 afterEach(() => vi.restoreAllMocks())
 
 describe('Stele durable consumer', () => {
@@ -119,6 +120,26 @@ describe('Stele durable consumer', () => {
     const now = Date.now(); vi.spyOn(Date, 'now').mockReturnValue(now + 4000)
     await manager.tick(); await manager.whenIdle()
     expect(n.stream).toHaveBeenCalledTimes(2)
+    await manager.stopAll()
+  })
+
+  it('leaves the connection alone while the experimental switch is off, and resumes when it is on', async () => {
+    await connection()
+    const n = network([{ type: 'caught_up', cursor: 'H' }])
+    const manager = new SessionManager(new Map([['wechat', new SteleWechatPort()]]))
+    await updateSettings({ experimentalWechat: false })
+    await manager.tick(); await manager.whenIdle()
+    expect(n.stream).not.toHaveBeenCalled()
+    expect((await db.select().from(connections)).filter(c => c.channel === 'wechat')).toHaveLength(1)
+    await updateSettings({ experimentalWechat: true })
+    await manager.tick(); await manager.whenIdle()
+    expect(n.stream).toHaveBeenCalledTimes(1)
+    // Off again: the running session is closed by the next sweep and not reopened.
+    await updateSettings({ experimentalWechat: false })
+    const now = Date.now(); vi.spyOn(Date, 'now').mockReturnValue(now + 4000)
+    await manager.tick(); await manager.whenIdle()
+    await manager.tick(); await manager.whenIdle()
+    expect(n.stream).toHaveBeenCalledTimes(1)
     await manager.stopAll()
   })
 })

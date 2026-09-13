@@ -18,8 +18,15 @@ export type Settings = {
   visionModel: string
   transcriptionModel: string
   advancedMode: boolean
+  experimentalWechat: boolean
   telemetryEnabled: boolean
 }
+
+// The switches under Settings → Experimental features. Each is a column
+// defaulting to off; adding one here, in the schema and on the page is the
+// whole cost of trying a feature in production behind a switch.
+export const EXPERIMENTAL_FEATURES = ['wechat'] as const
+export type ExperimentalFeature = (typeof EXPERIMENTAL_FEATURES)[number]
 
 async function readRow() {
   const [row] = await db.select().from(settings).where(eq(settings.id, SETTINGS_ID)).limit(1)
@@ -34,6 +41,7 @@ export async function getSettings(): Promise<Settings> {
   const row = await readRow()
   return {
     advancedMode: row?.advancedMode ?? false,
+    experimentalWechat: row?.experimentalWechat ?? false,
     hasOpenrouterKey: !!row?.openrouterKeyCiphertext,
     analyzeImages: row?.analyzeImages ?? false,
     analyzeAudio: row?.analyzeAudio ?? false,
@@ -52,6 +60,7 @@ export type SettingsPatch = Partial<{
   visionModel: string
   transcriptionModel: string
   advancedMode: boolean
+  experimentalWechat: boolean
   telemetryEnabled: boolean
 }>
 
@@ -77,6 +86,7 @@ export async function updateSettings(patch: SettingsPatch): Promise<void> {
     values.transcriptionModel = patch.transcriptionModel
   }
   if (patch.advancedMode !== undefined) values.advancedMode = patch.advancedMode
+  if (patch.experimentalWechat !== undefined) values.experimentalWechat = patch.experimentalWechat
   if (patch.telemetryEnabled !== undefined) values.telemetryEnabled = patch.telemetryEnabled
   if (Object.keys(values).length === 0) return
   await db.insert(settings).values({ id: SETTINGS_ID, ...values })

@@ -120,6 +120,13 @@
       "when": 1788865254648,
       "tag": "0016_advanced_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1789321687204,
+      "tag": "0017_experimental_wechat",
+      "breakpoints": true
     }
   ]
 }

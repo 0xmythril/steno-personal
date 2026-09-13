@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `experimental_wechat` integer DEFAULT false NOT NULL;

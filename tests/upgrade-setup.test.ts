@@ -112,3 +112,23 @@ describe('Docker-only setup', () => {
     await expect(installUpgrades(options, docker)).rejects.toThrow('regular .env')
   })
 })
+
+describe('sidecars beside the app', () => {
+  it('accepts a service in the app namespace with its own volumes and snapshots it', async () => {
+    const { root, docker, options } = await fixture()
+    const services = options.config.services as Record<string, unknown>, volumes = options.config.volumes as Record<string, unknown>
+    services.stele = { image: 'stele-wechat:local', network_mode: 'service:app', volumes: [{ type: 'volume', source: 'stele-collector', target: '/data' }] }
+    volumes['stele-collector'] = {}
+    expect(await installUpgrades(options, docker)).toEqual({ project: 'existing-steno', resumed: false })
+    const compose = JSON.parse(await readFile(path.join(root, '.steno-updater', 'compose.json'), 'utf8'))
+    expect(compose.services.stele.network_mode).toBe('service:app')
+    expect(Object.keys(compose.services).sort()).toEqual(['app', 'stele', 'updater'])
+  })
+
+  it('refuses a second service that mounts the archive volume', async () => {
+    const { root, docker, options } = await fixture()
+    ;(options.config.services as Record<string, unknown>).reader = { image: 'x', volumes: [{ type: 'volume', source: 'data', target: '/archive' }] }
+    await expect(installUpgrades(options, docker)).rejects.toThrow('mounts the archive volume')
+    await expect(stat(path.join(root, '.steno-updater'))).rejects.toThrow()
+  })
+})
