@@ -179,6 +179,19 @@ There is no Railway API integration in this implementation. No Railway token
 is requested or stored. Platform backup and deployment automation can be added
 as a separate integration.
 
+## Enable WeChat from the companion
+
+The companion also installs the optional WeChat sidecar when the owner asks
+from Connections. That adds two requests to its socket, status and enable,
+and one more thing it does with its Docker access: build the Stele images from
+the fixed repository and revision in `updater/wechat.mjs`, add the `stele`
+service to the managed `compose.json` beside `app`, recreate `app` with the
+token mount and variables, start the sidecar with `SYS_PTRACE` in the app's
+network namespace, and issue Steno's two credentials inside it. An install
+never overlaps an upgrade in either direction. Progress and failure are
+recorded in `.steno-updater/wechat.json` as a step name only, never Docker
+output. See [WeChat through Stele](self-hosting.md#wechat-through-stele).
+
 ## Authority and network access
 
 The button requires a portal session; bearer tokens are not accepted directly.

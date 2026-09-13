@@ -532,7 +532,23 @@ that platform and reads its memory with `SYS_PTRACE`, so Railway and most
 managed container platforms cannot run it. Linking WeChat to an unofficial
 reader can affect your account; only link your own.
 
-### One command, on the Docker Compose deployment
+### From the browser, once upgrades are enabled
+
+If you have enabled upgrades from Settings, the companion that does upgrades
+can also install WeChat, and no terminal is involved. Open **Connections**;
+the WeChat card explains what the integration is and is not, then offers
+**Enable WeChat** behind a consent checkbox. The companion builds the Stele
+sidecar from the revision this release was tested with (ten minutes the first
+time, while it downloads and verifies the WeChat client), attaches it to the
+managed deployment, restarts Steno for a moment, issues Steno's two Stele
+credentials, and the card comes back ready to **Connect WeChat**. The card
+shows which step is running, and which step failed if one does; a failed
+attempt can be tried again and resumes what was done. The credentials live in
+`.steno-updater/wechat/`. If `stele-wechat:local` already exists on the host,
+the companion uses it instead of building, which is the way in for a host
+without access to the Stele repository.
+
+### One command, on the Docker Compose deployment without upgrades
 
 From the checkout, with Steno already running and set up:
 
@@ -561,11 +577,10 @@ Two consequences of the sidecar design:
   from Settings do it themselves. If the WeChat card says capture is
   unavailable after a restart, run `docker compose up -d`.
 
-Enable WeChat **before** enabling upgrades from Settings. Upgrade setup
-snapshots the Compose configuration, and the script refuses to run once
-`.steno-updater/` exists; on an installation that already has upgrades, add
-the `stele` service and the `app` additions from `compose.wechat.yaml` to
-`.steno-updater/compose.json` by hand, then `docker compose up -d`.
+The script is for installations without the companion. Once upgrades are
+enabled, upgrade setup has snapshotted the Compose configuration and the
+script refuses to run; use **Enable WeChat** on the Connections card instead,
+which edits that snapshot itself.
 
 Stele's operator commands work through Compose, for example:
 
