@@ -10,7 +10,7 @@ import {
   createSetupConnection, getConnection, otherSetupClaimExists, submitLoginPassword, revokeConnection,
 } from '@/lib/services/connections'
 import { mintFirstAccessKey } from '@/lib/services/access-keys'
-import type { Channel } from '@/lib/channels/port'
+type Channel = 'telegram' | 'whatsapp'
 import type { ConnectResult, PasswordResult } from '@/app/connections/actions'
 
 // First-run setup. There is no session to require — no key exists yet — so

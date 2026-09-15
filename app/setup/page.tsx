@@ -32,7 +32,7 @@ function errorText(c: ConnectionStatus): string | null {
   return c.lastError
 }
 
-function SetupChannelCard({ channel, live }: { channel: Channel; live: ConnectionStatus | undefined }) {
+function SetupChannelCard({ channel, live }: { channel: 'telegram' | 'whatsapp'; live: ConnectionStatus | undefined }) {
   if (channel === 'telegram' && !telegramConfigured()) return <TelegramUnavailable />
   const consent = channel === 'whatsapp' ? <WhatsAppConsent /> : <Consent channel={channel} />
   if (live?.status === 'pending') {

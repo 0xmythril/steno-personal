@@ -5,7 +5,6 @@ import { connections } from '@/lib/db/schema'
 import { mintAccessKey, revokeAccessKey } from './access-keys'
 import { getConnection, revokeConnection, type ConnectionStatus } from './connections'
 import { sourceLabel } from '@/lib/format'
-import { isLiveChannel } from '@/lib/services/sources'
 import type { Channel, ChannelAccount } from '@/lib/channels/port'
 
 // Lost-key recovery: the owner pairs the same account a second time, on a
@@ -21,13 +20,14 @@ import type { Channel, ChannelAccount } from '@/lib/channels/port'
 // number connected once and later disconnected still identifies its owner.
 // Rows removed by "Delete everything" are gone and cannot vouch for anyone.
 
+export type RecoveryChannel = 'telegram' | 'whatsapp'
 export type RecoveryOutcome = 'matched' | 'mismatched'
 
-const CHANNEL_ORDER: Channel[] = ['telegram', 'whatsapp']
+const CHANNEL_ORDER: RecoveryChannel[] = ['telegram', 'whatsapp']
 
 // Channels a recovery can be attempted on: those where some archive connection
 // has ever reported an account id.
-export async function knownAccountChannels(): Promise<Channel[]> {
+export async function knownAccountChannels(): Promise<RecoveryChannel[]> {
   const rows = await db.selectDistinct({ channel: connections.channel }).from(connections)
     .where(and(eq(connections.purpose, 'archive'), eq(connections.mode, 'live'), isNotNull(connections.externalAccountId)))
   const found = new Set(rows.map(r => r.channel))
@@ -40,7 +40,7 @@ export async function knownAccountChannels(): Promise<Channel[]> {
 // code that never appeared.
 export async function startRecovery(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'no_known_account' | 'telegram_unconfigured' }> {
   if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
-  if (!(await knownAccountChannels()).includes(channel)) return { ok: false, reason: 'no_known_account' }
+  if (channel === 'wechat' || !(await knownAccountChannels()).includes(channel)) return { ok: false, reason: 'no_known_account' }
   await db.delete(connections)
     .where(and(eq(connections.channel, channel), eq(connections.purpose, 'recovery'), isNull(connections.revokedAt)))
   const [row] = await db.insert(connections).values({ channel, purpose: 'recovery', status: 'pending' })
@@ -50,7 +50,7 @@ export async function startRecovery(channel: Channel): Promise<{ ok: true; id: s
 
 export type RecoveryStatus = {
   id: string
-  channel: Channel
+  channel: RecoveryChannel
   status: ConnectionStatus['status']
   outcome: RecoveryOutcome | null
   // A matched attempt whose key has not been claimed yet.
@@ -66,11 +66,11 @@ export async function getRecoveryAttempt(id: string): Promise<RecoveryStatus | n
   const status = await getConnection(id)
   // A recovery row is always a live channel (startRecovery takes one); the
   // guard narrows the loosely typed ConnectionStatus back to a port channel.
-  if (!status || status.purpose !== 'recovery' || !isLiveChannel(status.channel)) return null
+  if (!status || status.purpose !== 'recovery' || (status.channel !== 'telegram' && status.channel !== 'whatsapp')) return null
   const [row] = await db.select({ outcome: connections.recoveryOutcome, keyId: connections.recoveryKeyId })
     .from(connections).where(eq(connections.id, id))
   return {
-    id: status.id, channel: status.channel as Channel, status: status.status,
+    id: status.id, channel: status.channel, status: status.status,
     outcome: row?.outcome ?? null, hasKey: (row?.keyId ?? null) !== null,
     lastError: status.lastError, login: status.login,
   }

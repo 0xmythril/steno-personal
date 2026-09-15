@@ -1,3 +1,4 @@
+import { steleLoginConfigured } from '@/lib/channels/stele-config'
 import { recordEvent, type HistorySurface } from './history'
 import { rm } from 'node:fs/promises'
 import { telegramConfigured } from '@/lib/channels/telegram-credentials'
@@ -87,7 +88,7 @@ export type SetupCreateResult =
   | { ok: true; id: string }
   | { ok: false; reason: 'already_connected' | 'telegram_unconfigured' | 'claimed' }
 
-export async function createSetupConnection(channel: Channel, mine: string | null): Promise<SetupCreateResult> {
+export async function createSetupConnection(channel: 'telegram' | 'whatsapp', mine: string | null): Promise<SetupCreateResult> {
   if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   return db.transaction((tx): SetupCreateResult => {
     const live = tx.select({ id: connections.id, status: connections.status })
@@ -125,9 +126,10 @@ export async function otherSetupClaimExists(mine: string | null): Promise<boolea
 // is deleted when it holds nothing and revoked when it holds an archive, which
 // is never deleted behind the owner's back. A live RECOVERY row on the same
 // channel is somebody proving ownership; it neither blocks nor is touched.
-export async function createConnection(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'already_connected' | 'telegram_unconfigured' }> {
+export async function createConnection(channel: Channel): Promise<{ ok: true; id: string } | { ok: false; reason: 'already_connected' | 'telegram_unconfigured' | 'stele_unconfigured' }> {
   // No Telegram pair on this deploy means no Telegram port in the worker, so
   // a pending row here would wait for a login code forever. Refuse it.
+  if (channel === 'wechat' && !steleLoginConfigured()) return { ok: false, reason: 'stele_unconfigured' }
   if (channel === 'telegram' && !telegramConfigured()) return { ok: false, reason: 'telegram_unconfigured' }
   const live = await db.select({ id: connections.id, status: connections.status })
     .from(connections)

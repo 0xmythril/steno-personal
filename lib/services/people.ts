@@ -979,7 +979,7 @@ async function mergeByPhone(): Promise<number> {
   const groups = new Map<string, Group>()
   const born = new Map<string, number>()
   for (const r of rows) {
-    if (!r.phone) continue
+    if (!r.phone || r.channel === 'wechat') continue
     let g = groups.get(r.phone)
     if (!g) groups.set(r.phone, g = { telegram: new Set(), whatsapp: new Set() })
     g[r.channel].add(r.personId)

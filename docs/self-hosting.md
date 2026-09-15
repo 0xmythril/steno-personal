@@ -147,6 +147,9 @@ most people touch; this is all of them.
 | `PORT` | `3000` | Port the portal and MCP endpoint listen on. |
 | `SECRET_KEY` | generated | Encrypts your OpenRouter key, your revealable access keys, and the Telegram session at rest. If unset, one is generated into `$DATA_DIR/secret.key` on first boot. Set it yourself and the file is not used. **Changing or losing it makes those encrypted values unreadable** — you re-pair the channels and re-enter the OpenRouter key; your messages are unaffected. |
 | `TELEGRAM_API_ID` | the project's own | Telegram application id. The project ships a registered pair, so leave it unset unless you registered your own at <https://my.telegram.org>. `0` runs without Telegram: every page that could pair it shows **Not available** and says so, and the worker logs one warning. |
+| `STELE_WECHAT_URL` | unset | Optional Stele origin: HTTPS, or HTTP on loopback. Set with the read token file; see [WeChat through Stele](#wechat-through-stele). |
+| `STELE_WECHAT_READ_TOKEN_FILE` | unset | Absolute path to a private regular file containing Stele's read credential, available to web and worker. |
+| `STELE_WECHAT_LOGIN_TOKEN_FILE` | unset | Absolute path to a separate private login credential file; enables owner QR pairing in Connections. |
 | `TELEGRAM_API_HASH` | the project's own | Telegram application hash, from the same page. Set both together or neither. |
 | `ANALYSIS_DAILY_LIMIT` | `500` | Images plus voice notes sent for enrichment per day. A ceiling, not an exact quota: the count is taken once per pass, before either medium runs, so a pass starting just under the limit can still drain a full batch of each — worst case `2 × ANALYSIS_BACKFILL_BATCH − 1` rows beyond it. `0` disables enrichment entirely. |
 | `ANALYSIS_BACKFILL_BATCH` | `20` | How many old attachments are enriched per pass, so a backfill does not spend the day's budget at once. |
@@ -514,3 +517,50 @@ The last pusher shown in Chats is recorded by future pushes affecting that chat;
 Push ingestion is now atomic, retaining the existing `steno/1` counts and timestamp ordering. `duplicates` includes conflicts and edited existing rows; do not add those counts as disjoint totals. An HTTP `409` with `dispute_capacity` means pending review storage is full and nothing from that batch was saved. Review disputes, then retry. MCP push reports the same condition in its tool error. Limits: 10,000 pending candidates and 512 MiB of incoming text, independent of activity’s 90-day/10,000-event retention. No extra service, credential or environment variable is required.
 
 History and its CSV export require an owner portal session. API/MCP keys continue to read only normal archive content. See [Privacy](../PRIVACY.md#local-history) for recording coverage, retained deletion metadata and key-cleanup semantics.
+
+## WeChat through Stele
+
+This experimental integration uses the private Stele v1 API, including its scoped
+read/login credentials and pre-login status support. Stele owns the official
+WeChat client and its login lifecycle; Steno consumes text and displays its QR.
+No additional WeChat library runs inside Steno.
+
+1. Run Stele separately and configure its independent read and login credentials.
+   Keep its API private. Do not reuse Steno access keys for these credentials.
+2. Copy each credential into a separate regular file accessible to the Steno
+   service user. Use permissions `0600`, absolute paths, and no symlinks or hard
+   links. Credentials must be at least 32 characters. Never commit these files.
+3. Set the three `STELE_WECHAT_*` variables above and restart web and worker.
+   Mount the read file into both processes and the login file into the web
+   process. The worker does not use the login credential.
+4. Sign into an existing Steno instance, open Connections, and choose Connect
+   WeChat. Scan the QR and inspect the phone's history-sync choice before
+   confirming. Linking succeeds before capture is necessarily ready.
+
+The URL is an origin without a path, query, or embedded credentials. Use HTTPS
+for a remote host or container network. `http://127.0.0.1:PORT` works only when
+Stele shares Steno's network namespace, or a local tunnel forwards that port.
+Container loopback does not reach a sibling container. No redirect is followed.
+The browser receives only temporary PNG QR frames over its authenticated Steno
+connection; it never receives the Stele bearer credentials or endpoint.
+
+The worker bootstraps through a checkpoint, replays changes, and commits message
+changes and the resume cursor together. Restarts resume from the encrypted
+connection state. An expired cursor triggers a baseline rebuild scoped to this
+connection. Known deletions remain terminal, including during rebuilding. Initial
+baselines are bounded to 50,000 messages and 10,000 pages; larger sources fail
+without publishing a partial baseline. Last imported indicates the last completed
+checkpoint, not a guarantee that disconnected capture is current.
+
+Current scope is text only. Contacts/person matching, media, and upstream recall
+capture are unavailable; a recall in WeChat may remain in the archive. History
+coverage depends on what the official client exposes. WeChat cannot establish
+Steno's first owner or recover lost Steno access. Disconnecting the importer
+retains archived messages and does not unlink the shared Stele device. Manage
+that device in WeChat. A different account/dataset requires deliberately
+disconnecting and reconnecting; existing archives are not silently repurposed.
+
+No live pairing or production deployment is part of the integration checks.
+Next work: validate pairing and restart with an owner-controlled account, then
+add contact metadata/person matching and deployment examples. Media support
+depends on Stele exposing it first.

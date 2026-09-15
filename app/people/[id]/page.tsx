@@ -37,7 +37,7 @@ export default async function PersonPage({ params, searchParams }: {
   // Who each already-linked candidate belongs to, so the option can say so
   // instead of silently refusing when it is submitted.
   const nameOf = new Map(everyone.map(p => [p.id, p.name]))
-  const candidates: Record<Channel, IdentityCandidate[]> = { telegram, whatsapp }
+  const candidates: Record<Channel, IdentityCandidate[]> = { telegram, whatsapp, wechat: [] }
   // listChats resolves the person for direct chats only: a group is a room,
   // not someone. The copy below says so rather than implying completeness.
   const theirChats = chats.filter(c => c.person?.id === person.id)

@@ -16,7 +16,7 @@ export type { ChannelContact } from '@/lib/services/people'
 // the mtcute binding (lib/channels/telegram.ts), the Baileys binding (M2), and
 // FakePort.
 
-export type Channel = 'telegram' | 'whatsapp'
+export type Channel = 'telegram' | 'whatsapp' | 'wechat'
 
 export type ChannelAccount = { channel: Channel; externalAccountId: string; displayName: string | null }
 
@@ -38,6 +38,8 @@ export interface LoginDriver {
 export type BackfillOpts = { sinceDays: number; maxDialogs: number; maxPerChat: number }
 
 export interface ChannelSession {
+  sync?(shouldContinue: () => boolean): Promise<void>
+
   // shouldContinue is polled between chats — the cheapest correct granularity
   // — so a long backfill stops promptly once the manager flips it (the owner
   // disconnected, or the connection was revoked mid-scan).
@@ -71,6 +73,8 @@ export interface ChannelSession {
 }
 
 export interface ChannelPort {
+  readonly loginManagedExternally?: boolean
+
   readonly channel: Channel
   login(driver: LoginDriver, opts: { timeoutMs: number; connectionId: string }): Promise<{ sessionString: string; account: ChannelAccount }>
   open(sessionString: string, opts: { connectionId: string }): Promise<ChannelSession>

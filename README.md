@@ -339,3 +339,9 @@ modified version over a network, you have to offer them your source too.
   [releases page](https://github.com/0xmythril/steno-personal/releases) — so you
   can check the tag out and run it yourself. There is no shared instance to log
   into: this is one archive for one person.
+
+Optional WeChat capture connects the server to an operator-configured private
+Stele instance. This is account-source traffic, like the Telegram and WhatsApp
+connections; it is disabled unless configured. Stele credentials remain in
+private server files. Login QR frames are ephemeral and never archived. See
+[WeChat setup and limitations](docs/self-hosting.md#wechat-through-stele).
