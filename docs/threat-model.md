@@ -21,6 +21,8 @@ matters at all — the phone still has the chats.
    agent that later reads it.
 5. WhatsApp itself, enforcing its rules against unofficial clients.
 6. Whoever runs the host, when the host is not the user's own machine.
+7. Whoever can publish a release of this project, once the optional upgrade
+   companion is installed.
 
 Explicitly not in the model: a state-level attacker with physical access to the
 running machine, an adversary who compromises Telegram or WhatsApp, and a
@@ -112,6 +114,13 @@ host and treating a backup exactly as you would treat the chats themselves. If
 `SECRET_KEY` is set as an environment variable and the volume leaks without it,
 the encrypted secrets stay opaque; if it was generated onto the volume, it
 leaks with everything else.
+
+If the optional upgrade companion is installed, every upgrade first writes a
+complete copy of the volume to `.steno-updater/backups/<id>/archive.tar.gz`
+on the host, beside a `manifest.json` that records the deployment's
+environment, `SECRET_KEY` included. Those copies live outside the volume, are
+never deleted automatically, and are exactly as sensitive as the archive
+itself. Treat the whole `.steno-updater/` directory as you would the volume.
 
 ## 3. The public URL
 
@@ -238,22 +247,60 @@ variable does not hide it from the platform that supplies it.
 
 **Residual.** Choose the host accordingly. A machine at home has no host but you.
 
+## 7. The upgrade companion
+
+Only when the host operator has run `scripts/enable-upgrades.sh`; a plain
+Docker or Railway deployment has none of this.
+
+**Exposure.** The companion holds the Docker socket, which is root on the
+host. The web app gets a private Unix socket to it that accepts three
+requests: status, "is there a newer stable release", and "install it". So a
+portal session — a cookie, obtained with any access key or passkey — can make
+the host pull and run a published image of this project. And whoever can
+publish a stable GitHub release under the project's name decides what that
+image contains: installing the companion extends the trust you already place
+in the maintainer from "the code I pulled and read" to "the next image I
+click on".
+
+**Controls.** The socket accepts no other repository, registry, tag, command
+or volume; the image name is a constant in `updater/releases.mjs`, the target
+must be the latest stable release within the running major version, and the
+pulled digest is pinned before anything is stopped. Nothing is checked or
+downloaded on a schedule; only a click contacts GitHub or GHCR. Agent bearer
+keys cannot call the socket directly, but that is a convenience, not a
+boundary: a key that can log into the portal can obtain a session. The
+companion exposes no TCP port, and the web app never sees the Docker socket.
+A failed install restores the backup and the previous image; an interrupted
+one is recovered from a journal or left for the operator with the backup
+intact. The full procedure is in [upgrades.md](upgrades.md).
+
+**Residual.** A leaked access key is now also the ability to upgrade the
+host's copy of this software, and a compromised release pipeline is a
+compromised host. If either is more than you want to accept, do not enable
+the companion; without it an upgrade is a `git pull` you read first.
+
 ## Things this deliberately does not do
 
 - **No rate limiting** on login (above).
-- **No audit log** of key use beyond a last-used timestamp.
+- **No audit log of reads by default.** Each key records a last-used
+  timestamp. History, on in Advanced mode, records pushes, authenticated
+  reads, syncs and key changes for the owner to review and export, and
+  retains them for a bounded period; it is a tool for you, not tamper-evident
+  logging against someone who holds the volume.
 - **No 2FA.** One credential type, no accounts, no password reset flow — a
   second factor would need an identity system, which is a non-goal.
 - **No multi-user, no sharing.** One instance is one person. Sharing an archive
   would need membership and permission checks, and those are the private cloud
   product's problem, not this one's.
-- **No crash reporting, no update check, no analytics SDK in the process.**
-  Two outbound calls exist and both are switchable: OpenRouter enrichment, off
-  until you save a key, and anonymous usage events to PostHog, on by default,
-  off in Settings or with `DO_NOT_TRACK`. An event is a feature name and an
-  enum, never archive content; the list is a type in
+- **No crash reporting, no scheduled update check, no analytics SDK in the
+  process.** Two outbound calls exist in the app and both are switchable:
+  OpenRouter enrichment, off until you save a key, and anonymous usage events
+  to PostHog, on by default, off in Settings or with `DO_NOT_TRACK`. An event
+  is a feature name and an enum, never archive content; the list is a type in
   `lib/services/telemetry.ts` and every call site is checked by test. PostHog
-  does see *when* a feature was used, which PRIVACY.md says outright.
+  does see *when* a feature was used, which PRIVACY.md says outright. The
+  optional upgrade companion (section 7) contacts GitHub and GHCR only when
+  the owner clicks, and sends nothing that identifies the instance.
 - **No encryption of message text at rest.** Above.
 
 ## Reporting
