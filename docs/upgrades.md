@@ -131,11 +131,24 @@ blocks further upgrades until the host operator restores the installation.
 Backups live in `.steno-updater/backups/<upgrade-id>/`, separate from the app
 volume. Each contains `archive.tar.gz` and `manifest.json`. Keep copies off the
 machine for disaster recovery; these local backups do not protect against disk
-loss. They are never automatically deleted. Deleting the live data volume or
+loss. They are never deleted automatically. Deleting the live data volume or
 resetting Steno does not delete these backups. Allow space for the archive and
-backup, and prune old backup directories yourself only after verifying the
-current release and retaining a known good recovery point. Some backup files
-are owned by root; use host administrator access to inspect or copy them.
+backup. Some backup files are owned by root; use host administrator access to
+inspect or copy them.
+
+To reclaim space, keep the newest few and drop the rest from the checkout:
+
+```bash
+sh scripts/prune-backups.sh 3 --dry-run   # say what would go
+sh scripts/prune-backups.sh 3             # keep the newest three
+```
+
+It needs only Docker, like setup. Whatever number you keep, the backup the
+journal names stays: it is the rollback point for the release running now.
+The command refuses to run while an upgrade is in progress or recovery is
+required, and it only removes whole backup directories that carry a manifest.
+Prune only after you have verified the current release, and keep at least
+one copy off the machine.
 
 The journal is `.steno-updater/journal.json`. If automatic recovery failed:
 
