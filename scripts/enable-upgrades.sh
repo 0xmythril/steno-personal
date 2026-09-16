@@ -17,8 +17,14 @@ if [ -z "$container_id" ]; then echo 'Start Steno with docker compose up -d, the
 project=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")
 case "$project" in ''|*[!a-z0-9_-]*) echo 'Could not identify a single Steno Compose project.' >&2; exit 1 ;; esac
 echo 'Building the updater tools with Docker. Node.js is not required on this machine.'
-docker build -f updater/Dockerfile -t steno-personal-updater:local .
-updater_image=$(docker image inspect --format '{{.Id}}' steno-personal-updater:local)
+# A first run pins the image built here. A rerun must not move the :local tag:
+# with the containerd image store the previous image vanishes when its tag
+# moves, and the managed deployment could no longer recreate the pinned
+# companion. Build under a separate tag just to run the installer.
+updater_tag=steno-personal-updater:local
+[ -f .steno-updater/compose.json ] && updater_tag=steno-personal-updater:setup
+docker build -f updater/Dockerfile -t "$updater_tag" .
+updater_image=$(docker image inspect --format '{{.Id}}' "$updater_tag")
 umask 077
 setup_input=$(mktemp -d "$PWD/.steno-updater-input-XXXXXX")
 trap 'rm -rf -- "$setup_input"' EXIT HUP INT TERM

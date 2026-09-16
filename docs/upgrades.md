@@ -91,10 +91,17 @@ The updater refuses to proceed when another running container mounts the data
 volume. It cannot detect unrelated host processes writing directly to Docker's
 volume storage.
 
-The companion itself stays pinned. Updating it is a host operation: build a
-reviewed companion version, update only the updater's image in the managed
-configuration, and recreate that service while no upgrade is active. Repeating
-setup does not silently upgrade or downgrade the installed companion.
+The companion itself stays pinned by image id. Repeating setup does not
+silently upgrade or downgrade it: a rerun builds a separate
+`steno-personal-updater:setup` image only to run the installer and leaves the
+pinned `steno-personal-updater:local` alone. Updating the companion is a host
+operation: build a reviewed version under a new tag, set
+`services.updater.image` in `.steno-updater/compose.json` to its image id, and
+`docker compose up -d updater` while no upgrade is active. Do not rebuild the
+`:local` tag in place. On Docker's containerd image store (the default on
+Engine 29 and Docker Desktop) the previous image disappears the moment its tag
+moves, and the managed deployment can then no longer recreate the companion;
+setup reports this rather than failing with a bare "No such image".
 
 ## What happens after clicking Upgrade
 
