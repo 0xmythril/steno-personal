@@ -155,6 +155,13 @@ gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(sed -n '/^## \[X.Y.Z\]/
   are not published. Forks must review the fixed repository constants in
   `updater/releases.mjs` and replace the Docker Hub image names before offering
   releases from their own registries.
+- Once both images are public, run the **Upgrade acceptance** workflow by
+  hand (Actions → Upgrade acceptance → Run workflow) with `from` set to the
+  previous stable tag and `to` set to the one just published. It pulls the
+  real images, enables the companion the way a self-hoster does, clicks
+  Upgrade in a headless browser and checks the new release comes up on the
+  same volume with a backup and a pinned digest. The smoke tests in CI use
+  local fixture images and cannot catch a broken published image.
 - Bring `staging` back in line with `main` so the next branch starts from the
   released commit. After a clean promotion they are already equal; a merge
   commit made on `main` is the usual reason they are not:

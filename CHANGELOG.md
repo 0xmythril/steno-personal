@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Downstream credit is explicit.** `NOTICE` records the original project and
+  author, and the legal notice shown on every page carries that attribution,
+  the AGPL terms, the warranty disclaimer, and the original-source link.
 - **Old upgrade backups can be pruned.** `sh scripts/prune-backups.sh <keep>`
   removes all but the newest backups under `.steno-updater/backups/`, always
   keeping the one the journal names as the current rollback point, and refuses

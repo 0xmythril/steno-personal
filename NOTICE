@@ -1,0 +1,27 @@
+steno-personal
+Copyright (C) 2026 0xmythril
+
+Originally developed by 0xmythril:
+https://github.com/0xmythril/steno-personal
+
+This program is licensed under the GNU Affero General Public License,
+version 3 only (AGPL-3.0-only). See LICENSE for the complete terms.
+
+Downstream attribution
+----------------------
+
+Under section 7(b) of the AGPL-3.0, for source files that refer to this
+NOTICE, works containing material from those files must preserve the
+following reasonable author attribution in their Appropriate Legal Notices:
+
+    Based on steno-personal by 0xmythril
+    https://github.com/0xmythril/steno-personal
+
+Keep this NOTICE with source distributions. Interactive versions must show
+the attribution through a convenient and prominent legal-notice feature.
+Modified versions must also identify their changes and offer their own
+Corresponding Source as required by the AGPL-3.0.
+
+This notice does not imply endorsement of a modified version and grants no
+rights in project names, logos, or other trademarks beyond those necessary
+to describe the work's origin and reproduce this attribution.
