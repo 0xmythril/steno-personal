@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Downstream credit is explicit.** `NOTICE` records the original project and
+  author, and the legal notice shown on every page carries that attribution,
+  the AGPL terms, the warranty disclaimer, and the original-source link.
+
 ### Changed
 
 - Mirror signed AMD64 and ARM64 release images to Docker Hub with immutable
