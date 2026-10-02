@@ -77,14 +77,14 @@ export default async function ChatPage({ params, searchParams }: {
                   instead of navigating to it. The explanatory sentence this
                   used to carry lives in the accessible name now; the file it
                   downloads, named steno-<chat>-<date>.json, explains itself. */}
-              {advancedMode && <a
+              <a
                 className="export-link"
                 href={`/api/chats/${page.chat.id}/export`}
                 download
                 aria-label="Export this chat as a file with every message and who pushed it"
               >
                 <DownloadIcon /> Export
-              </a>}
+              </a>
             </div>
             <div className="pad-head-meta">
               <span className="muted mono">

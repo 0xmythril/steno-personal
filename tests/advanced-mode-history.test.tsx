@@ -10,11 +10,25 @@ import { resetDb } from './helpers/db'
 import DisputePage from '@/app/history/disputes/[id]/page'
 import PurgePage from '@/app/history/keys/[id]/page'
 import HistoryPage from '@/app/history/page'
+import ChatPage from '@/app/chats/[id]/page'
 
 vi.stubGlobal('React', React)
+vi.mock('next/headers', () => ({ headers: async () => new Headers() }))
 vi.mock('@/lib/auth', () => ({ requireSession: async () => ({ via: 'key', label: 'Owner', keyId: null }) }))
 
 beforeEach(resetDb)
+
+it.each([false, true])('allows individual chat downloads with Advanced mode %s', async advancedMode => {
+  await fixture()
+  await updateSettings({ advancedMode })
+  const chatId = db.select().from(messages).get()!.chatId
+  const html = renderToStaticMarkup(await ChatPage({
+    params: Promise.resolve({ id: chatId }),
+    searchParams: Promise.resolve({}),
+  }))
+  expect(html).toContain(`href="/api/chats/${chatId}/export"`)
+  expect(html).toMatch(/<a[^>]*class="export-link"[^>]*download=""/)
+})
 async function fixture() {
   const key = await mintAccessKey('Importer', { read: true, push: true })
   if (!key.ok) throw new Error('key creation failed')

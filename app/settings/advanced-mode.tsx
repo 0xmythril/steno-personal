@@ -75,7 +75,7 @@ export function AdvancedMode({ enabled }: { enabled: boolean }) {
             <li>Create keys for agents to add, update, or delete archived messages.</li>
             <li>Set up imports and manage their sources.</li>
             <li>Resolve disputes: keep, replace, or delete an archived message.</li>
-            <li>Export chats or remove a revoked key’s contributions.</li>
+            <li>Remove a revoked key’s contributions.</li>
           </ul>
           <p>Push keys can change your archive. Give them only to agents you trust.</p>
           <p>Existing key permissions stay the same. Steno cannot send messages to Telegram or WhatsApp.</p>
