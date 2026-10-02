@@ -307,10 +307,11 @@ before anonymous usage settings. Links to `#advanced-mode` jump directly to this
 native explanatory dialog with Cancel focused first and a primary "Turn on
 Advanced mode" action. Cancel and Escape leave the stored preference unchanged.
 Disabling it saves immediately and hides push-key creation, agent write setup,
-source management, transcript export, detailed push attribution in chats, dispute
+source management, detailed push attribution in chats, dispute
 resolution controls, and contribution removal. Existing
 keys remain visible with their actual permissions and ordinary revoke controls;
-conversations, source filters, and conflict warnings remain readable. History, its
+conversations, source filters, and conflict warnings remain readable. Individual
+chat export is available from every transcript header in either mode. History, its
 filters and CSV export, source activity, and dispute comparisons stay available in
 either mode. Comparison and contribution previews link to Settings when their
 mutation controls are hidden. The mode is a UI preference only: it does not

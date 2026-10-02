@@ -19,6 +19,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Individual chat JSON export is available from the transcript header even when Advanced mode is off.
 - Mirror signed AMD64 and ARM64 release images to Docker Hub with immutable
   version tags and stable `X.Y` and `latest` aliases.
 
