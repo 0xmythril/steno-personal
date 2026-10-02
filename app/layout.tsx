@@ -3,6 +3,9 @@ import type { ReactNode } from 'react'
 import { Instrument_Serif, Instrument_Sans, IBM_Plex_Mono } from 'next/font/google'
 import { SiteFooter } from './site-footer'
 
+// Copyright (C) 2026 0xmythril. AGPL-3.0-only; the section 7(b)
+// attribution term in ../NOTICE applies to this file.
+
 // The three faces DESIGN.md names, fetched once at build time and served from
 // this instance. A <link> to Google Fonts would be a request leaving the
 // machine on every page view; tests/design-tokens.test.ts forbids it.

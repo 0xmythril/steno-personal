@@ -495,11 +495,12 @@ sign of a restriction — see the WhatsApp paragraph in the README.
 ### Advanced mode
 
 Settings starts with Advanced mode off. Turn it on and confirm the explanation
-to show push-key creation, agent write configuration, source management, chat
-export, dispute resolution, and contribution removal controls. The preference is saved for this instance.
+to show push-key creation, agent write configuration, source management,
+dispute resolution, and contribution removal controls. The preference is saved for this instance.
 Turning it off hides those controls without revoking keys, stopping imports, or
 removing archived conversations. Existing keys can still be revoked in Settings.
-History, its filters and CSV export, and disputed-version comparisons remain
+Use **Export** in an individual chat's header to download all its archived messages
+as JSON. Chat export, History, its filters and CSV export, and disputed-version comparisons remain
 available in either mode. Resolving disputes and removing contributions requires
 revealing the controls with Advanced mode. Recording continues while it is off.
 Advanced mode is a UI preference, not an API permission or a write kill switch.

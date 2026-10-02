@@ -69,6 +69,10 @@ when you touch the Dockerfile, `scripts/start.mjs`, migrations or auth.
 
 ## Pull requests
 
+- Keep personal agent configuration, caches, and memories out of version control
+  and Docker build contexts. Serena's `.serena/` directory stays local; review
+  staged files for local tooling artifacts before committing.
+
 - **Branch from `staging`, and open the pull request into `staging`** — not
   `main`. `staging` is the integration branch and deploys to a staging
   instance; `main` is the release line and deploys to production. Changes

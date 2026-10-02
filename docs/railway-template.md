@@ -18,9 +18,10 @@ account with anyone but Railway.
 
 - **Read-only by construction, on `/mcp`.** Every tool there declares itself
   read-only; there is no send path to switch off.
-- **Yours.** One container, one volume, one file. Two things can leave the
-  machine and both are documented: enrichment (off until you add an OpenRouter
-  key) and anonymous usage events (off with `DO_NOT_TRACK=1`).
+- **Yours.** One container, one volume, one file. Everything that can leave
+  the machine is documented: enrichment (off until you add an OpenRouter key)
+  and anonymous usage events (off with `DO_NOT_TRACK=1`). The optional Docker
+  updater does not apply on Railway, so nothing else does.
 - **Agent-ready.** Eight tools across two endpoints to list, search and read
   chats, fetch an attachment, list your address book, ask which accounts are
   connected, and — on a key you choose to give push — deliver messages from

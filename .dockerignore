@@ -8,6 +8,7 @@ data
 .env
 .env.*
 .superpowers
+.serena
 docs
 .steno-updater
 .steno-updater-*

@@ -326,6 +326,8 @@ become. Conduct is covered by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 GNU Affero General Public License v3.0; see [LICENSE](LICENSE) for the full
 text. Because it is the AGPL, if you modify it and let other people use your
 modified version over a network, you have to offer them your source too.
+Forks and works based on this project must also preserve the original-project
+credit described in [NOTICE](NOTICE).
 
 ## Follow along
 

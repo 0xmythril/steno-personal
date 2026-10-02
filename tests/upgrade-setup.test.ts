@@ -1,11 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { mkdtemp, readFile, writeFile, stat, symlink } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { managedEnvironment, SETUP_START, SETUP_END } from '../updater/setup-config.mjs'
 import { installUpgrades } from '../updater/install.mjs'
 
-vi.setConfig({ testTimeout: 30_000 })
 const appImage = `sha256:${'a'.repeat(64)}`
 const updaterImage = `sha256:${'b'.repeat(64)}`
 
