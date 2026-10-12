@@ -60,13 +60,19 @@ export async function installUpgrades({ root, config, containerId, updaterImage,
     const deployment = await json(path.join(directory, 'deployment.json'))
     project = deployment.project
     if (deployment.hostStateDir !== directory) throw new SetupError('This installation belongs to another directory. Use the recovery guide before moving it.')
-    await json(path.join(directory, 'compose.json'))
+    const pinned = (await json(path.join(directory, 'compose.json')))?.services?.updater?.image
     await json(path.join(directory, 'release.json'))
     const journalFile = path.join(directory, 'journal.json')
     if (await maybeStat(journalFile)) {
       const journal = await json(journalFile)
       if (!terminal(journal.phase) || journal.phase === 'recovery-required') throw new SetupError('An upgrade or recovery is unfinished. Let it finish or follow the recovery guide before running setup.')
     }
+    if (typeof pinned !== 'string') throw new SetupError('The managed configuration names no companion image. Follow the recovery guide.')
+    // The companion is pinned by image id. If that id is gone (the :local tag
+    // was rebuilt by hand on a containerd image store), Compose would fail to
+    // recreate it with a bare "No such image"; say what happened instead.
+    try { await docker(['image', 'inspect', pinned]) }
+    catch { throw new SetupError('The pinned companion image is no longer present, usually because steno-personal-updater:local was rebuilt by hand. Set services.updater.image in .steno-updater/compose.json to the rebuilt image id, then rerun setup.') }
     resumed = true
     report('Keeping the existing release, volume, and backups.')
   } else {

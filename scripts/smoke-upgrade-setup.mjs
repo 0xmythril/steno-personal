@@ -72,6 +72,11 @@ try {
   runSetup()
   app = await driver.container()
   assert.equal(app.Image, selected)
+  // The rerun built a separate image to run the installer; the pinned
+  // companion and its tag are untouched.
+  const pinnedUpdater = JSON.parse(await readFile(path.join(state, 'compose.json'), 'utf8')).services.updater.image
+  assert.equal(pinnedUpdater, JSON.parse(docker(['image', 'inspect', 'steno-personal-updater:local']))[0].Id)
+  assert.notEqual(pinnedUpdater, JSON.parse(docker(['image', 'inspect', 'steno-personal-updater:setup']))[0].Id)
   assert.equal(docker(['exec', app.Id, 'cat', '/data/archive']), 'synthetic archive')
   assert.equal(docker(['exec', app.Id, 'node', '-p', 'process.env.SECRET_KEY']), 'synthetic-$setup-secret')
   assert.equal(await readFile(path.join(state, 'env.before-upgrades'), 'utf8'), envText)
@@ -79,7 +84,7 @@ try {
   console.log('Setup smoke passed: no host Node, private socket ready, ordinary Compose routing, repeat setup, preserved archive and secret.')
 } finally {
   try { docker(['compose', 'down', '-v']) } catch { /* preserve original test failure */ }
-  for (const image of [oldImage, newImage, 'steno-personal-updater:local']) {
+  for (const image of [oldImage, newImage, 'steno-personal-updater:local', 'steno-personal-updater:setup']) {
     try { docker(['image', 'rm', '-f', image]) } catch { /* preserve original test failure */ }
   }
   await rm(root, { recursive: true, force: true })
